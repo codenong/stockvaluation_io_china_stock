@@ -22,3 +22,5 @@ def test_analyzer_prompt_renders_with_growth_skill_context():
 
     assert "GROWTH_SKILL_JSON" in prompt
     assert "softwareinternet" in prompt
+    assert "Fail closed." in prompt
+    assert "Never propose changes to discount rates" in prompt

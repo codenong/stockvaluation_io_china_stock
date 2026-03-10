@@ -217,7 +217,7 @@ def test_build_growth_anchor_prefers_java_growth_skill_context():
 
     assert anchor is not None
     assert anchor["entity"] == "softwareinternet"
-    assert anchor["source"] == "valuation-service growthSkillContext"
+    assert anchor["source"] == "Damodaran Historical Growth Rate in Earnings"
 
 
 def test_build_raw_financials_produces_non_empty_preprocessed_payload():

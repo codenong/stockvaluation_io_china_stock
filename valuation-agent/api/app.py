@@ -1440,7 +1440,7 @@ class StockValuationApp:
                     "p25": growth_ctx.get("p25"),
                     "p50": growth_ctx.get("p50"),
                     "p75": growth_ctx.get("p75"),
-                    "source": "valuation-service growthSkillContext",
+                    "source": "Damodaran Historical Growth Rate in Earnings",
                 }
 
             from domain.knowledge.skill_context import _lookup_growth_skill, _lookup_entity_for_yahoo_industry

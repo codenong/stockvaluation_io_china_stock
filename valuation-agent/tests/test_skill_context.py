@@ -91,3 +91,43 @@ def test_build_skill_bundle_prefers_growth_skill_override_and_normalizes_bands()
     assert growth["fundamental_growth"] == 0.125
     assert growth["revenue_cagr_band"]["p25"] == 0.08
     assert growth["revenue_cagr_band"]["p75"] == 0.16
+
+
+def test_build_skill_bundle_prefers_fresher_growth_lookup_over_stale_override(monkeypatch):
+    def _fake_lookup(_entity, _region=""):
+        return {
+            "entity": "softwareinternet",
+            "entity_display": "Software (Internet)",
+            "region": "Global",
+            "year": 2026,
+            "confidence_score": 0.88,
+            "p25": 0.08,
+            "p50": 0.12,
+            "p75": 0.16,
+        }
+
+    monkeypatch.setattr(
+        "domain.knowledge.skill_context._lookup_growth_skill",
+        _fake_lookup,
+    )
+
+    bundle = build_skill_bundle(
+        industry="technology",
+        segments_payload={"segments": []},
+        yahoo_industry="Internet Content & Information",
+        region="India",
+        growth_skill_override={
+            "entity": "softwareinternet",
+            "region": "United States",
+            "year": 2002,
+            "p25": 5.0,
+            "p50": 8.0,
+            "p75": 10.0,
+        },
+    )
+
+    assert bundle["has_growth_skill"] is True
+    growth = bundle["growth_skill"]
+    assert growth["year"] == 2026
+    assert growth["region"] == "Global"
+    assert growth["revenue_cagr_band"]["p50"] == 0.12

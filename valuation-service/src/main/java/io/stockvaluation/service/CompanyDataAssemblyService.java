@@ -20,6 +20,7 @@ import io.stockvaluation.repository.IndustryAveragesUSRepository;
 import io.stockvaluation.repository.InputStatRepository;
 import io.stockvaluation.repository.RiskFreeRateRepository;
 import io.stockvaluation.repository.SectorMappingRepository;
+import io.stockvaluation.utils.MarketRegionResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -219,56 +220,14 @@ public class CompanyDataAssemblyService {
         }
 
         double initialCostOfCapital = 0.0;
-        String timeZoneFullName = basicInfoDataDTO.getTimeZoneFullName();
         IndustryAveragesUS finalIndustryAveragesUS = industryAveragesUS;
         IndustryAveragesGlobal finalIndustryAveragesGlobal = industryAveragesGlobal;
         Optional<InputStatDistribution> finalOptionalInputStatDistribution = optionalInputStatDistribution;
-
-        if (Objects.nonNull(timeZoneFullName)) {
-            if (timeZoneFullName.toLowerCase().contains("europe")) {
-                Optional<CostOfCapital> costOfCapital = costOfCapitalRepository.findCostOfCapitalByRegion("Europe");
-                initialCostOfCapital = costOfCapital.map(ofCapital -> (costOfCapital(ofCapital, basicInfoDataDTO,
-                        financialDataDTO, finalIndustryAveragesUS, finalIndustryAveragesGlobal,
-                        finalOptionalInputStatDistribution))).orElse(initialCostOfCapital);
-            } else if (timeZoneFullName.toLowerCase().contains("tokyo")) {
-                Optional<CostOfCapital> costOfCapital = costOfCapitalRepository.findCostOfCapitalByRegion("Japan");
-                initialCostOfCapital = costOfCapital.map(ofCapital -> (costOfCapital(ofCapital, basicInfoDataDTO,
-                        financialDataDTO, finalIndustryAveragesUS, finalIndustryAveragesGlobal,
-                        finalOptionalInputStatDistribution))).orElse(initialCostOfCapital);
-            } else if (timeZoneFullName.toLowerCase().contains("asia")) {
-                Optional<CostOfCapital> costOfCapital = costOfCapitalRepository.findCostOfCapitalByRegion("Emerging");
-                initialCostOfCapital = costOfCapital.map(ofCapital -> (costOfCapital(ofCapital, basicInfoDataDTO,
-                        financialDataDTO, finalIndustryAveragesUS, finalIndustryAveragesGlobal,
-                        finalOptionalInputStatDistribution))).orElse(initialCostOfCapital);
-            } else if (timeZoneFullName.toLowerCase().contains("america")) {
-                Optional<CostOfCapital> costOfCapital = costOfCapitalRepository.findCostOfCapitalByRegion("US");
-                initialCostOfCapital = costOfCapital.map(ofCapital -> (costOfCapital(ofCapital, basicInfoDataDTO,
-                        financialDataDTO, finalIndustryAveragesUS, finalIndustryAveragesGlobal,
-                        finalOptionalInputStatDistribution))).orElse(initialCostOfCapital);
-            } else {
-                Optional<CostOfCapital> costOfCapital = costOfCapitalRepository.findCostOfCapitalByRegion("Global");
-                initialCostOfCapital = costOfCapital.map(ofCapital -> (costOfCapital(ofCapital, basicInfoDataDTO,
-                        financialDataDTO, finalIndustryAveragesUS, finalIndustryAveragesGlobal,
-                        finalOptionalInputStatDistribution))).orElse(initialCostOfCapital);
-            }
-        } else {
-            if (basicInfoDataDTO.getCountryOfIncorporation().equalsIgnoreCase("Japan")) {
-                Optional<CostOfCapital> costOfCapital = costOfCapitalRepository.findCostOfCapitalByRegion("Japan");
-                initialCostOfCapital = costOfCapital.map(ofCapital -> (costOfCapital(ofCapital, basicInfoDataDTO,
-                        financialDataDTO, finalIndustryAveragesUS, finalIndustryAveragesGlobal,
-                        finalOptionalInputStatDistribution))).orElse(initialCostOfCapital);
-            } else if (basicInfoDataDTO.getCountryOfIncorporation().equalsIgnoreCase("United States")) {
-                Optional<CostOfCapital> costOfCapital = costOfCapitalRepository.findCostOfCapitalByRegion("US");
-                initialCostOfCapital = costOfCapital.map(ofCapital -> (costOfCapital(ofCapital, basicInfoDataDTO,
-                        financialDataDTO, finalIndustryAveragesUS, finalIndustryAveragesGlobal,
-                        finalOptionalInputStatDistribution))).orElse(initialCostOfCapital);
-            } else {
-                Optional<CostOfCapital> costOfCapital = costOfCapitalRepository.findCostOfCapitalByRegion("Global");
-                initialCostOfCapital = costOfCapital.map(ofCapital -> (costOfCapital(ofCapital, basicInfoDataDTO,
-                        financialDataDTO, finalIndustryAveragesUS, finalIndustryAveragesGlobal,
-                        finalOptionalInputStatDistribution))).orElse(initialCostOfCapital);
-            }
-        }
+        Optional<CostOfCapital> costOfCapitalOption = costOfCapitalRepository.findCostOfCapitalByRegion(
+                MarketRegionResolver.resolveCostOfCapitalRegion(basicInfoDataDTO));
+        initialCostOfCapital = costOfCapitalOption.map(ofCapital -> costOfCapital(ofCapital, basicInfoDataDTO,
+                financialDataDTO, finalIndustryAveragesUS, finalIndustryAveragesGlobal,
+                finalOptionalInputStatDistribution)).orElse(initialCostOfCapital);
 
         double costOfCapital = (initialCostOfCapital - resolveBaselineRiskFreeRate())
                 + companyDriveDataDTO.getRiskFreeRate();

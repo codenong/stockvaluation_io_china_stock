@@ -15,7 +15,12 @@ To install and run StockValuation.io on your machine using our automated script:
 curl -fsSL https://raw.githubusercontent.com/stockvaluation-io/stockvaluation_io/main/install.sh | bash
 ```
 
-> **Note:** The script will check prerequisites, clone the repository, and bootstrap local secrets. It will interactively prompt for the mandatory keys: **an LLM API Key (Anthropic, OpenAI, Gemini, or Groq)**, your **`TAVILY_API_KEY`**, and your **`CURRENCY_API_KEY`** before starting up the containers.
+> **Note:** The script will check prerequisites, download the project if needed, bootstrap local secrets, and interactively prompt for your API keys. It supports **Anthropic, OpenAI, Gemini, Groq, and OpenRouter** for LLM access, plus **`TAVILY_API_KEY`** and **`CURRENCY_API_KEY`** before starting up the containers.
+
+It now also handles the common first-run friction points for non-technical users:
+- Detects whether Docker is installed and offers to install it for macOS or Linux.
+- Works even when run as `curl ... | bash` by reading prompts from your terminal instead of stdin.
+- Opens the Tavily and CurrencyBeacon setup pages for you when those keys are missing.
 
 Need these APIs?
 

@@ -141,7 +141,7 @@ import { ValuationResults } from '../../../../models';
           <strong>Based on:</strong> {{ anchor.numberOfFirms | number:'1.0-0' }} firms in industry
         </p>
         <p class="source">
-          <strong>Source:</strong> {{ anchor.source || 'Damodaran Historical Growth Rate in Earnings' }}
+          <strong>Source:</strong> {{ displayGrowthAnchorSource(anchor.source) }}
         </p>
       </article>
 
@@ -157,9 +157,6 @@ import { ValuationResults } from '../../../../models';
           <span class="meta-chip" *ngIf="data.marketImpliedExpectations?.marketPrice != null">
             Market Price: {{ data.marketImpliedExpectations?.marketPrice | number:'1.2-2' }}
           </span>
-          <span class="meta-chip" *ngIf="data.marketImpliedExpectations?.modelIntrinsicValue != null">
-            Model Value: {{ data.marketImpliedExpectations?.modelIntrinsicValue | number:'1.2-2' }}
-          </span>
         </div>
 
         <div class="table-wrap">
@@ -167,9 +164,9 @@ import { ValuationResults } from '../../../../models';
             <thead>
               <tr>
                 <th>Lever</th>
-                <th>Model</th>
-                <th>Implied</th>
-                <th>Gap</th>
+                <th>Current Assumption</th>
+                <th>Market-Implied</th>
+                <th>Delta</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -252,6 +249,14 @@ export class AssumptionsTransparencySectionComponent {
       return `${prefix}${this.normalizeMultiple(value).toFixed(2)}x`;
     }
     return `${prefix}${this.normalizePercent(value).toFixed(2)}%`;
+  }
+
+  displayGrowthAnchorSource(source: string | null | undefined): string {
+    const normalized = String(source || '').trim().toLowerCase();
+    if (!normalized || normalized === 'valuation-service growthskillcontext') {
+      return 'Damodaran Historical Growth Rate in Earnings';
+    }
+    return String(source).trim();
   }
 
   /**

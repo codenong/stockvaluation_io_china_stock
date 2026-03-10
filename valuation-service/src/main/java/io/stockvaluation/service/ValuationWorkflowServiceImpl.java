@@ -10,6 +10,7 @@ import io.stockvaluation.dto.valuationoutput.FinancialDTO;
 import io.stockvaluation.dto.valuationoutput.SimulationResultsDTO;
 import io.stockvaluation.enums.CashflowType;
 import io.stockvaluation.form.FinancialDataInput;
+import io.stockvaluation.utils.MarketRegionResolver;
 import io.stockvaluation.utils.SegmentParameterContext;
 
 import lombok.RequiredArgsConstructor;
@@ -92,6 +93,8 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
 
                 // Step 1: Fetch company baseline data from Yahoo Finance
                 CompanyDataDTO companyDataDTO = commonService.getCompanyDataFromProvider(ticker);
+                String growthAnchorRegion = MarketRegionResolver
+                                .resolveGrowthAnchorRegion(companyDataDTO.getBasicInfoDataDTO());
 
                 // Step 2: Determine valuation template based on company characteristics
                 ValuationTemplate template = valuationTemplateService.determineTemplate(null, companyDataDTO);
@@ -113,7 +116,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 if (valuationAssumptionProperties.isStrictGrowthPolicy()) {
                         growthAnchorService.getAnchorByYahooIndustry(
                                         companyDataDTO.getBasicInfoDataDTO().getIndustryGlobal(),
-                                        companyDataDTO.getBasicInfoDataDTO().getCountryOfIncorporation())
+                                        growthAnchorRegion)
                                         .ifPresent(anchor -> {
                                                 // Only enforce rigorously if we have high heuristic confidence
                                                 if (anchor.getConfidenceScore() != null
@@ -194,7 +197,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 Optional<io.stockvaluation.dto.GrowthAnchorDTO> anchorDtoOpt = growthAnchorService
                                 .getAnchorByYahooIndustry(
                                                 companyDataDTO.getBasicInfoDataDTO().getIndustryGlobal(),
-                                                companyDataDTO.getBasicInfoDataDTO().getCountryOfIncorporation());
+                                                growthAnchorRegion);
                 if (anchorDtoOpt.isPresent()) {
                         GrowthAnchorDTO anchor = anchorDtoOpt.get();
                         valuationOutputDTO.setGrowthSkillContext(anchor);
@@ -312,7 +315,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         ValuationTemplate template) {
                 CompanyDTO company = valuationOutputDTO.getCompanyDTO();
                 AssumptionTransparencyDTO.MarketImpliedExpectations expectations = new AssumptionTransparencyDTO.MarketImpliedExpectations();
-                expectations.setMethod("Single-variable reverse DCF via bounded grid scan + bisection.");
+                expectations.setMethod("Single-variable reverse DCF; each lever is solved independently to match the current market price.");
 
                 if (company == null || company.getPrice() == null || company.getPrice() <= 0) {
                         expectations.setMetrics(new ArrayList<>());
@@ -369,7 +372,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 template);
                 metrics.add(toImpliedMetric(
                                 "operating_margin",
-                                "Operating Margin",
+                                "Operating Margin (Years 2-5)",
                                 "percent",
                                 normalizePercent(baseInput.getTargetPreTaxOperatingMargin()),
                                 normalizePercent(impliedMargin.value()),
@@ -394,30 +397,11 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 template);
                 metrics.add(toImpliedMetric(
                                 "sales_to_capital",
-                                "Sales/Capital",
+                                "Sales/Capital (Years 2-5)",
                                 "multiple",
                                 normalizeMultiple(baseInput.getSalesToCapitalYears1To5()),
                                 normalizeMultiple(impliedSalesToCapital.value()),
                                 impliedSalesToCapital.solved()));
-
-                SolveResult impliedCostOfCapital = solveImpliedVariable(
-                                baseInput,
-                                marketPrice,
-                                (input, value) -> input.setInitialCostCapital(value),
-                                1.0,
-                                35.0,
-                                ticker,
-                                rdResult,
-                                optionValue,
-                                leaseResult,
-                                template);
-                metrics.add(toImpliedMetric(
-                                "cost_of_capital",
-                                "Initial Cost of Capital",
-                                "percent",
-                                normalizePercent(baseInput.getInitialCostCapital()),
-                                normalizePercent(impliedCostOfCapital.value()),
-                                impliedCostOfCapital.solved()));
 
                 expectations.setMetrics(metrics);
                 return expectations;

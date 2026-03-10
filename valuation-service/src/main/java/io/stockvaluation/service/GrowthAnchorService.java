@@ -31,6 +31,12 @@ public class GrowthAnchorService {
     private static final String SNAPSHOTS_RESOURCE = "/data/growth_skill_snapshots_combined.json";
     private static final String FEATURES_RESOURCE = "/data/historical_growth_industry_features.json";
     private static final String INDUSTRY_MAPPING_RESOURCE = "/data/industry_entity_mapping.json";
+    private static final List<String> REGION_FALLBACK_ORDER = List.of(
+            "global",
+            "united states",
+            "europe",
+            "emerging markets",
+            "japan");
 
     /** Entity-keyed lookup: entity -> region -> GrowthAnchorDTO */
     private final Map<String, Map<String, GrowthAnchorDTO>> anchorsByEntity = new ConcurrentHashMap<>();
@@ -39,6 +45,8 @@ public class GrowthAnchorService {
     private final List<GrowthAnchorDTO> allAnchors = new ArrayList<>();
     /** Yahoo normalized industry/sector -> Damodaran entity key. */
     private final Map<String, String> yahooToEntity = new ConcurrentHashMap<>();
+    /** Yahoo normalized industry/sector -> preferred growth-anchor region. */
+    private final Map<String, String> yahooToRegion = new ConcurrentHashMap<>();
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -102,12 +110,19 @@ public class GrowthAnchorService {
                     continue;
                 }
                 String yahooIndustry = normalizeKey(str(rec.get("yahoo_industry")));
+                String mappedRegion = normalizeRegionLabel(str(rec.get("region")));
                 if (yahooIndustry != null && !yahooIndustry.isBlank()) {
                     yahooToEntity.put(yahooIndustry, entity);
+                    if (mappedRegion != null && !mappedRegion.isBlank()) {
+                        yahooToRegion.put(yahooIndustry, mappedRegion);
+                    }
                 }
                 String yahooSector = normalizeKey(str(rec.get("yahoo_sector")));
                 if (yahooSector != null && !yahooSector.isBlank()) {
                     yahooToEntity.putIfAbsent(yahooSector, entity);
+                    if (mappedRegion != null && !mappedRegion.isBlank()) {
+                        yahooToRegion.putIfAbsent(yahooSector, mappedRegion);
+                    }
                 }
             }
             log.info("[GrowthAnchor] Loaded {} yahoo->entity mapping keys", yahooToEntity.size());
@@ -131,18 +146,21 @@ public class GrowthAnchorService {
         if (regionMap == null || regionMap.isEmpty()) {
             return Optional.empty();
         }
-        if (region != null && !region.isBlank()) {
-            GrowthAnchorDTO dto = regionMap.get(region.toLowerCase());
+        for (String regionCandidate : candidateRegionKeys(region)) {
+            GrowthAnchorDTO dto = regionMap.get(regionCandidate);
             if (dto != null) {
                 return Optional.of(dto);
             }
         }
-        // Fallback: return the first (or "United States" if available)
-        GrowthAnchorDTO us = regionMap.get("united states");
-        if (us != null)
-            return Optional.of(us);
 
-        return regionMap.values().stream().findFirst();
+        for (String fallbackRegion : REGION_FALLBACK_ORDER) {
+            GrowthAnchorDTO dto = regionMap.get(fallbackRegion);
+            if (dto != null) {
+                return Optional.of(dto);
+            }
+        }
+
+        return regionMap.values().stream().max(Comparator.comparingInt(GrowthAnchorService::yearOrZero));
     }
 
     /**
@@ -159,13 +177,18 @@ public class GrowthAnchorService {
         }
         String normalized = normalizeKey(yahooIndustry);
         String mappedEntity = yahooToEntity.get(normalized);
+        String mappedRegion = yahooToRegion.get(normalized);
+        String resolvedRegion = normalizeRegionLabel(region);
+        if ((resolvedRegion == null || resolvedRegion.isBlank()) && mappedRegion != null && !mappedRegion.isBlank()) {
+            resolvedRegion = mappedRegion;
+        }
         if (mappedEntity != null && !mappedEntity.isBlank()) {
-            Optional<GrowthAnchorDTO> mapped = getAnchor(mappedEntity, region);
+            Optional<GrowthAnchorDTO> mapped = getAnchor(mappedEntity, resolvedRegion);
             if (mapped.isPresent()) {
                 return mapped;
             }
         }
-        return getAnchor(normalizeEntity(yahooIndustry), region);
+        return getAnchor(normalizeEntity(yahooIndustry), resolvedRegion);
     }
 
     /**
@@ -241,6 +264,34 @@ public class GrowthAnchorService {
         return normalizeKey(value);
     }
 
+    private static List<String> candidateRegionKeys(String region) {
+        String normalized = normalizeRegionLabel(region);
+        if (normalized == null || normalized.isBlank()) {
+            return List.of();
+        }
+        return List.of(normalized);
+    }
+
+    private static String normalizeRegionLabel(String region) {
+        if (region == null) {
+            return null;
+        }
+        String normalized = region.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            return null;
+        }
+        return switch (normalized) {
+            case "us", "usa", "u.s.", "u.s.a.", "united states of america" -> "united states";
+            case "united states" -> "united states";
+            case "europe" -> "europe";
+            case "emerging", "emerging market" -> "emerging markets";
+            case "emerging markets" -> "emerging markets";
+            case "global", "world", "worldwide" -> "global";
+            case "japan" -> "japan";
+            default -> null;
+        };
+    }
+
     private static Double dbl(Object val) {
         if (val == null)
             return null;
@@ -281,5 +332,9 @@ public class GrowthAnchorService {
             return true;
         }
         return candidateYear >= existingYear;
+    }
+
+    private static int yearOrZero(GrowthAnchorDTO dto) {
+        return dto != null && dto.getYear() != null ? dto.getYear() : 0;
     }
 }

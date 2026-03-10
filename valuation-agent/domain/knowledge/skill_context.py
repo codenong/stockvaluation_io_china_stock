@@ -102,7 +102,7 @@ def _lookup_growth_skill(entity: str, region: str = "", year: int = 2026) -> Dic
             return snapshots[key]
 
     # Try any region
-    for r in ["united_states", "europe", "emerging_markets", "global", "japan"]:
+    for r in ["global", "united_states", "europe", "emerging_markets", "japan"]:
         key = f"industry_skill_{year}_{r}_{entity_slug}"
         if key in snapshots:
             return snapshots[key]
@@ -158,6 +158,15 @@ def _safe_float(value: Any) -> float | None:
         if value is None:
             return None
         return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_int(value: Any) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(value)
     except (TypeError, ValueError):
         return None
 
@@ -285,6 +294,30 @@ def _standardize_growth_skill(raw: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+def _prefer_growth_skill(
+    override_growth_skill: Dict[str, Any],
+    lookup_growth_skill: Dict[str, Any],
+) -> Dict[str, Any]:
+    if lookup_growth_skill and not override_growth_skill:
+        return lookup_growth_skill
+    if override_growth_skill and not lookup_growth_skill:
+        return override_growth_skill
+    if not override_growth_skill and not lookup_growth_skill:
+        return {}
+
+    override_year = _safe_int(override_growth_skill.get("year"))
+    lookup_year = _safe_int(lookup_growth_skill.get("year"))
+    if lookup_year is not None and (override_year is None or lookup_year > override_year):
+        return lookup_growth_skill
+
+    override_region = str(override_growth_skill.get("region") or "").strip()
+    lookup_region = str(lookup_growth_skill.get("region") or "").strip()
+    if lookup_region and not override_region:
+        return lookup_growth_skill
+
+    return override_growth_skill
+
+
 # ---------------------------------------------------------------------------
 # Main bundle builder
 # ---------------------------------------------------------------------------
@@ -306,11 +339,13 @@ def build_skill_bundle(
         NARRATIVE_INDUSTRY_CONTEXTS["default"],
     )
 
-    # Resolve growth skill from valuation-service override first, then fallback lookup.
-    growth_skill = _standardize_growth_skill(growth_skill_override or {})
-    if not growth_skill:
-        entity_for_growth = _lookup_entity_for_yahoo_industry(yahoo_industry or industry)
-        growth_skill = _standardize_growth_skill(_lookup_growth_skill(entity_for_growth, region))
+    override_growth_skill = _standardize_growth_skill(growth_skill_override or {})
+    entity_for_growth = (
+        str(override_growth_skill.get("entity") or "").strip()
+        or _lookup_entity_for_yahoo_industry(yahoo_industry or industry)
+    )
+    lookup_growth_skill = _standardize_growth_skill(_lookup_growth_skill(entity_for_growth, region))
+    growth_skill = _prefer_growth_skill(override_growth_skill, lookup_growth_skill)
     has_growth_skill = bool(growth_skill and growth_skill.get("entity"))
 
     bundle: Dict[str, Any] = {

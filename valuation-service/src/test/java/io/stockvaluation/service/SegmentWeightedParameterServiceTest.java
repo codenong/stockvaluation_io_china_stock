@@ -2,6 +2,8 @@ package io.stockvaluation.service;
 
 import io.stockvaluation.domain.SectorMapping;
 import io.stockvaluation.domain.IndustryAveragesUS;
+import io.stockvaluation.domain.IndustryAveragesGlobal;
+import io.stockvaluation.domain.InputStatDistribution;
 import io.stockvaluation.dto.BasicInfoDataDTO;
 import io.stockvaluation.dto.CompanyDataDTO;
 import io.stockvaluation.dto.CompanyDriveDataDTO;
@@ -23,10 +25,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class SegmentWeightedParameterServiceTest {
@@ -190,6 +194,148 @@ class SegmentWeightedParameterServiceTest {
         assertEquals(12.5, sectorB.getCompoundAnnualGrowth2_5(), 0.0001);
         assertEquals(36.0, sectorA.getTargetPreTaxOperatingMargin(), 0.0001);
         assertEquals(36.0, sectorB.getTargetPreTaxOperatingMargin(), 0.0001);
+    }
+
+    @Test
+    void validateAndApplySectorOverridesCoverPrivateBranches() {
+        SegmentResponseDTO segments = new SegmentResponseDTO(List.of(
+                new SegmentResponseDTO.Segment("software", "tech", List.of("core"), 0.8, 0.6, 0.2),
+                new SegmentResponseDTO.Segment("hardware", "tech", List.of("device"), 0.8, 0.4, 0.2)
+        ));
+        List<SectorParameterOverride> overrides = List.of(
+                new SectorParameterOverride("software", "revenue_growth", 15.0, "absolute", null),
+                new SectorParameterOverride("software", "operating_margin", 3.0, "relative_additive", "both"),
+                new SectorParameterOverride("hardware", "sales_to_capital", 10.0, "relative_multiplier", "years_6_to_10"),
+                new SectorParameterOverride("hardware", "unknown", 10.0, "absolute", "both"),
+                new SectorParameterOverride("", "revenue_growth", 10.0, "absolute", "both"),
+                new SectorParameterOverride("missing", "revenue_growth", 10.0, "absolute", "both"));
+
+        @SuppressWarnings("unchecked")
+        List<SectorParameterOverride> validated = (List<SectorParameterOverride>) ReflectionTestUtils.invokeMethod(
+                service, "validateSectorOverrides", overrides, segments);
+
+        assertEquals(3, validated.size());
+        assertEquals("both", validated.get(0).getTimeframe());
+
+        SegmentWeightedParameters.SectorParameters sectorParams = new SegmentWeightedParameters.SectorParameters();
+        sectorParams.setSectorName("software");
+        sectorParams.setRevenueNextYear(5.0);
+        sectorParams.setCompoundAnnualGrowth2_5(6.0);
+        sectorParams.setOperatingMarginNextYear(20.0);
+        sectorParams.setTargetPreTaxOperatingMargin(22.0);
+        sectorParams.setSalesToCapitalYears1To5(2.0);
+        sectorParams.setSalesToCapitalYears6To10(2.5);
+
+        ReflectionTestUtils.invokeMethod(service, "applySectorOverrides", validated, sectorParams, "software");
+        assertEquals(15.0, sectorParams.getRevenueNextYear());
+        assertEquals(15.0, sectorParams.getCompoundAnnualGrowth2_5());
+        assertEquals(23.0, sectorParams.getOperatingMarginNextYear());
+        assertEquals(25.0, sectorParams.getTargetPreTaxOperatingMargin());
+    }
+
+    @Test
+    void applySegmentWeightedParameters_usesGlobalIndustryAndInputStatData() {
+        FinancialDataInput input = baselineInput();
+        input.setSegments(new SegmentResponseDTO(List.of(
+                new SegmentResponseDTO.Segment("sector-a", "tech", List.of("A"), 0.9, 0.6, 0.2),
+                new SegmentResponseDTO.Segment("sector-b", "tech", List.of("B"), 0.9, 0.4, 0.2)
+        )));
+
+        when(sectorMappingRepository.findByIndustryName("sector-a"))
+                .thenReturn(new SectorMapping(1L, "yahoo-a", "sector-a", "Industry A"));
+        when(sectorMappingRepository.findByIndustryName("sector-b"))
+                .thenReturn(new SectorMapping(2L, "yahoo-b", "sector-b", "Industry B"));
+
+        IndustryAveragesGlobal industryA = new IndustryAveragesGlobal();
+        industryA.setAnnualAverageRevenueGrowth(12.0);
+        industryA.setPreTaxOperatingMargin(22.0);
+        industryA.setSalesToCapital(3.0);
+        industryA.setCostOfCapital(0.09);
+        IndustryAveragesGlobal industryB = new IndustryAveragesGlobal();
+        industryB.setAnnualAverageRevenueGrowth(6.0);
+        industryB.setPreTaxOperatingMargin(18.0);
+        industryB.setSalesToCapital(2.5);
+        industryB.setCostOfCapital(0.08);
+        when(industryAvgGloRepository.findByIndustryName("Industry A")).thenReturn(industryA);
+        when(industryAvgGloRepository.findByIndustryName("Industry B")).thenReturn(industryB);
+
+        InputStatDistribution stats = new InputStatDistribution();
+        stats.setPreTaxOperatingMarginFirstQuartile(10.0);
+        stats.setPreTaxOperatingMarginMedian(15.0);
+        stats.setPreTaxOperatingMarginThirdQuartile(20.0);
+        stats.setSalesToInvestedCapitalThirdQuartile(4.0);
+        when(inputStatRepository.findFirstByIndustryGroupOrderByIdAsc(anyString())).thenReturn(Optional.of(stats));
+
+        service.applySegmentWeightedParameters(input, companyData("Sweden"), List.of(), 0.04);
+
+        SegmentWeightedParameters context = SegmentParameterContext.getParameters();
+        assertNotNull(context);
+        assertEquals(2, context.getSegmentCount());
+        assertEquals(Set.of("sector-a", "sector-b"), context.getSectorNames());
+        assertTrue(context.getWeightedInitialCostCapital() > 0);
+        assertTrue(context.getSectorParameters("sector-a").getTerminalGrowthRate() > 0);
+    }
+
+    @Test
+    void staticHelpersRecomputeWeightedAveragesAndRespectTopLevelOverrides() {
+        assertEquals(0.5, ReflectionTestUtils.invokeMethod(service, "convertPercentage", 50.0));
+        assertEquals(5.0, ReflectionTestUtils.invokeMethod(service, "coalesce", null, 5.0));
+        assertEquals(10.0, ReflectionTestUtils.invokeMethod(service, "asPercent", 0.10));
+        assertEquals(2.2, ReflectionTestUtils.invokeMethod(service, "asSalesToCapitalRatio", 220.0));
+        assertEquals(4.0, ReflectionTestUtils.invokeMethod(service, "reAdjustSalesToCapitalFirstPhases", 8.0, 3.0));
+
+        SegmentWeightedParameters segmentParams = new SegmentWeightedParameters();
+        SegmentWeightedParameters.SectorParameters software = new SegmentWeightedParameters.SectorParameters();
+        software.setSectorName("software");
+        software.setRevenueShare(0.6);
+        software.setRevenueNextYear(10.0);
+        software.setCompoundAnnualGrowth2_5(12.0);
+        software.setOperatingMarginNextYear(20.0);
+        software.setTargetPreTaxOperatingMargin(25.0);
+        software.setSalesToCapitalYears1To5(3.0);
+        software.setSalesToCapitalYears6To10(2.5);
+        software.setInitialCostCapital(8.0);
+        SegmentWeightedParameters.SectorParameters hardware = new SegmentWeightedParameters.SectorParameters();
+        hardware.setSectorName("hardware");
+        hardware.setRevenueShare(0.4);
+        hardware.setRevenueNextYear(6.0);
+        hardware.setCompoundAnnualGrowth2_5(8.0);
+        hardware.setOperatingMarginNextYear(18.0);
+        hardware.setTargetPreTaxOperatingMargin(20.0);
+        hardware.setSalesToCapitalYears1To5(2.0);
+        hardware.setSalesToCapitalYears6To10(1.8);
+        hardware.setInitialCostCapital(7.0);
+        segmentParams.setSectorParameters("software", software);
+        segmentParams.setSectorParameters("hardware", hardware);
+
+        ReflectionTestUtils.invokeMethod(service, "recomputeWeightedFromSectorParameters", segmentParams);
+        assertEquals(8.4, segmentParams.getWeightedRevenueNextYear(), 1e-9);
+        assertEquals(10.4, segmentParams.getWeightedCompoundAnnualGrowth2_5(), 1e-9);
+
+        FinancialDataInput overrides = baselineInput();
+        overrides.setRevenueNextYear(15.0);
+        overrides.setCompoundAnnualGrowth2_5(16.0);
+        overrides.setOperatingMarginNextYear(30.0);
+        overrides.setTargetPreTaxOperatingMargin(32.0);
+        overrides.setSalesToCapitalYears1To5(4.0);
+        overrides.setSalesToCapitalYears6To10(3.5);
+        overrides.setInitialCostCapital(9.5);
+
+        ReflectionTestUtils.invokeMethod(service, "applyTopLevelOverridesToSector",
+                software,
+                overrides,
+                Set.of("revenueNextYear", "compoundAnnualGrowth2_5", "operatingMarginNextYear",
+                        "targetPreTaxOperatingMargin", "salesToCapitalYears1To5", "salesToCapitalYears6To10",
+                        "initialCostCapital"),
+                List.of());
+
+        assertEquals(15.0, software.getRevenueNextYear());
+        assertEquals(16.0, software.getCompoundAnnualGrowth2_5());
+        assertEquals(30.0, software.getOperatingMarginNextYear());
+        assertEquals(32.0, software.getTargetPreTaxOperatingMargin());
+        assertEquals(4.0, software.getSalesToCapitalYears1To5());
+        assertEquals(3.5, software.getSalesToCapitalYears6To10());
+        assertEquals(9.5, software.getInitialCostCapital());
     }
 
     private static FinancialDataInput baselineInput() {
