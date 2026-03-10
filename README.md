@@ -17,11 +17,6 @@ curl -fsSL https://raw.githubusercontent.com/stockvaluation-io/stockvaluation_io
 
 > **Note:** The script will check prerequisites, download the project if needed, bootstrap local secrets, and interactively prompt for your API keys. It supports **Anthropic, OpenAI, Gemini, Groq, and OpenRouter** for LLM access, plus **`TAVILY_API_KEY`** and **`CURRENCY_API_KEY`** before starting up the containers.
 
-It now also handles the common first-run friction points for non-technical users:
-- Detects whether Docker is installed and offers to install it for macOS or Linux.
-- Works even when run as `curl ... | bash` by reading prompts from your terminal instead of stdin.
-- Opens the Tavily and CurrencyBeacon setup pages for you when those keys are missing.
-
 Need these APIs?
 
 - **Tavily (Web Search):** Create a free account at [tavily.com](https://tavily.com)
@@ -39,34 +34,6 @@ Need these APIs?
 | `valuation-agent` | Orchestration/research API | `http://localhost:5001` |
 | `bullbeargpt` | Notebook/chat API | `http://localhost:5002` |
 | `postgres` | Local persistence | `localhost:4322` |
-
-## Core API Flow
-
-Main entrypoint:
-
-- `POST /api-s/valuate` with `{ "ticker": "AAPL" }`
-
-Pipeline:
-
-1. Segment mapping
-2. Research/evidence retrieval
-3. Baseline valuation run
-4. Assumption override generation
-5. Recalculation with overrides
-6. Narrative assembly
-7. Merged response returned to UI
-
-
-## Troubleshooting
-
-- `403`/CORS issues:
-  - Verify `CORS_ORIGINS`, then restart `bullbeargpt`.
-- Missing env variable error:
-  - Fill required keys in `.env`, rerun compose.
-- Valuation timeouts:
-  - Increase `VALUATION_SERVICE_TIMEOUT_SECONDS`.
-- Weak AI output:
-  - Check LLM key validity, quota, and billing.
 
 ## Security
 
