@@ -29,6 +29,8 @@ Need these APIs?
 <a href="https://video.golpoai.com/share/34af4546-fb30-49cb-a956-0f59d985382a" target="_blank" rel="noopener noreferrer">Watch the product video</a>
 
 
+![StockValuation.io Automated DCF Analysis](./assets/StockValuation-io-—-Automated-DCF-Analysis-03-05-2026_02_04_PM.png)
+
 ## What Runs Locally
 
 | Service | Purpose | Local URL |
