@@ -1416,6 +1416,12 @@ class StockValuationApp:
         operating_margin = self._average_percent_window(margin_values, 2, 5)
         if operating_margin is None:
             operating_margin = requested_operating_margin
+        target_operating_margin = self._normalize_percent_output(
+            self._safe_number(existing_operating.get("targetOperatingMargin"))
+            or self._last_projection_value(margin_values)
+            or self._last_numeric(margin_values)
+            or operating_margin
+        )
         operating_margin_next_year = self._normalize_percent_output(
             self._safe_number(existing_operating.get("operatingMarginNextYear"))
             or self._projection_value(margin_values, 1)
@@ -1523,7 +1529,7 @@ class StockValuationApp:
             "operatingAssumptions": {
                 "revenueGrowthRateYears2To5": revenue_growth,
                 "operatingMarginNextYear": operating_margin_next_year,
-                "targetOperatingMargin": operating_margin,
+                "targetOperatingMargin": target_operating_margin,
                 "convergenceYearMargin": convergence_year_margin,
                 "salesToCapitalYears1To5": sales_to_capital_1_5,
                 "salesToCapitalYears6To10": sales_to_capital_6_10,

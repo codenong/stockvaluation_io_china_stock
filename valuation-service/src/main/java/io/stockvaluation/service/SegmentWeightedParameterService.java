@@ -440,7 +440,6 @@ public class SegmentWeightedParameterService {
                                 inputStatDist.get().getPreTaxOperatingMarginThirdQuartile(),
                                 operatingMarginNextYear * 100,
                                 avgPreTaxOperatingMargin));
-                segmentTargetMargin = Math.max(segmentTargetMargin, targetPreTaxOperatingMargin / 100);
             } else {
                 segmentTargetMargin = targetPreTaxOperatingMargin / 100;
             }
@@ -628,7 +627,6 @@ public class SegmentWeightedParameterService {
                                 inputStatDist.get().getPreTaxOperatingMarginThirdQuartile(),
                                 operatingMarginNextYear * 100,
                                 avgPreTaxOperatingMargin));
-                segmentTargetMargin = Math.max(segmentTargetMargin, targetPreTaxOperatingMargin / 100);
             } else {
                 segmentTargetMargin = targetPreTaxOperatingMargin / 100;
             }
@@ -851,10 +849,6 @@ public class SegmentWeightedParameterService {
             if (adjustedParameterSet.contains("operatingMarginNextYear")
                     && financialDataInput.getOperatingMarginNextYear() != null) {
                 sectorParams.setOperatingMarginNextYear(financialDataInput.getOperatingMarginNextYear());
-            }
-            if (adjustedParameterSet.contains("targetPreTaxOperatingMargin")
-                    && financialDataInput.getTargetPreTaxOperatingMargin() != null) {
-                sectorParams.setTargetPreTaxOperatingMargin(financialDataInput.getTargetPreTaxOperatingMargin());
             }
             if (adjustedParameterSet.contains("convergenceYearMargin")
                     && financialDataInput.getConvergenceYearMargin() != null) {

@@ -214,7 +214,7 @@ def test_assumption_transparency_uses_effective_final_values_when_segment_weight
         dcf={
             "financialDTO": {
                 "revenueGrowthRate": [None, 8.0, 6.0, 6.0, 6.0, 6.0, 5.0],
-                "ebitOperatingMargin": [30.0, 30.0, 24.0, 24.0, 24.0, 24.0, 24.0],
+                "ebitOperatingMargin": [30.0, 30.0, 26.0, 24.0, 22.0, 20.0, 20.0],
                 "salesToCapitalRatio": [None, 2.0, 2.0, 2.0, 2.0, 2.0, 1.8, 1.8, 1.8, 1.8, 1.8],
                 "costOfCapital": [9.1, 9.0, 8.9],
             },
@@ -233,7 +233,7 @@ def test_assumption_transparency_uses_effective_final_values_when_segment_weight
 
     # Effective values come from final FCFF arrays, not requested override values.
     assert transparency["operatingAssumptions"]["revenueGrowthRateYears2To5"] == 6.0
-    assert transparency["operatingAssumptions"]["targetOperatingMargin"] == 24.0
+    assert transparency["operatingAssumptions"]["targetOperatingMargin"] == 20.0
     assert transparency["operatingAssumptions"]["salesToCapitalYears1To5"] == 2.0
     assert "requested 12.50%" in (transparency["operatingAssumptions"]["revenueGrowthSource"] or "")
     assert "sector override(s) included" in (transparency["operatingAssumptions"]["operatingMarginSource"] or "")

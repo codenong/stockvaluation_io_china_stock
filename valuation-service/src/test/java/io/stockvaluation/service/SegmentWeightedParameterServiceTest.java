@@ -197,6 +197,48 @@ class SegmentWeightedParameterServiceTest {
     }
 
     @Test
+    void applySegmentWeightedParameters_withIndustryData_doesNotFloorSectorTargetMarginsToCompanyOverride() {
+        FinancialDataInput input = baselineInput();
+        input.setOperatingMarginNextYear(36.0);
+        input.setTargetPreTaxOperatingMargin(36.0);
+        input.setSegments(new SegmentResponseDTO(List.of(
+                new SegmentResponseDTO.Segment("sector-a", "tech", List.of("A"), 0.9, 0.6, 0.2),
+                new SegmentResponseDTO.Segment("sector-b", "tech", List.of("B"), 0.9, 0.4, 0.2)
+        )));
+
+        when(sectorMappingRepository.findByIndustryName("sector-a"))
+                .thenReturn(new SectorMapping(1L, "yahoo-a", "sector-a", "Industry A"));
+        when(sectorMappingRepository.findByIndustryName("sector-b"))
+                .thenReturn(new SectorMapping(2L, "yahoo-b", "sector-b", "Industry B"));
+
+        IndustryAveragesUS industry = new IndustryAveragesUS();
+        industry.setAnnualAverageRevenueGrowth(12.0);
+        industry.setPreTaxOperatingMargin(22.0);
+        industry.setSalesToCapital(3.0);
+        industry.setCostOfCapital(0.10);
+        when(industryAvgUSRepository.findByIndustryName(anyString())).thenReturn(industry);
+
+        InputStatDistribution stats = new InputStatDistribution();
+        stats.setPreTaxOperatingMarginFirstQuartile(10.0);
+        stats.setPreTaxOperatingMarginMedian(15.0);
+        stats.setPreTaxOperatingMarginThirdQuartile(20.0);
+        stats.setSalesToInvestedCapitalThirdQuartile(4.0);
+        when(inputStatRepository.findFirstByIndustryGroupOrderByIdAsc(anyString())).thenReturn(Optional.of(stats));
+
+        service.applySegmentWeightedParameters(
+                input,
+                companyData("United States"),
+                List.of("operatingMarginNextYear", "targetPreTaxOperatingMargin"),
+                0.04);
+
+        SegmentWeightedParameters context = SegmentParameterContext.getParameters();
+        assertNotNull(context);
+        assertEquals(31.2, input.getTargetPreTaxOperatingMargin(), 0.0001);
+        assertEquals(31.2, context.getSectorParameters("sector-a").getTargetPreTaxOperatingMargin(), 0.0001);
+        assertEquals(31.2, context.getSectorParameters("sector-b").getTargetPreTaxOperatingMargin(), 0.0001);
+    }
+
+    @Test
     void validateAndApplySectorOverridesCoverPrivateBranches() {
         SegmentResponseDTO segments = new SegmentResponseDTO(List.of(
                 new SegmentResponseDTO.Segment("software", "tech", List.of("core"), 0.8, 0.6, 0.2),
@@ -331,7 +373,7 @@ class SegmentWeightedParameterServiceTest {
         assertEquals(15.0, software.getRevenueNextYear());
         assertEquals(16.0, software.getCompoundAnnualGrowth2_5());
         assertEquals(30.0, software.getOperatingMarginNextYear());
-        assertEquals(32.0, software.getTargetPreTaxOperatingMargin());
+        assertEquals(25.0, software.getTargetPreTaxOperatingMargin());
         assertEquals(4.0, software.getSalesToCapitalYears1To5());
         assertEquals(3.5, software.getSalesToCapitalYears6To10());
         assertEquals(9.5, software.getInitialCostCapital());
