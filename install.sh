@@ -680,16 +680,36 @@ configure_llm_keys() {
       return
     fi
   elif ! has_prompt_source; then
-    ui_warn "No LLM key found and no interactive prompt is available. Continuing without AI features."
-    return
-  elif ! confirm "Would you like to add an LLM key now?" "y"; then
-    if ! confirm "Continue without an LLM key? AI analysis and chat will stay unavailable until you add one." "n"; then
-      configure_llm_keys
-    fi
-    return
+    ui_error "At least one LLM API key is required, and no interactive prompt is available."
+    ui_error "Set one of ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY and rerun the installer."
+    exit 1
   fi
 
+  ui_info "At least one LLM API key is required to finish setup."
+
+  while ! has_any_llm_key; do
+    provider_data="$(prompt_for_llm_provider)"
+    provider_name="${provider_data%%|*}"
+    provider_data="${provider_data#*|}"
+    env_key="${provider_data%%|*}"
+    display_name="${provider_data#*|}"
+
+    api_key="$(read_secret_prompt "Paste your ${display_name} API key")"
+    if [[ -z "$api_key" ]]; then
+      ui_warn "An LLM API key is required to finish setup."
+      continue
+    fi
+
+    set_env_value "$env_key" "$api_key"
+    set_env_value "DEFAULT_LLM_PROVIDER" "$provider_name"
+    ui_success "Saved ${env_key} and set DEFAULT_LLM_PROVIDER=${provider_name}"
+  done
+
   while true; do
+    if ! confirm "Would you like to add or update another LLM key?" "n"; then
+      break
+    fi
+
     provider_data="$(prompt_for_llm_provider)"
     provider_name="${provider_data%%|*}"
     provider_data="${provider_data#*|}"
@@ -699,22 +719,13 @@ configure_llm_keys() {
     api_key="$(read_secret_prompt "Paste your ${display_name} API key")"
     if [[ -z "$api_key" ]]; then
       ui_warn "No key entered. Nothing was saved."
-    else
-      set_env_value "$env_key" "$api_key"
-      set_env_value "DEFAULT_LLM_PROVIDER" "$provider_name"
-      ui_success "Saved ${env_key} and set DEFAULT_LLM_PROVIDER=${provider_name}"
+      continue
     fi
 
-    if ! confirm "Would you like to add or update another LLM key?" "n"; then
-      break
-    fi
+    set_env_value "$env_key" "$api_key"
+    set_env_value "DEFAULT_LLM_PROVIDER" "$provider_name"
+    ui_success "Saved ${env_key} and set DEFAULT_LLM_PROVIDER=${provider_name}"
   done
-
-  if ! has_any_llm_key; then
-    if ! confirm "Continue without an LLM key? AI analysis and chat will stay unavailable until you add one." "n"; then
-      configure_llm_keys
-    fi
-  fi
 }
 
 configure_tavily_key() {
@@ -726,26 +737,23 @@ configure_tavily_key() {
   fi
 
   if ! has_prompt_source; then
-    ui_warn "No Tavily key found and no interactive prompt is available. Continuing without Tavily."
-    return
+    ui_error "TAVILY_API_KEY is required, and no interactive prompt is available."
+    ui_error "Set TAVILY_API_KEY in your environment or in $ENV_FILE and rerun the installer."
+    exit 1
   fi
 
-  ui_info "Tavily powers live web research in the agent."
+  ui_info "Tavily powers live web research in the agent and is required to finish setup."
   offer_open_url "Tavily" "$TAVILY_DASHBOARD_URL"
 
-  api_key="$(read_secret_prompt "Paste your Tavily API key (leave blank to skip for now)")"
-  if [[ -n "$api_key" ]]; then
-    set_env_value "TAVILY_API_KEY" "$api_key"
-    ui_success "Saved TAVILY_API_KEY"
-    return
-  fi
-
-  if confirm "Continue without Tavily? Live web-backed research will be limited until you add it." "y"; then
-    ui_warn "Skipping Tavily for now."
-    return
-  fi
-
-  configure_tavily_key
+  while true; do
+    api_key="$(read_secret_prompt "Paste your Tavily API key")"
+    if [[ -n "$api_key" ]]; then
+      set_env_value "TAVILY_API_KEY" "$api_key"
+      ui_success "Saved TAVILY_API_KEY"
+      return
+    fi
+    ui_warn "TAVILY_API_KEY is required to finish setup."
+  done
 }
 
 configure_currency_key() {
