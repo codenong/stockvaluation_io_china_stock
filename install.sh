@@ -644,6 +644,46 @@ has_any_llm_key() {
   return 1
 }
 
+get_first_configured_llm_provider() {
+  local provider_name
+  local env_key
+  local provider_spec
+
+  for provider_spec in \
+    "claude|ANTHROPIC_API_KEY" \
+    "openai|OPENAI_API_KEY" \
+    "gemini|GEMINI_API_KEY" \
+    "groq|GROQ_API_KEY" \
+    "openrouter|OPENROUTER_API_KEY"; do
+    provider_name="${provider_spec%%|*}"
+    env_key="${provider_spec#*|}"
+    if env_value_is_set "$env_key"; then
+      echo "$provider_name"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+ensure_default_llm_provider() {
+  local default_provider
+  local inferred_provider
+
+  default_provider="$(read_env_value "DEFAULT_LLM_PROVIDER")"
+  if [[ -n "${default_provider//[[:space:]]/}" ]]; then
+    return
+  fi
+
+  inferred_provider="$(get_first_configured_llm_provider || true)"
+  if [[ -z "$inferred_provider" ]]; then
+    return
+  fi
+
+  set_env_value "DEFAULT_LLM_PROVIDER" "$inferred_provider"
+  ui_success "Set DEFAULT_LLM_PROVIDER=${inferred_provider} from the first configured LLM key."
+}
+
 prompt_for_llm_provider() {
   local choice
 
@@ -676,6 +716,7 @@ configure_llm_keys() {
 
   if has_any_llm_key; then
     ui_success "At least one LLM key is already configured."
+    ensure_default_llm_provider
     if ! confirm "Would you like to add or update another LLM key?" "n"; then
       return
     fi
@@ -799,10 +840,14 @@ print_success_summary() {
   printf "%b%s%b\n" "$GREEN" "   Setup complete" "$NC"
   ui_line
   echo "Project folder: $PROJECT_DIR"
+  echo "Environment file: $ENV_FILE"
   echo "Frontend:        http://localhost:4200"
   echo "Valuation API:   http://localhost:8081"
   echo "Agent API:       http://localhost:5001"
   echo "Chat API:        http://localhost:5002"
+  echo
+  echo "If AI narrative or live search do not appear, verify DEFAULT_LLM_PROVIDER,"
+  echo "your LLM key, TAVILY_API_KEY, and CURRENCY_API_KEY in $ENV_FILE."
   echo
   echo "To stop everything later:"
   echo "  cd \"$PROJECT_DIR\" && ${COMPOSE_CMD[*]} -f docker-compose.local.yml down"
