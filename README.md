@@ -1,5 +1,7 @@
 # StockValuation.io
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/softcane/spot-vortex-agent)
+
 StockValuation.io is a local-first DCF valuation workspace that runs fully on your machine, with structured research and narrative output layered on top of core valuation calculations.
 
 > **Warning: This project is for educational use and is not financial advice.**
@@ -21,6 +23,10 @@ Need these APIs?
 
 - **Tavily (Web Search):** Create a free account at [tavily.com](https://tavily.com)
 - **CurrencyBeacon (FX Rates):** Create a free account at [currencybeacon.com](https://currencybeacon.com)
+
+## Product Video
+
+[Watch the product video](https://golpo-podcast-inputs.s3.amazonaws.com/files/3a92bf82-998d-432e-8297-8ec22343c726.mp4?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAZ3MGNKK4PFXK67XK%2F20260313%2Fus-east-2%2Fs3%2Faws4_request&X-Amz-Date=20260313T084056Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=75c284dccbaf5e405f6d9c07bcefc25a55c5c5f2f91557521a56327c78646b21)
 
 ![StockValuation.io Automated DCF Analysis](./assets/StockValuation-io-—-Automated-DCF-Analysis-03-05-2026_02_04_PM.png)
 
