@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import sqlite3
+import threading
 import uuid
 from contextlib import contextmanager
 from datetime import datetime
@@ -27,9 +28,9 @@ def _get_db_path() -> str:
 def _get_conn():
     """Context manager for SQLite connection with WAL mode for concurrency."""
     db_path = _get_db_path()
-    conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn = sqlite3.connect(db_path, check_same_thread=False, timeout=30.0)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("PRAGMA foreign_keys=ON")
     try:
         yield conn
@@ -44,6 +45,8 @@ def _get_conn():
 def _init_db():
     """Create tables if they don't exist."""
     with _get_conn() as conn:
+        # Enable WAL once during DB initialization instead of on every connection.
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
@@ -53,6 +56,8 @@ def _init_db():
                 valuation_id TEXT,
                 currency TEXT,
                 base_analysis_json TEXT,
+                valuation_input_json TEXT,
+                valuation_output_json TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -99,9 +104,24 @@ def _init_db():
                 cells_snapshot TEXT NOT NULL,
                 scenarios_snapshot TEXT,
                 dcf_snapshot TEXT,
+                preview_json TEXT,
                 valuation_id TEXT,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS tool_plans (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                cell_id TEXT NOT NULL,
+                tool_name TEXT NOT NULL,
+                tool_input_json TEXT,
+                plan_text TEXT,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+                FOREIGN KEY (cell_id) REFERENCES cells(id) ON DELETE CASCADE
             );
 
             CREATE INDEX IF NOT EXISTS idx_cells_session_id ON cells(session_id);
@@ -109,6 +129,7 @@ def _init_db():
             CREATE INDEX IF NOT EXISTS idx_scenarios_session_id ON scenarios(session_id);
             CREATE INDEX IF NOT EXISTS idx_theses_user_id ON theses(user_id);
             CREATE INDEX IF NOT EXISTS idx_theses_ticker ON theses(ticker);
+            CREATE INDEX IF NOT EXISTS idx_tool_plans_session_status ON tool_plans(session_id, status, created_at);
         """)
 
         # Lightweight schema migrations for existing local DB files.
@@ -124,6 +145,8 @@ def _init_db():
         ensure_column("sessions", "valuation_id", "valuation_id TEXT")
         ensure_column("sessions", "currency", "currency TEXT")
         ensure_column("sessions", "base_analysis_json", "base_analysis_json TEXT")
+        ensure_column("sessions", "valuation_input_json", "valuation_input_json TEXT")
+        ensure_column("sessions", "valuation_output_json", "valuation_output_json TEXT")
 
         ensure_column("cells", "sequence_number", "sequence_number INTEGER")
         ensure_column("cells", "cell_type", "cell_type TEXT DEFAULT 'reasoning'")
@@ -147,7 +170,14 @@ def _init_db():
 
         ensure_column("theses", "scenarios_snapshot", "scenarios_snapshot TEXT")
         ensure_column("theses", "dcf_snapshot", "dcf_snapshot TEXT")
+        ensure_column("theses", "preview_json", "preview_json TEXT")
         ensure_column("theses", "valuation_id", "valuation_id TEXT")
+
+        ensure_column("tool_plans", "tool_input_json", "tool_input_json TEXT")
+        ensure_column("tool_plans", "plan_text", "plan_text TEXT")
+        ensure_column("tool_plans", "status", "status TEXT")
+        ensure_column("tool_plans", "created_at", "created_at TEXT")
+        ensure_column("tool_plans", "updated_at", "updated_at TEXT")
 
         # Enforce one thesis per notebook session for local-first behavior.
         # For older DBs that may contain duplicates, keep only the newest row.
@@ -204,6 +234,8 @@ class NotebookService:
         company_name: Optional[str] = None,
         user_id: Optional[str] = None,
         valuation_data: Optional[Dict[str, Any]] = None,
+        valuation_input_json: Optional[Dict[str, Any]] = None,
+        valuation_output_json: Optional[Dict[str, Any]] = None,
         currency: Optional[str] = None,
         valuation_id: Optional[str] = None,
         session_id: Optional[str] = None
@@ -228,6 +260,8 @@ class NotebookService:
             company_name=company_name,
             user_id=user_id or 'local',
             valuation_data=valuation_data,
+            valuation_input_json=valuation_input_json,
+            valuation_output_json=valuation_output_json,
             currency=currency,
             valuation_id=valuation_id,
             session_id=session_id
@@ -238,8 +272,8 @@ class NotebookService:
             conn.execute(
                 """INSERT OR IGNORE INTO sessions
                    (id, ticker, company_name, user_id, valuation_id, currency,
-                    base_analysis_json, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    base_analysis_json, valuation_input_json, valuation_output_json, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session.id,
                     ticker,
@@ -248,6 +282,8 @@ class NotebookService:
                     valuation_id,
                     currency,
                     json.dumps(valuation_data) if valuation_data else None,
+                    json.dumps(valuation_input_json) if valuation_input_json else None,
+                    json.dumps(valuation_output_json) if valuation_output_json else None,
                     now,
                     now,
                 )
@@ -299,12 +335,73 @@ class NotebookService:
         try:
             with _get_conn() as conn:
                 conn.execute(
-                    "UPDATE sessions SET updated_at = ?, company_name = ?, currency = ? WHERE id = ?",
-                    (now, session.company_name, getattr(session, 'currency', None), session.id)
+                    """
+                    UPDATE sessions
+                    SET updated_at = ?,
+                        company_name = ?,
+                        currency = ?,
+                        valuation_id = ?,
+                        base_analysis_json = ?,
+                        valuation_input_json = ?,
+                        valuation_output_json = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        now,
+                        session.company_name,
+                        getattr(session, 'currency', None),
+                        getattr(session, 'valuation_id', None),
+                        json.dumps(getattr(session, 'base_analysis_json', None)) if getattr(session, 'base_analysis_json', None) else None,
+                        json.dumps(getattr(session, 'valuation_input_json', None)) if getattr(session, 'valuation_input_json', None) else None,
+                        json.dumps(getattr(session, 'valuation_output_json', None)) if getattr(session, 'valuation_output_json', None) else None,
+                        session.id,
+                    )
                 )
             return True
         except Exception as e:
             logger.error(f"Failed to update session {session.id}: {e}")
+            return False
+
+    def update_session_valuation_context(
+        self,
+        session_id: str,
+        valuation_data: Dict[str, Any],
+        valuation_input_json: Optional[Dict[str, Any]],
+        valuation_output_json: Optional[Dict[str, Any]],
+        valuation_id: Optional[str] = None,
+        company_name: Optional[str] = None,
+        currency: Optional[str] = None,
+    ) -> bool:
+        """Update stored valuation context for an existing session."""
+        now = datetime.utcnow().isoformat()
+        try:
+            with _get_conn() as conn:
+                conn.execute(
+                    """
+                    UPDATE sessions
+                    SET updated_at = ?,
+                        company_name = COALESCE(?, company_name),
+                        currency = COALESCE(?, currency),
+                        valuation_id = COALESCE(?, valuation_id),
+                        base_analysis_json = ?,
+                        valuation_input_json = ?,
+                        valuation_output_json = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        now,
+                        company_name,
+                        currency,
+                        valuation_id,
+                        json.dumps(valuation_data or {}),
+                        json.dumps(valuation_input_json or {}),
+                        json.dumps(valuation_output_json or {}),
+                        session_id,
+                    ),
+                )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update valuation context for session {session_id}: {e}")
             return False
 
     def delete_session(self, session_id: str) -> bool:
@@ -542,6 +639,7 @@ class NotebookService:
         user_id: Optional[str] = None,
         scenarios_snapshot: Optional[List[Dict[str, Any]]] = None,
         valuation_id: Optional[str] = None,
+        preview_json: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         """Persist a thesis snapshot for a session.
 
@@ -550,6 +648,12 @@ class NotebookService:
         """
         now = datetime.utcnow().isoformat()
         owner = user_id or "local"
+        preview = self._normalize_thesis_preview(
+            preview_json=preview_json,
+            title=title,
+            summary=summary,
+            dcf_snapshot=dcf_snapshot,
+        )
 
         try:
             with _get_conn() as conn:
@@ -589,6 +693,7 @@ class NotebookService:
                             json.dumps(cells_snapshot or []),
                             json.dumps(scenarios_snapshot or []),
                             json.dumps(dcf_snapshot or {}),
+                            json.dumps(preview),
                             valuation_id,
                             now,
                             thesis_id,
@@ -608,8 +713,8 @@ class NotebookService:
                         """
                         INSERT INTO theses
                         (id, session_id, ticker, company_name, title, summary, user_id,
-                         cells_snapshot, scenarios_snapshot, dcf_snapshot, valuation_id, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         cells_snapshot, scenarios_snapshot, dcf_snapshot, preview_json, valuation_id, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             thesis_id,
@@ -622,6 +727,7 @@ class NotebookService:
                             json.dumps(cells_snapshot or []),
                             json.dumps(scenarios_snapshot or []),
                             json.dumps(dcf_snapshot or {}),
+                            json.dumps(preview),
                             valuation_id,
                             now,
                         ),
@@ -638,6 +744,7 @@ class NotebookService:
                 "cells_snapshot": cells_snapshot or [],
                 "scenarios_snapshot": scenarios_snapshot or [],
                 "dcf_snapshot": dcf_snapshot or {},
+                "preview_json": preview,
                 "valuation_id": valuation_id,
                 "created_at": now,
             }
@@ -652,7 +759,7 @@ class NotebookService:
                 row = conn.execute(
                     """
                     SELECT id, session_id, ticker, company_name, title, summary, user_id,
-                           cells_snapshot, scenarios_snapshot, dcf_snapshot, valuation_id, created_at
+                           cells_snapshot, scenarios_snapshot, dcf_snapshot, preview_json, valuation_id, created_at
                     FROM theses WHERE id = ?
                     """,
                     (thesis_id,),
@@ -669,7 +776,7 @@ class NotebookService:
         """List theses for a user with optional ticker filter."""
         query = """
             SELECT id, session_id, ticker, company_name, title, summary, user_id,
-                   cells_snapshot, scenarios_snapshot, dcf_snapshot, valuation_id, created_at
+                   cells_snapshot, scenarios_snapshot, dcf_snapshot, preview_json, valuation_id, created_at
             FROM theses
             WHERE 1=1
         """
@@ -706,6 +813,123 @@ class NotebookService:
             logger.error(f"Failed to list theses for user {user_id}: {e}")
             return []
 
+    def list_recent_theses_for_ticker(
+        self,
+        user_id: Optional[str],
+        ticker: Optional[str],
+        limit: int = 2,
+        exclude_session_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """List the latest thesis snapshots for a user+ticker excluding the current session."""
+        if not ticker:
+            return []
+
+        query = """
+            SELECT id, session_id, ticker, company_name, title, summary, user_id,
+                   cells_snapshot, scenarios_snapshot, dcf_snapshot, preview_json, valuation_id, created_at
+            FROM theses
+            WHERE ticker = ?
+        """
+        params: list[Any] = [ticker]
+
+        if user_id:
+            query += " AND user_id = ?"
+            params.append(user_id)
+        if exclude_session_id:
+            query += " AND session_id != ?"
+            params.append(exclude_session_id)
+
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+
+        try:
+            with _get_conn() as conn:
+                rows = conn.execute(query, params).fetchall()
+            return [self._row_to_thesis(dict(row)) for row in rows]
+        except Exception as e:
+            logger.error(f"Failed to list recent theses for {ticker}/{user_id}: {e}")
+            return []
+
+    # ===== TOOL PLAN OPERATIONS =====
+
+    def save_tool_plan(
+        self,
+        session_id: str,
+        cell_id: str,
+        tool_name: str,
+        tool_input_json: Optional[Dict[str, Any]],
+        plan_text: str,
+        status: str = "pending",
+    ) -> Optional[Dict[str, Any]]:
+        tool_id = str(uuid.uuid4())
+        now = datetime.utcnow().isoformat()
+        try:
+            with _get_conn() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO tool_plans
+                    (id, session_id, cell_id, tool_name, tool_input_json, plan_text, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        tool_id,
+                        session_id,
+                        cell_id,
+                        tool_name,
+                        json.dumps(tool_input_json or {}),
+                        plan_text,
+                        status,
+                        now,
+                        now,
+                    ),
+                )
+                conn.execute("UPDATE sessions SET updated_at = ? WHERE id = ?", (now, session_id))
+            return {
+                "id": tool_id,
+                "session_id": session_id,
+                "cell_id": cell_id,
+                "tool_name": tool_name,
+                "tool_input_json": tool_input_json or {},
+                "plan_text": plan_text,
+                "status": status,
+                "created_at": now,
+                "updated_at": now,
+            }
+        except Exception as e:
+            logger.error(f"Failed to save tool plan for session {session_id}: {e}")
+            return None
+
+    def get_latest_pending_tool_plan(self, session_id: str) -> Optional[Dict[str, Any]]:
+        try:
+            with _get_conn() as conn:
+                row = conn.execute(
+                    """
+                    SELECT id, session_id, cell_id, tool_name, tool_input_json, plan_text, status, created_at, updated_at
+                    FROM tool_plans
+                    WHERE session_id = ? AND status = 'pending'
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (session_id,),
+                ).fetchone()
+            return self._row_to_tool_plan(dict(row)) if row else None
+        except Exception as e:
+            logger.error(f"Failed to get pending tool plan for session {session_id}: {e}")
+            return None
+
+    def update_tool_plan_status(self, tool_id: str, status: str) -> bool:
+        now = datetime.utcnow().isoformat()
+        try:
+            with _get_conn() as conn:
+                cursor = conn.execute(
+                    "UPDATE tool_plans SET status = ?, updated_at = ? WHERE id = ?",
+                    (status, now, tool_id),
+                )
+            return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Failed to update tool plan {tool_id}: {e}")
+            return False
+
     def get_grouped_theses(self, user_id: Optional[str]) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
         """Group theses by ticker, then by YYYY-MM period."""
         grouped: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
@@ -733,6 +957,8 @@ class NotebookService:
             company_name=row.get('company_name'),
             user_id=row.get('user_id', 'local'),
             valuation_data=json.loads(row['base_analysis_json']) if row.get('base_analysis_json') else None,
+            valuation_input_json=json.loads(row['valuation_input_json']) if row.get('valuation_input_json') else None,
+            valuation_output_json=json.loads(row['valuation_output_json']) if row.get('valuation_output_json') else None,
             currency=row.get('currency'),
             valuation_id=row.get('valuation_id'),
             session_id=row['id']
@@ -807,18 +1033,85 @@ class NotebookService:
             "cells_snapshot": _loads(row.get("cells_snapshot"), []),
             "scenarios_snapshot": _loads(row.get("scenarios_snapshot"), []),
             "dcf_snapshot": _loads(row.get("dcf_snapshot"), {}),
+            "preview_json": self._normalize_thesis_preview(
+                preview_json=_loads(row.get("preview_json"), {}),
+                title=row.get("title"),
+                summary=row.get("summary"),
+                dcf_snapshot=_loads(row.get("dcf_snapshot"), {}),
+            ),
             "valuation_id": row.get("valuation_id"),
             "created_at": row.get("created_at"),
         }
 
+    def _row_to_tool_plan(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        def _loads(payload: Optional[str]) -> Dict[str, Any]:
+            if not payload:
+                return {}
+            try:
+                return json.loads(payload)
+            except Exception:
+                return {}
+
+        return {
+            "id": row.get("id"),
+            "session_id": row.get("session_id"),
+            "cell_id": row.get("cell_id"),
+            "tool_name": row.get("tool_name"),
+            "tool_input_json": _loads(row.get("tool_input_json")),
+            "plan_text": row.get("plan_text"),
+            "status": row.get("status"),
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at"),
+        }
+
+    def _normalize_thesis_preview(
+        self,
+        preview_json: Optional[Dict[str, Any]],
+        title: Optional[str],
+        summary: Optional[str],
+        dcf_snapshot: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        preview = dict(preview_json or {})
+        dcf_snapshot = dcf_snapshot or {}
+        company_dto = (
+            dcf_snapshot.get("companyDTO")
+            or dcf_snapshot.get("java_valuation_output", {}).get("companyDTO", {})
+            or {}
+        )
+
+        fair_value = company_dto.get("estimatedValuePerShare")
+        current_price = company_dto.get("price")
+        upside = company_dto.get("upside")
+        if upside is None and fair_value not in (None, "") and current_price not in (None, "", 0):
+            try:
+                upside = ((float(fair_value) - float(current_price)) / float(current_price)) * 100.0
+            except Exception:
+                upside = None
+
+        normalized = {
+            "title": preview.get("title") or title,
+            "summary": preview.get("summary") or summary,
+            "conviction": preview.get("conviction"),
+            "key_assumptions": preview.get("key_assumptions") or [],
+            "risks": preview.get("risks") or [],
+            "fair_value": preview.get("fair_value", fair_value),
+            "current_price": preview.get("current_price", current_price),
+            "upside": preview.get("upside", upside),
+            "timeframe": preview.get("timeframe"),
+        }
+        return normalized
+
 
 # Singleton instance
 _notebook_service: Optional[NotebookService] = None
+_notebook_service_lock = threading.Lock()
 
 
 def get_notebook_service() -> NotebookService:
     """Get or create notebook service singleton."""
     global _notebook_service
     if _notebook_service is None:
-        _notebook_service = NotebookService()
+        with _notebook_service_lock:
+            if _notebook_service is None:
+                _notebook_service = NotebookService()
     return _notebook_service

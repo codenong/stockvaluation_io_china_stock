@@ -295,8 +295,8 @@ public class GrowthAnchorService {
     private static Double dbl(Object val) {
         if (val == null)
             return null;
-        if (val instanceof Number)
-            return ((Number) val).doubleValue();
+        if (val instanceof Number n)
+            return n.doubleValue();
         try {
             return Double.parseDouble(val.toString());
         } catch (NumberFormatException e) {
@@ -307,8 +307,8 @@ public class GrowthAnchorService {
     private static Integer intVal(Object val) {
         if (val == null)
             return null;
-        if (val instanceof Number)
-            return ((Number) val).intValue();
+        if (val instanceof Number n)
+            return n.intValue();
         try {
             return Integer.parseInt(val.toString());
         } catch (NumberFormatException e) {

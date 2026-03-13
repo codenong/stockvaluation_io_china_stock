@@ -2,9 +2,8 @@
 Chat Context Builder Service
 Builds comprehensive valuation context for AI chat sessions
 """
-import json
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -121,10 +120,91 @@ def _extract_valuation_components(valuation_data: Dict[str, Any]) -> Dict[str, A
     }
 
 
+def _format_recent_theses(recent_theses: List[Dict[str, Any]]) -> str:
+    if not recent_theses:
+        return "No prior saved thesis context for this ticker."
+
+    parts = []
+    for index, thesis in enumerate(recent_theses[:2], start=1):
+        preview = thesis.get("preview_json") if isinstance(thesis.get("preview_json"), dict) else {}
+        assumptions = preview.get("key_assumptions") or []
+        risks = preview.get("risks") or []
+        parts.append(
+            "\n".join([
+                f"{index}. {preview.get('title') or thesis.get('title')}",
+                f"   Summary: {preview.get('summary') or thesis.get('summary') or 'N/A'}",
+                f"   Fair Value: {preview.get('fair_value')}",
+                f"   Current Price: {preview.get('current_price')}",
+                f"   Upside: {preview.get('upside')}",
+                f"   Conviction: {preview.get('conviction')}",
+                f"   Timeframe: {preview.get('timeframe')}",
+                f"   Key Assumptions: {', '.join(str(item) for item in assumptions[:3]) or 'N/A'}",
+                f"   Risks: {', '.join(str(item) for item in risks[:3]) or 'N/A'}",
+            ])
+        )
+    return "\n\n".join(parts)
+
+
+def _format_valuation_input_context(valuation_input_json: Dict[str, Any]) -> str:
+    if not valuation_input_json:
+        return "No valuation input payload stored."
+
+    segments = (((valuation_input_json.get("segments") or {}).get("segments")) or [])
+    sector_overrides = valuation_input_json.get("sectorOverrides") or []
+    lines = [
+        f"- Top-level override keys: {', '.join(sorted(k for k in valuation_input_json.keys() if k != 'segments')) or 'None'}",
+        f"- Segment count: {len(segments)}",
+        f"- Segment sectors: {', '.join(str(item.get('sector')) for item in segments[:5] if isinstance(item, dict) and item.get('sector')) or 'None'}",
+        f"- Sector overrides: {len(sector_overrides)}",
+    ]
+    return "\n".join(lines)
+
+
+def _format_valuation_output_context(valuation_output_json: Dict[str, Any]) -> str:
+    if not valuation_output_json:
+        return "No valuation output payload stored."
+
+    financial_dto = valuation_output_json.get("financialDTO") if isinstance(valuation_output_json.get("financialDTO"), dict) else {}
+    terminal_value = valuation_output_json.get("terminalValueDTO") if isinstance(valuation_output_json.get("terminalValueDTO"), dict) else {}
+    company_dto = valuation_output_json.get("companyDTO") if isinstance(valuation_output_json.get("companyDTO"), dict) else {}
+    cost_of_capital = financial_dto.get("costOfCapital") if isinstance(financial_dto.get("costOfCapital"), list) else []
+    revenue_growth = financial_dto.get("revenueGrowthRate") if isinstance(financial_dto.get("revenueGrowthRate"), list) else []
+    operating_margin = financial_dto.get("ebitOperatingMargin") if isinstance(financial_dto.get("ebitOperatingMargin"), list) else []
+    sales_to_capital = financial_dto.get("salesToCapitalRatio") if isinstance(financial_dto.get("salesToCapitalRatio"), list) else []
+
+    def _first_number(values: List[Any]) -> Any:
+        for value in values:
+            if value is not None:
+                return value
+        return None
+
+    def _last_number(values: List[Any]) -> Any:
+        for value in reversed(values):
+            if value is not None:
+                return value
+        return None
+
+    lines = [
+        f"- Fair value per share: {company_dto.get('estimatedValuePerShare')}",
+        f"- Current price: {company_dto.get('price')}",
+        f"- Currency: {valuation_output_json.get('currency') or valuation_output_json.get('stockCurrency')}",
+        f"- Initial WACC: {_first_number(cost_of_capital)}",
+        f"- Terminal WACC: {terminal_value.get('costOfCapital') or _last_number(cost_of_capital)}",
+        f"- Terminal growth: {terminal_value.get('growthRate')}",
+        f"- Revenue growth (first non-null): {_first_number(revenue_growth)}",
+        f"- Operating margin (first non-null): {_first_number(operating_margin)}",
+        f"- Sales-to-capital (first non-null): {_first_number(sales_to_capital)}",
+    ]
+    return "\n".join(lines)
+
+
 def build_full_valuation_context(
     ticker: str,
     valuation_data: Dict[str, Any],
-    name: Optional[str] = None
+    name: Optional[str] = None,
+    valuation_input_json: Optional[Dict[str, Any]] = None,
+    valuation_output_json: Optional[Dict[str, Any]] = None,
+    recent_theses: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """
     Builds a comprehensive, personality-driven context for the AI analyst.
@@ -199,6 +279,9 @@ def build_full_valuation_context(
             logger.warning(f"[Context Builder] current_price is 0. Checked: financials, financials.valuation, financials.profile")
         
         company_header = f"{name} ({ticker})" if name else ticker
+        valuation_input_json = valuation_input_json or {}
+        valuation_output_json = valuation_output_json or {}
+        recent_theses = recent_theses or []
         
         # ═══════════════════════════════════════════════════════════
         # PART 1: WHO YOU ARE (Agent Identity)
@@ -297,6 +380,23 @@ KEY DCF ASSUMPTIONS (Your "Thesis Pillars"):
 INVESTMENT HYPOTHESIS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {_format_investment_hypothesis(investment_hypothesis)}
+"""
+
+        context += f"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CURRENT VALUATION INPUT EXTRACTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{_format_valuation_input_context(valuation_input_json)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CURRENT VALUATION OUTPUT EXTRACTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{_format_valuation_output_context(valuation_output_json)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RECENT SAVED THESES (MAX 2)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{_format_recent_theses(recent_theses)}
 """
         
         # ═══════════════════════════════════════════════════════════

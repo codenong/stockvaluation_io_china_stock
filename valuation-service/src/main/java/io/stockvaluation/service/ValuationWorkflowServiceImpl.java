@@ -315,7 +315,8 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         ValuationTemplate template) {
                 CompanyDTO company = valuationOutputDTO.getCompanyDTO();
                 AssumptionTransparencyDTO.MarketImpliedExpectations expectations = new AssumptionTransparencyDTO.MarketImpliedExpectations();
-                expectations.setMethod("Single-variable reverse DCF; each lever is solved independently to match the current market price.");
+                expectations.setMethod(
+                                "Single-variable reverse DCF; each lever is solved independently to match the current market price.");
 
                 if (company == null || company.getPrice() == null || company.getPrice() <= 0) {
                         expectations.setMetrics(new ArrayList<>());
@@ -426,7 +427,8 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 impliedValue,
                                 gap,
                                 solved,
-                                solved ? "Solved to current market price." : "Nearest bounded estimate in configured range.");
+                                solved ? "Solved to current market price."
+                                                : "Nearest bounded estimate in configured range.");
         }
 
         private SolveResult solveImpliedVariable(
@@ -442,7 +444,8 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         ValuationTemplate template) {
                 int steps = Math.max(8, valuationAssumptionProperties.getImpliedExpectationGridSteps());
                 double tolerance = Math.max(0.01, valuationAssumptionProperties.getImpliedExpectationTolerance());
-                int bisectionIterations = Math.max(8, valuationAssumptionProperties.getImpliedExpectationBisectionIterations());
+                int bisectionIterations = Math.max(8,
+                                valuationAssumptionProperties.getImpliedExpectationBisectionIterations());
 
                 double bestX = lower;
                 double bestAbsDiff = Double.POSITIVE_INFINITY;
@@ -453,7 +456,8 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
 
                 for (int i = 0; i <= steps; i++) {
                         double x = lower + (upper - lower) * (i / (double) steps);
-                        Double estimate = evaluateImpliedPrice(baseInput, mutator, x, rdResult, optionValue, leaseResult, ticker,
+                        Double estimate = evaluateImpliedPrice(baseInput, mutator, x, rdResult, optionValue,
+                                        leaseResult, ticker,
                                         template);
                         if (estimate == null || estimate.isNaN() || estimate.isInfinite()) {
                                 continue;
@@ -465,7 +469,8 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 bestX = x;
                         }
 
-                        if (prevDiff != null && prevX != null && (diff == 0.0 || (prevDiff > 0 && diff < 0) || (prevDiff < 0 && diff > 0))) {
+                        if (prevDiff != null && prevX != null
+                                        && (diff == 0.0 || (prevDiff > 0 && diff < 0) || (prevDiff < 0 && diff > 0))) {
                                 bracketLow = prevX;
                                 bracketHigh = x;
                                 break;
@@ -487,7 +492,8 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 double midpoint = bestX;
                 for (int i = 0; i < bisectionIterations; i++) {
                         midpoint = (lo + hi) / 2.0;
-                        Double estimate = evaluateImpliedPrice(baseInput, mutator, midpoint, rdResult, optionValue, leaseResult,
+                        Double estimate = evaluateImpliedPrice(baseInput, mutator, midpoint, rdResult, optionValue,
+                                        leaseResult,
                                         ticker, template);
                         if (estimate == null || estimate.isNaN() || estimate.isInfinite()) {
                                 break;
@@ -501,7 +507,8 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         if (absDiff <= tolerance) {
                                 return new SolveResult(midpoint, true);
                         }
-                        Double loEstimate = evaluateImpliedPrice(baseInput, mutator, lo, rdResult, optionValue, leaseResult, ticker,
+                        Double loEstimate = evaluateImpliedPrice(baseInput, mutator, lo, rdResult, optionValue,
+                                        leaseResult, ticker,
                                         template);
                         if (loEstimate == null || loEstimate.isNaN() || loEstimate.isInfinite()) {
                                 break;
@@ -528,9 +535,11 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 try {
                         FinancialDataInput scenario = new FinancialDataInput(baseInput);
                         mutator.apply(scenario, value);
-                        return getEstimatedValuePerShare(scenario, rdResult, optionValue, leaseResult, ticker, template);
+                        return getEstimatedValuePerShare(scenario, rdResult, optionValue, leaseResult, ticker,
+                                        template);
                 } catch (RuntimeException ex) {
-                        log.debug("Skipping implied valuation point for {} due to evaluation error: {}", ticker, ex.getMessage());
+                        log.debug("Skipping implied valuation point for {} due to evaluation error: {}", ticker,
+                                        ex.getMessage());
                         return null;
                 }
         }
@@ -768,7 +777,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
 
                 NarrativeDTO.ScenarioAnalysis.Scenario.Adjustments adjustments = scenario.getAdjustments();
 
-                log.info("🎯 Processing scenario: {}", scenarioName);
+                log.info("[SCENARIO] Processing scenario: {}", scenarioName);
                 log.info("  Base values: growth={}, margin={}, stc={}, discount={}",
                                 baseFinancialDataInput.getCompoundAnnualGrowth2_5(),
                                 baseFinancialDataInput.getTargetPreTaxOperatingMargin(),
@@ -836,7 +845,8 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 scenarioValuations.put(scenarioName, intrinsicValue);
                 scenario.setIntrinsicValue(intrinsicValue);
 
-                log.info("  💰 {} scenario result: ${} per share", scenarioName, String.format("%.2f", intrinsicValue));
+                log.info("  [RESULT] {} scenario result: ${} per share", scenarioName,
+                                String.format("%.2f", intrinsicValue));
         }
 
         private Double runSingleSimulation(String ticker, FinancialDataInput financialDataInput,

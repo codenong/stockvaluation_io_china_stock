@@ -11,6 +11,7 @@ export type CellType = 'reasoning' | 'calibration' | 'visualization' | 'computat
 export type AuthorType = 'ai' | 'user' | 'system';
 
 export interface CellContent {
+    content?: string;
     message?: string;
     type?: string;
     changes?: Record<string, number>;
@@ -96,6 +97,8 @@ export interface AnalysisSession {
     is_public: boolean;
     parent_session_id?: string;
     base_analysis_json?: Record<string, any>;
+    valuation_input_json?: Record<string, any>;
+    valuation_output_json?: Record<string, any>;
     cells: Cell[];
     scenarios?: Scenario[];
 }
@@ -140,6 +143,7 @@ export interface Thesis {
     cells_snapshot: Cell[];
     scenarios_snapshot: Scenario[];
     dcf_snapshot: Record<string, any>;
+    preview_json?: Record<string, any>;
     created_at: string;
 }
 
@@ -180,12 +184,20 @@ export interface CellActionCallbacks {
 // ============================================
 
 export interface SSEEvent {
-    type: 'cell' | 'cell_start' | 'stream' | 'cell_complete' | 'regenerate_start' | 'done';
+    type: 'cell' | 'cell_start' | 'stream' | 'cell_complete' | 'regenerate_start' | 'done' | 'tool_plan' | 'tool_result' | 'error';
     cell?: Cell;
     cell_id?: string;
     chunk?: string;
     sequence_number?: number;
     execution_time_ms?: number;
+    tool_id?: string;
+    tool_name?: string;
+    tool_input?: Record<string, any>;
+    plan?: string;
+    awaiting_response?: boolean;
+    status?: string;
+    data?: Record<string, any>;
+    error?: string;
 }
 
 // ============================================

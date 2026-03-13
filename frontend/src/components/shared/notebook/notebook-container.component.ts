@@ -1,12 +1,14 @@
 import { Component, Input, Output, EventEmitter, signal, OnInit, OnDestroy, computed, inject, PLATFORM_ID } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { Subject, takeUntil } from 'rxjs';
 import { NotebookService } from './notebook.service';
 import { ThemeService } from './theme.service';
 import { CellRendererComponent } from './cells/cell-renderer.component';
 import { ThesisSidebarComponent } from './thesis-sidebar.component';
-import { Cell, AnalysisSession, Scenario, NotebookTab, ThesisPreview, DCFOverrides, DCFRecalcResult } from './cell.models';
+import { ThesisViewComponent } from './thesis-view.component';
+import { Cell, AnalysisSession, Scenario, NotebookTab, Thesis, ThesisPreview, DCFOverrides, DCFRecalcResult } from './cell.models';
 import { BrandLogoComponent } from '../brand-logo/brand-logo.component';
 import { ThemeToggleComponent } from '../theme-toggle/theme-toggle.component';
 
@@ -17,7 +19,7 @@ import { ThemeToggleComponent } from '../theme-toggle/theme-toggle.component';
 @Component({
   selector: 'app-notebook-container',
   standalone: true,
-  imports: [CommonModule, FormsModule, CellRendererComponent, ThesisSidebarComponent, BrandLogoComponent, ThemeToggleComponent],
+  imports: [CommonModule, FormsModule, CellRendererComponent, ThesisSidebarComponent, ThesisViewComponent, BrandLogoComponent, ThemeToggleComponent],
   template: `
     <div class="notebook-container">
       <!-- Thesis Sidebar (Left Panel) -->
@@ -67,11 +69,17 @@ import { ThemeToggleComponent } from '../theme-toggle/theme-toggle.component';
                 linkTo="/automated-dcf-analysis">
               </app-brand-logo>
               
-              @if (session()) {
+              @if (activeSession()) {
                 <div class="session-info">
                   <span class="session-divider">|</span>
-                  <h2 class="session-title">{{ session()!.title }}</h2>
-                  <span class="ticker-badge">{{ session()!.ticker }}</span>
+                  <h2 class="session-title">{{ activeSession()!.title }}</h2>
+                  <span class="ticker-badge">{{ activeSession()!.ticker }}</span>
+                </div>
+              } @else if (activeThesis()) {
+                <div class="session-info">
+                  <span class="session-divider">|</span>
+                  <h2 class="session-title">{{ activeThesis()!.title }}</h2>
+                  <span class="ticker-badge">{{ activeThesis()!.ticker }}</span>
                 </div>
               }
             </div>
@@ -96,7 +104,7 @@ import { ThemeToggleComponent } from '../theme-toggle/theme-toggle.component';
               <!-- Save Thesis Button -->
               <button 
                 class="save-btn"
-                [disabled]="!session() || isLoading()"
+                [disabled]="!activeSession() || isLoading()"
                 (click)="saveThesis()"
               >
                 <i class="pi pi-save"></i>
@@ -110,68 +118,72 @@ import { ThemeToggleComponent } from '../theme-toggle/theme-toggle.component';
             </div>
           </div>
           
-          <!-- Cells List -->
-          <div class="cells-container" #cellsContainer>
-            @if (isLoading() && cells().length === 0) {
-              <div class="loading-state">
-                <div class="spinner"></div>
-                <p>Loading analysis...</p>
-              </div>
-            } @else if (cells().length === 0) {
-              <div class="empty-state">
-                <i class="pi pi-comments"></i>
-                <p>No cells yet. Start by asking a question below.</p>
-              </div>
-            } @else {
-              @for (cell of cells(); track cell.id; let i = $index) {
-                <app-cell-renderer
-                  [cell]="cell"
-                  [sessionId]="session()?.id"
-                  [isFirst]="i === 0"
-                  [isLast]="i === cells().length - 1"
-                  [isStreaming]="isStreaming() && streamingCellId() === cell.id"
-                  (onDelete)="onCellDelete($event)"
-                  (onUpdateNotes)="onCellUpdateNotes($event)"
-                />
-              }
-            }
-            
-            <!-- Streaming Indicator -->
-            @if (isStreaming()) {
-              <div class="streaming-indicator">
-                <div class="typing-dots">
-                  <span></span><span></span><span></span>
+          @if (activeThesis()) {
+            <app-thesis-view [thesis]="activeThesis()!" (openSession)="onThesisSessionSelected($event)"></app-thesis-view>
+          } @else {
+            <!-- Cells List -->
+            <div class="cells-container" #cellsContainer>
+              @if (isLoading() && cells().length === 0) {
+                <div class="loading-state">
+                  <div class="spinner"></div>
+                  <p>Loading analysis...</p>
                 </div>
-                <p>AI is thinking...</p>
-              </div>
-            }
-          </div>
-          
-          <!-- Input Area -->
-          <div class="input-area">
-            <div class="input-container">
-              <textarea
-                [(ngModel)]="messageInput"
-                class="message-input"
-                rows="2"
-                placeholder="Ask about the valuation, challenge assumptions, or explore scenarios..."
-                [disabled]="isStreaming()"
-                (keydown.enter)="onEnterPress($any($event))"
-              ></textarea>
-              <button 
-                class="send-btn"
-                [disabled]="!messageInput.trim() || isStreaming()"
-                (click)="sendMessage()"
-              >
-                @if (isStreaming()) {
-                  <i class="pi pi-spin pi-spinner"></i>
-                } @else {
-                  <i class="pi pi-send"></i>
+              } @else if (cells().length === 0) {
+                <div class="empty-state">
+                  <i class="pi pi-comments"></i>
+                  <p>No cells yet. Start by asking a question below.</p>
+                </div>
+              } @else {
+                @for (cell of cells(); track cell.id; let i = $index) {
+                  <app-cell-renderer
+                    [cell]="cell"
+                    [sessionId]="session()?.id"
+                    [isFirst]="i === 0"
+                    [isLast]="i === cells().length - 1"
+                    [isStreaming]="isStreaming() && streamingCellId() === cell.id"
+                    (onDelete)="onCellDelete($event)"
+                    (onUpdateNotes)="onCellUpdateNotes($event)"
+                  />
                 }
-              </button>
+              }
+              
+              <!-- Streaming Indicator -->
+              @if (isStreaming()) {
+                <div class="streaming-indicator">
+                  <div class="typing-dots">
+                    <span></span><span></span><span></span>
+                  </div>
+                  <p>AI is thinking...</p>
+                </div>
+              }
             </div>
-            <p class="input-hint">Press Enter to send, Shift+Enter for new line</p>
-          </div>
+            
+            <!-- Input Area -->
+            <div class="input-area">
+              <div class="input-container">
+                <textarea
+                  [(ngModel)]="messageInput"
+                  class="message-input"
+                  rows="2"
+                  placeholder="Ask about the valuation, challenge assumptions, or explore scenarios..."
+                  [disabled]="isStreaming()"
+                  (keydown.enter)="onEnterPress($any($event))"
+                ></textarea>
+                <button 
+                  class="send-btn"
+                  [disabled]="!messageInput.trim() || isStreaming()"
+                  (click)="sendMessage()"
+                >
+                  @if (isStreaming()) {
+                    <i class="pi pi-spin pi-spinner"></i>
+                  } @else {
+                    <i class="pi pi-send"></i>
+                  }
+                </button>
+              </div>
+              <p class="input-hint">Press Enter to send, Shift+Enter for new line</p>
+            </div>
+          }
           
           <!-- Footer like DCF Analysis -->
           <footer class="notebook-footer">
@@ -193,7 +205,7 @@ import { ThemeToggleComponent } from '../theme-toggle/theme-toggle.component';
                 } @else {
                   <span class="status-indicator ready">
                     <i class="pi pi-check-circle"></i>
-                    Ready • {{ cells().length }} cells
+                    Ready • {{ activeThesis()?.cells_snapshot?.length ?? cells().length }} cells
                   </span>
                 }
               </div>
@@ -1032,14 +1044,19 @@ export class NotebookContainerComponent implements OnInit, OnDestroy {
 
   // Theme service
   themeService = inject(ThemeService);
+  router = inject(Router);
   isDarkTheme = computed(() => this.themeService.isDark());
 
   // Computed signals from service
   session = computed(() => this.notebookService.currentSession());
+  thesis = computed(() => this.notebookService.currentThesis());
   cells = computed(() => this.notebookService.cells());
   scenarios = computed(() => this.notebookService.scenarios());
   tabs = computed(() => this.notebookService.tabs());
   activeTabId = computed(() => this.notebookService.activeTabId());
+  activeTab = computed(() => this.tabs().find(tab => tab.id === this.activeTabId()) || null);
+  activeSession = computed(() => this.activeTab()?.type === 'session' ? this.session() : null);
+  activeThesis = computed(() => this.activeTab()?.type === 'thesis' ? this.thesis() : null);
   isLoading = computed(() => this.notebookService.isLoading());
   isStreaming = computed(() => this.notebookService.isStreaming());
   streamingCellId = computed(() => this.notebookService.streamingCellId());
@@ -1140,8 +1157,17 @@ export class NotebookContainerComponent implements OnInit, OnDestroy {
     this.closed.emit();
   }
 
-  onThesisSelected(thesisId: string): void {
-    this.notebookService.loadThesis(thesisId).subscribe();
+  onThesisSelected(thesis: Thesis): void {
+    if (thesis.session_id) {
+      this.openLiveSession(thesis.session_id, thesis.ticker);
+      return;
+    }
+
+    this.notebookService.loadThesis(thesis.id).subscribe();
+  }
+
+  onThesisSessionSelected(sessionId: string): void {
+    this.openLiveSession(sessionId, this.activeThesis()?.ticker || this.ticker);
   }
 
   toggleTheme(): void {
@@ -1155,5 +1181,12 @@ export class NotebookContainerComponent implements OnInit, OnDestroy {
 
   onCellUpdateNotes(event: { cellId: string; notes: string }): void {
     this.notebookService.updateCell(event.cellId, { user_notes: event.notes }).subscribe();
+  }
+
+  private openLiveSession(sessionId: string, ticker?: string): void {
+    this.notebookService.loadSession(sessionId).subscribe();
+    this.router.navigate(['/notebook', sessionId], {
+      queryParams: ticker ? { ticker } : {},
+    });
   }
 }

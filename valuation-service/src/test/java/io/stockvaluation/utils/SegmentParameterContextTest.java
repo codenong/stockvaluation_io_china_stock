@@ -42,7 +42,8 @@ class SegmentParameterContextTest {
 
         assertTrue(SegmentParameterContext.hasValidParameters());
         assertTrue(SegmentParameterContext.hasSectorParameters());
-        assertEquals(12.0, SegmentParameterContext.getParameterOrDefault(SegmentWeightedParameters::getWeightedRevenueNextYear, 0.0));
+        assertEquals(12.0, SegmentParameterContext
+                .getParameterOrDefault(SegmentWeightedParameters::getWeightedRevenueNextYear, 0.0));
         assertEquals(25.0, SegmentParameterContext.getSectorParameterOrDefault("software",
                 SegmentWeightedParameters.SectorParameters::getTargetPreTaxOperatingMargin, 0.0));
         assertEquals(Set.of("software"), SegmentParameterContext.getSectorNames());

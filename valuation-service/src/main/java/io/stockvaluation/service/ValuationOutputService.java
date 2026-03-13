@@ -189,11 +189,11 @@ public class ValuationOutputService {
 
         FinancialDTO financialDTO = template != null ? new FinancialDTO(template) : new FinancialDTO();
 
-        log.info("🔧 [calculateFinancialData] FinancialDTO array length: {}, terminal index: {}",
+        log.info("[calculateFinancialData] FinancialDTO array length: {}, terminal index: {}",
                 financialDTO.getArrayLength(), financialDTO.getTerminalYearIndex());
 
         if (template != null) {
-            log.info("📐 [TEMPLATE] Using {}-year DCF model (array length: {})",
+            log.info("[TEMPLATE] Using {}-year DCF model (array length: {})",
                     template.getProjectionYears(), template.getArrayLength());
         }
 
@@ -1841,7 +1841,7 @@ public class ValuationOutputService {
             }
 
             log.info(
-                    "🔧 [FORCED CONVERGENCE] Sector {}: baseMargin={}% ≈ targetMargin={}%, applying artificial convergence to {}%",
+                    "[FORCED CONVERGENCE] Sector {}: baseMargin={}% ~ targetMargin={}%, applying artificial convergence to {}%",
                     sectorKey, baseMargin, targetMargin, effectiveTarget);
 
             return new ConvergenceResult(effectiveTarget, true);
@@ -1866,7 +1866,7 @@ public class ValuationOutputService {
             double effectiveTarget = phase1Value * 1.08;
 
             log.info(
-                    "🔧 [FORCED CONVERGENCE] Sector {}: salesToCapital phase1={} ≈ phase2={}, applying artificial convergence to {}",
+                    "[FORCED CONVERGENCE] Sector {}: salesToCapital phase1={} ~ phase2={}, applying artificial convergence to {}",
                     sectorKey, phase1Value, phase2Value, effectiveTarget);
 
             return new ConvergenceResult(effectiveTarget, true);

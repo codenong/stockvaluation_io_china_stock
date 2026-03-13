@@ -87,6 +87,8 @@ class ValuationPersistenceService:
                     fair_value REAL,
                     current_price REAL,
                     upside_percentage REAL,
+                    input_json TEXT,
+                    output_json TEXT,
                     blob_path TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
@@ -98,6 +100,14 @@ class ValuationPersistenceService:
                 f"CREATE INDEX IF NOT EXISTS {self.indexes['valuations_ticker_date']} "
                 f"ON {valuations_table}(ticker, valuation_date)"
             )
+            existing_columns = {
+                row["name"]
+                for row in conn.execute(f"PRAGMA table_info({valuations_table})").fetchall()
+            }
+            if "input_json" not in existing_columns:
+                conn.execute(f"ALTER TABLE {valuations_table} ADD COLUMN input_json TEXT")
+            if "output_json" not in existing_columns:
+                conn.execute(f"ALTER TABLE {valuations_table} ADD COLUMN output_json TEXT")
             conn.commit()
 
     @staticmethod
@@ -150,6 +160,14 @@ class ValuationPersistenceService:
             return json.load(f)
 
     def _build_record(self, row: sqlite3.Row) -> Dict[str, Any]:
+        def _loads(value: Any) -> Dict[str, Any]:
+            if not value:
+                return {}
+            try:
+                return json.loads(value)
+            except Exception:
+                return {}
+
         return {
             "id": row["id"],
             "ticker": row["ticker"],
@@ -159,6 +177,8 @@ class ValuationPersistenceService:
             "fair_value": row["fair_value"],
             "current_price": row["current_price"],
             "upside_percentage": row["upside_percentage"],
+            "input_json": _loads(row["input_json"]) if "input_json" in row.keys() else {},
+            "output_json": _loads(row["output_json"]) if "output_json" in row.keys() else {},
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
@@ -169,6 +189,8 @@ class ValuationPersistenceService:
         company_name: str,
         valuation_data: Dict[str, Any],
         valuation_date: Optional[date] = None,
+        input_json: Optional[Dict[str, Any]] = None,
+        output_json: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
         """Save or update a valuation."""
         try:
@@ -193,13 +215,15 @@ class ValuationPersistenceService:
                     INSERT INTO {valuations_table} (
                         id, ticker, company_name, valuation_date,
                         fair_value, current_price, upside_percentage,
-                        blob_path, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        input_json, output_json, blob_path, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(ticker, valuation_date) DO UPDATE SET
                         company_name=excluded.company_name,
                         fair_value=excluded.fair_value,
                         current_price=excluded.current_price,
                         upside_percentage=excluded.upside_percentage,
+                        input_json=excluded.input_json,
+                        output_json=excluded.output_json,
                         blob_path=excluded.blob_path,
                         updated_at=excluded.updated_at
                     """,
@@ -211,6 +235,8 @@ class ValuationPersistenceService:
                         fair_value,
                         current_price,
                         upside_percentage,
+                        json.dumps(input_json or {}),
+                        json.dumps(output_json or {}),
                         blob_path,
                         created_at,
                         now,

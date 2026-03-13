@@ -448,29 +448,29 @@ public class CommonService {
     private Object getNumericCellValue(Cell cell) {
         if (cell == null)
             return null; // Return null if the cell is empty
-        switch (cell.getCellType()) {
-            case NUMERIC:
-                // Check if the cell is formatted as a percentage
+        return switch (cell.getCellType()) {
+            case NUMERIC -> {
                 // Check if the cell is formatted as a percentage
                 if (cell.getCellStyle().getDataFormatString().contains("%")) {
-                    return cell.getNumericCellValue() * 100; // Multiply by 100 for percentage values
+                    yield cell.getNumericCellValue() * 100; // Multiply by 100 for percentage values
                 }
-                return cell.getNumericCellValue(); // Return numeric value as is
-            case FORMULA:
+                yield cell.getNumericCellValue(); // Return numeric value as is
+            }
+            case FORMULA -> {
                 // Evaluate the formula and return numeric value if applicable
                 FormulaEvaluator evaluator = cell.getSheet().getWorkbook().getCreationHelper().createFormulaEvaluator();
                 CellValue evaluatedValue = evaluator.evaluate(cell);
                 if (evaluatedValue.getCellType() == CellType.NUMERIC) {
                     // Check if the evaluated value is formatted as a percentage
                     if (cell.getCellStyle().getDataFormatString().contains("%")) {
-                        return evaluatedValue.getNumberValue() * 100; // Return the evaluated numeric value directly
+                        yield evaluatedValue.getNumberValue() * 100; // Return the evaluated numeric value directly
                     }
-                    return evaluatedValue.getNumberValue(); // Return the evaluated numeric value as is
+                    yield evaluatedValue.getNumberValue(); // Return the evaluated numeric value as is
                 }
-                return null; // Return null if the evaluated cell is not numeric
-            default:
-                return null; // Return null for non-numeric types
-        }
+                yield null; // Return null if the evaluated cell is not numeric
+            }
+            default -> null; // Return null for non-numeric types
+        };
     }
 
     private boolean isRowEmpty(Row row) {
@@ -486,16 +486,12 @@ public class CommonService {
     private String getCellValueAsString(Cell cell) {
         if (cell == null)
             return "";
-        switch (cell.getCellType()) {
-            case STRING:
-                return cell.getStringCellValue().trim();
-            case NUMERIC:
-                return String.valueOf(cell.getNumericCellValue());
-            case BOOLEAN:
-                return String.valueOf(cell.getBooleanCellValue());
-            default:
-                return "";
-        }
+        return switch (cell.getCellType()) {
+            case STRING -> cell.getStringCellValue().trim();
+            case NUMERIC -> String.valueOf(cell.getNumericCellValue());
+            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
+            default -> "";
+        };
     }
 
     public String convertExcelToJsonSingleObject(MultipartFile file) throws IOException {
@@ -568,25 +564,19 @@ public class CommonService {
     private Object getCellValue(FormulaEvaluator evaluator, Cell cell) {
         if (cell == null)
             return "";
-        switch (cell.getCellType()) {
-            case STRING:
-                return cell.getStringCellValue().trim();
-            case NUMERIC:
+        return switch (cell.getCellType()) {
+            case STRING -> cell.getStringCellValue().trim();
+            case NUMERIC -> {
                 if (DateUtil.isCellDateFormatted(cell)) {
-                    // Format the date as a string
                     SimpleDateFormat dateFormat = new SimpleDateFormat("MM/dd/yyyy");
-                    return dateFormat.format(cell.getDateCellValue()); // Convert to formatted string
+                    yield dateFormat.format(cell.getDateCellValue());
                 }
-
-                return cell.getNumericCellValue(); // Return as a number
-
-            case BOOLEAN:
-                return cell.getBooleanCellValue();
-            case FORMULA:
-                return evaluator.evaluate(cell).getNumberValue();
-            default:
-                return "";
-        }
+                yield cell.getNumericCellValue();
+            }
+            case BOOLEAN -> cell.getBooleanCellValue();
+            case FORMULA -> evaluator.evaluate(cell).getNumberValue();
+            default -> "";
+        };
     }
 
     private boolean isUnwantedKey(String key) {
@@ -733,22 +723,14 @@ public class CommonService {
                         break; // Stop if the cell is blank
 
                     // Get cell value as a String, Double, or other types as necessary
-                    switch (valueCell.getCellType()) {
-                        case STRING:
-                            colData.add(valueCell.getStringCellValue());
-                            break;
-                        case NUMERIC:
-                            colData.add(valueCell.getNumericCellValue());
-                            break;
-                        case BOOLEAN:
-                            colData.add(valueCell.getBooleanCellValue());
-                            break;
-                        case BLANK:
-                            colData.add(null); // or handle as needed
-                            break;
-                        default:
-                            colData.add(valueCell.toString()); // Fallback for other types
-                    }
+                    Object cellValue = switch (valueCell.getCellType()) {
+                        case STRING -> valueCell.getStringCellValue();
+                        case NUMERIC -> valueCell.getNumericCellValue();
+                        case BOOLEAN -> valueCell.getBooleanCellValue();
+                        case BLANK -> null;
+                        default -> valueCell.toString();
+                    };
+                    colData.add(cellValue);
                 }
 
                 if (keyCell != null && keyCell.getCellType() == CellType.STRING
@@ -1333,9 +1315,9 @@ public class CommonService {
                     .build();
 
             // Parse dividend history if available
-            if (response.get("dividendHistory") instanceof Map) {
+            if (response.get("dividendHistory") instanceof Map<?, ?> rawMap) {
                 @SuppressWarnings("unchecked")
-                Map<String, Object> historyMap = (Map<String, Object>) response.get("dividendHistory");
+                Map<String, Object> historyMap = (Map<String, Object>) rawMap;
                 Map<String, Double> dividendHistory = new HashMap<>();
                 for (Map.Entry<String, Object> entry : historyMap.entrySet()) {
                     dividendHistory.put(entry.getKey(), parseDouble(entry.getValue()));
@@ -1358,8 +1340,8 @@ public class CommonService {
         if (value == null) {
             return null;
         }
-        if (value instanceof Number) {
-            return ((Number) value).doubleValue();
+        if (value instanceof Number n) {
+            return n.doubleValue();
         }
         try {
             return Double.parseDouble(value.toString());
@@ -1375,8 +1357,8 @@ public class CommonService {
         if (value == null) {
             return null;
         }
-        if (value instanceof Number) {
-            return ((Number) value).longValue();
+        if (value instanceof Number n) {
+            return n.longValue();
         }
         try {
             return Long.parseLong(value.toString());

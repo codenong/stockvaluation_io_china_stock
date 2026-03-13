@@ -374,7 +374,7 @@ export class ThesisSidebarComponent implements OnInit {
   @Input() isOpen = true;
 
   @Output() close = new EventEmitter<void>();
-  @Output() thesisSelected = new EventEmitter<string>();
+  @Output() thesisSelected = new EventEmitter<Thesis>();
 
   searchQuery = '';
 
@@ -523,7 +523,7 @@ export class ThesisSidebarComponent implements OnInit {
   }
 
   onThesisClick(thesis: Thesis): void {
-    this.thesisSelected.emit(thesis.id);
+    this.thesisSelected.emit(thesis);
 
     // Close sidebar on mobile
     if (this.isMobile()) {

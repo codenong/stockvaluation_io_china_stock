@@ -5,6 +5,7 @@ Model defaults and provider config come from shared/llm_models.py — no hardcod
 """
 import json
 import os
+import re
 import sys
 from datetime import datetime
 from typing import Dict, Any, Optional, Generator, List
@@ -192,6 +193,8 @@ class LLMService:
         provider: Optional[LLMProvider],
         max_tokens: int,
         temperature: float = 0.2,
+        dump_agent_name: Optional[str] = None,
+        dump_metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Run a single-turn text completion on the selected provider."""
         provider_key = self._normalize_provider(provider)
@@ -200,21 +203,50 @@ class LLMService:
         if client is None:
             raise RuntimeError(f"LLM client unavailable for provider={provider_key}")
 
+        dumper = get_prompt_dumper()
+        prompt_timestamp = None
+        if dump_agent_name:
+            prompt_timestamp = dumper.dump_prompt(
+                agent_name=dump_agent_name,
+                prompt=prompt,
+                metadata={
+                    "provider": provider_key,
+                    "model": selected_model,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    **(dump_metadata or {}),
+                },
+            )
+
         if self._is_anthropic_provider(provider_key):
             response = client.messages.create(
                 model=selected_model,
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
             )
-            return response.content[0].text.strip()
+            content = response.content[0].text.strip()
+        else:
+            response = client.chat.completions.create(
+                model=selected_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            content = (response.choices[0].message.content or "").strip()
 
-        response = client.chat.completions.create(
-            model=selected_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        return (response.choices[0].message.content or "").strip()
+        if dump_agent_name and prompt_timestamp:
+            dumper.dump_response(
+                agent_name=dump_agent_name,
+                response=content,
+                timestamp=prompt_timestamp,
+                metadata={
+                    "provider": provider_key,
+                    "model": selected_model,
+                    **(dump_metadata or {}),
+                },
+            )
+
+        return content
     
     def is_available(self, provider: Optional[LLMProvider] = None) -> bool:
         """Check if the specified provider is available (i.e., client was initialised)."""
@@ -970,6 +1002,7 @@ Return JSON with any of these delta values (change from current):
                 provider=provider,
                 max_tokens=300,
                 temperature=0.1,
+                dump_agent_name=f"extract_calibration_params_{self._provider_backend(provider)}",
             )
             
             if content.startswith('```'):
@@ -1049,6 +1082,7 @@ Examples:
                 provider=provider,
                 max_tokens=100,
                 temperature=0.7,
+                dump_agent_name=f"generate_thesis_title_{self._provider_backend(provider)}",
             )
             
             # Clean up title (remove quotes if present)
@@ -1104,19 +1138,48 @@ Rules:
 3. If already clear, return it mostly unchanged
 4. Keep it concise (under 100 words)
 5. Frame for investment/valuation analysis context
+6. Preserve hard constraints from the user such as "current notebook context only", "one sentence", or similar scope limits
+7. Do NOT introduce unsupported valuation frameworks or metrics such as P/E, P/S, EV/EBITDA, peer multiples, or external data unless the original question explicitly asks for them and the notebook context clearly contains them
+8. Prefer the notebook's supported concepts: DCF fair value, current price, upside/downside, valuation assumptions, scenarios, risks, and saved thesis context
 
 Return ONLY the rewritten question, no explanation."""
 
         try:
-            return self._invoke_text_completion(
+            rewritten = self._invoke_text_completion(
                 prompt=prompt,
                 provider=provider,
                 max_tokens=200,
                 temperature=0.3,
+                dump_agent_name=f"rewrite_query_{self._provider_backend(provider)}",
             )
+            if self._introduces_unsupported_multiple_framing(message, rewritten):
+                return message
+            return rewritten
         except Exception as e:
             print(f"Query rewriting error: {e}")
             return message  # Return original on error
+
+    @staticmethod
+    def _introduces_unsupported_multiple_framing(original_message: str, rewritten_message: str) -> bool:
+        if not rewritten_message:
+            return False
+
+        unsupported_patterns = [
+            r"\bp/e\b",
+            r"\bps\b",
+            r"\bev/ebitda\b",
+            r"price[- ]to[- ]earnings",
+            r"price[- ]to[- ]sales",
+            r"valuation multiples?",
+            r"key valuation multiples?",
+        ]
+        original = (original_message or "").lower()
+        rewritten = rewritten_message.lower()
+
+        original_mentions_unsupported = any(re.search(pattern, original) for pattern in unsupported_patterns)
+        rewritten_mentions_unsupported = any(re.search(pattern, rewritten) for pattern in unsupported_patterns)
+
+        return rewritten_mentions_unsupported and not original_mentions_unsupported
     
     def select_tools(
         self,
@@ -1145,29 +1208,28 @@ Available tools: [{tools_str}]
 Current valuation data summary: {valuation_summary}
 
 Tool descriptions:
-- dcf_recalculator: Recalculate DCF valuation with new assumptions. Use when user wants to change terminal growth, WACC, revenue growth, operating margin, or other valuation parameters. Returns before/after comparison.
-- scenario_builder: Create, manage, and compare valuation scenarios (Bull/Bear/Base). Use when user wants to build scenarios, set probabilities, or calculate probability-weighted fair value.
-- get_industry_comparables: Get industry averages to validate assumptions. Use when user asks if an assumption is reasonable, or wants to compare values against industry benchmarks.
-- tavily_search: Search the web for news, analyst opinions, industry data. Use ONLY if valuation_data lacks the needed info.
-- python_interpreter: Execute Python code for calculations. Use for custom formulas, sensitivity analysis, numerical comparisons.
-- valuation_loader: Load fresh valuation data from database. Use if no valuation_data exists.
-- llm_guard: Scan text for safety. Usually not needed for normal queries.
+- dcf_recalculator: Recalculate DCF valuation with new assumptions. Use when the user wants to change WACC, terminal growth, revenue growth, operating margin, or sales-to-capital.
+- get_industry_comparables: Compare the current assumption to the valuation's growth-anchor or assumption-transparency data. Use when the user asks if an assumption is reasonable.
+- python_interpreter: Execute restricted Python for calculations, comparisons, simple charts, or sensitivity math.
+- valuation_loader: Load the full current valuation record, including input_json, output_json, and up to 2 recent thesis snapshots.
 
 For dcf_recalculator, extract the parameter and value from the user's request:
 - "Change terminal growth to 7%" → {{"tool": "dcf_recalculator", "params": {{"terminal_growth": 7.0}}}}
 - "What if WACC was 10%?" → {{"tool": "dcf_recalculator", "params": {{"wacc": 10.0}}}}
 - "Recalculate with 20% revenue growth" → {{"tool": "dcf_recalculator", "params": {{"revenue_growth": 20.0}}}}
 
-For scenario_builder, use actions:
-- "Create a bull case" → {{"tool": "scenario_builder", "params": {{"action": "create", "name": "Bull Case", "scenario_type": "bull"}}}}
-- "Show me bull and bear scenarios" → {{"tool": "scenario_builder", "params": {{"action": "auto_generate"}}}}
-- "Compare scenarios" → {{"tool": "scenario_builder", "params": {{"action": "compare"}}}}
-- "What's the probability-weighted value?" → {{"tool": "scenario_builder", "params": {{"action": "compare"}}}}
-
 For get_industry_comparables:
 - "Is 7% terminal growth reasonable?" → {{"tool": "get_industry_comparables", "params": {{"metric": "terminal_growth", "user_value": 7.0}}}}
 - "How does my WACC compare to industry?" → {{"tool": "get_industry_comparables", "params": {{"metric": "wacc"}}}}
-- "Show me Auto industry metrics" → {{"tool": "get_industry_comparables", "params": {{"industry": "Auto & Truck"}}}}
+- "Is 12% revenue growth reasonable?" → {{"tool": "get_industry_comparables", "params": {{"metric": "revenue_cagr", "user_value": 12.0}}}}
+
+For python_interpreter:
+- "Calculate upside if fair value is $120 and price is $90" → {{"tool": "python_interpreter", "params": {{"task": "calculate_upside"}}}}
+- "Plot fair value sensitivity to WACC" → {{"tool": "python_interpreter", "params": {{"task": "plot_sensitivity"}}}}
+
+For valuation_loader:
+- "Show me the raw valuation output" → {{"tool": "valuation_loader", "params": {{"include": "current_valuation"}}}}
+- "Load the last theses for this ticker" → {{"tool": "valuation_loader", "params": {{"include": "recent_theses"}}}}
 
 Return a JSON array of tools to use, with parameters:
 [
@@ -1183,6 +1245,8 @@ Return ONLY valid JSON, no markdown or explanation."""
                 provider=provider,
                 max_tokens=500,
                 temperature=0.2,
+                dump_agent_name=f"select_tools_{self._provider_backend(provider)}",
+                dump_metadata={"available_tools": available_tools},
             )
             
             # Parse JSON
@@ -1230,7 +1294,9 @@ Return ONLY valid JSON, no markdown or explanation."""
             return None
         
         valuation_data = context.get('valuation_data', {})
-        dcf_state = context.get('dcf_state', {})
+        valuation_input = context.get('valuation_input', {})
+        valuation_output = context.get('valuation_output', {})
+        recent_theses = context.get('recent_theses', [])
         
         prompt = f"""Generate Python code to answer this investment question.
 
@@ -1238,13 +1304,17 @@ Question: "{message}"
 
 Available variables:
 - valuation: Dict with company valuation data
-- dcf: Dict with DCF model state
+- valuation_input: Dict with the valuation input_json
+- valuation_output: Dict with the valuation output_json
+- recent_theses: List of up to 2 prior thesis snapshots
 
 Sample valuation keys: {list(valuation_data.keys())[:5] if valuation_data else 'Not loaded'}
-Sample dcf keys: {list(dcf_state.keys())[:5] if dcf_state else 'Not loaded'}
+Sample valuation_input keys: {list(valuation_input.keys())[:5] if valuation_input else 'Not loaded'}
+Sample valuation_output keys: {list(valuation_output.keys())[:5] if valuation_output else 'Not loaded'}
+Recent thesis count: {len(recent_theses) if isinstance(recent_theses, list) else 0}
 
 Rules:
-1. Use only standard libraries (math, statistics) + numpy/pandas if needed
+1. Use only standard libraries (math, statistics) + numpy/matplotlib if needed
 2. Store final answer in 'result' variable
 3. Include print() for intermediate steps
 4. Handle missing data gracefully
@@ -1260,6 +1330,7 @@ Return ONLY the Python code, no markdown or explanation."""
                 provider=provider,
                 max_tokens=800,
                 temperature=0.2,
+                dump_agent_name=f"generate_code_{self._provider_backend(provider)}",
             )
             
             # Clean up code
@@ -1351,13 +1422,27 @@ Provide a comprehensive response that addresses the user's question using all av
                     parts.append(f"**Web Search Results:**\nSummary: {answer}\nSources:\n{sources}")
                     
                 elif tool_name == 'python_interpreter':
-                    output = data.get('output', '')
+                    output = data.get('stdout', '')
                     code_result = data.get('result')
                     parts.append(f"**Code Execution:**\nOutput: {output}\nResult: {code_result}")
                     
                 elif tool_name == 'valuation_loader':
                     metrics = data.get('metrics', {})
-                    parts.append(f"**Valuation Data:**\n{json.dumps(metrics, indent=2)}")
+                    input_json = data.get('input_json', {})
+                    output_json = data.get('output_json', {})
+                    recent_theses = data.get('recent_theses', [])[:2]
+                    parts.append(
+                        "**Valuation Data:**\n"
+                        f"Metrics: {json.dumps(metrics, indent=2)}\n"
+                        f"Input JSON keys: {json.dumps(list(input_json.keys())[:12])}\n"
+                        f"Output JSON keys: {json.dumps(list(output_json.keys())[:12])}\n"
+                        f"Recent theses: {json.dumps(recent_theses, indent=2)}"
+                    )
+                elif tool_name == 'dcf_recalculator':
+                    comparison = data.get('comparison', {})
+                    parts.append(f"**DCF Recalculation:**\n{json.dumps(comparison, indent=2)}")
+                elif tool_name == 'get_industry_comparables':
+                    parts.append(f"**Industry Comparables:**\n{json.dumps(data, indent=2)}")
                     
                 else:
                     parts.append(f"**{tool_name}:** {json.dumps(data)}")

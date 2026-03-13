@@ -1,5 +1,6 @@
 from api.app import StockValuationApp
 from domain.processing.helpers import preprocess_financials_json
+from services.java_override_mapper import map_friendly_recalculate_request
 
 
 def _app() -> StockValuationApp:
@@ -196,6 +197,28 @@ def test_assumption_transparency_includes_cost_of_capital_rationale_by_default()
     assert rationale is not None
     assert "Initial cost of capital is" in rationale
     assert "Risk-free anchor is" in rationale
+
+
+def test_map_friendly_recalculate_request_uses_java_field_names():
+    overrides, meta = map_friendly_recalculate_request(
+        top_level_overrides={
+            "revenue_growth": 12.0,
+            "operating_margin": 25.0,
+            "sales_to_capital": 2.4,
+            "wacc": 10.0,
+            "terminal_growth": 3.0,
+        },
+        sector_overrides=[],
+        mapped_segments=[],
+    )
+
+    assert overrides["compoundAnnualGrowth2_5"] == 12.0
+    assert overrides["targetPreTaxOperatingMargin"] == 25.0
+    assert overrides["salesToCapitalYears1To5"] == 2.4
+    assert overrides["salesToCapitalYears6To10"] == 2.4
+    assert overrides["initialCostCapital"] == 10.0
+    assert overrides["terminalGrowthRate"] == 3.0
+    assert "wacc" in meta["friendly_top_level_keys"]
 
 
 def test_build_growth_anchor_prefers_java_growth_skill_context():

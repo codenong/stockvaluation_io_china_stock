@@ -16,10 +16,10 @@ import java.util.Optional;
 public class Helper {
 
     public static double targetOperatingMargin(double preTaxOperatingMarginFirstQuartile,
-                                               double preTaxOperatingMarginMedian,
-                                               double preTaxOperatingMarginThirdQuartile,
-                                               double operatingMarginNextYear,
-                                               double avgPreTaxOperatingMargin) {
+            double preTaxOperatingMarginMedian,
+            double preTaxOperatingMarginThirdQuartile,
+            double operatingMarginNextYear,
+            double avgPreTaxOperatingMargin) {
 
         // Step 1: Calculate IQR and skew
         double iqr = preTaxOperatingMarginThirdQuartile - preTaxOperatingMarginFirstQuartile;
@@ -70,29 +70,27 @@ public class Helper {
         double smoothed = 0.7 * operatingMarginNextYear + 0.3 * constrainedBlended;
 
         double[] margins = {
-           preTaxOperatingMarginFirstQuartile,
-           preTaxOperatingMarginMedian,
-           preTaxOperatingMarginThirdQuartile,
-           operatingMarginNextYear,
-           avgPreTaxOperatingMargin
+                preTaxOperatingMarginFirstQuartile,
+                preTaxOperatingMarginMedian,
+                preTaxOperatingMarginThirdQuartile,
+                operatingMarginNextYear,
+                avgPreTaxOperatingMargin
         };
 
         // Use streams to filter positive values and find the minimum
         double lowestPositive = Arrays.stream(margins)
-                                      .filter(value -> value > 0)
-                                      .min()
-                                      .orElse(Double.NaN); 
+                .filter(value -> value > 0)
+                .min()
+                .orElse(Double.NaN);
 
         double highestPositive = Arrays.stream(margins)
-                                      .filter(value -> value > 0)
-                                      .max()
-                                      .orElse(Double.NaN); 
-
-
+                .filter(value -> value > 0)
+                .max()
+                .orElse(Double.NaN);
 
         return Math.max(smoothed, (lowestPositive + highestPositive) / 2);
 
-        //return constrainedBlended;
+        // return constrainedBlended;
     }
 
     public static double calculateGrowthRate(double totalRevenueTTM, double revenueLTM) {
@@ -100,15 +98,16 @@ public class Helper {
             throw new InsufficientFinancialDataException("revenueLTM cannot be zero.");
         }
         return new BigDecimal(((totalRevenueTTM - revenueLTM) / revenueLTM))
-            .setScale(2, RoundingMode.HALF_UP)
-            .doubleValue();
+                .setScale(2, RoundingMode.HALF_UP)
+                .doubleValue();
     }
 
     public static double adjustAnnualGrowth2_5(double revenueGrowthNext) {
         return Math.min(revenueGrowthNext, 0.7);
     }
 
-    public static String calculateRisk(long marketCap, double debtToEquity, int firstTradeDateEpochUtc, String currency, double marketDebtToCapital) {
+    public static String calculateRisk(long marketCap, double debtToEquity, int firstTradeDateEpochUtc, String currency,
+            double marketDebtToCapital) {
         // Priority: marketCap > debtToEquity > firstTradeDateEpochUtc
 
         // Define thresholds
@@ -123,8 +122,9 @@ public class Helper {
         // Debt-to-Equity Ratio Evaluation
         boolean isHighDebtToEquity = false;
 
-        if(marketDebtToCapital!=0)
-            isHighDebtToEquity = (debtToEquity / (((marketDebtToCapital/100) / (1 - (marketDebtToCapital/100))))) > 1.5 ;
+        if (marketDebtToCapital != 0)
+            isHighDebtToEquity = (debtToEquity
+                    / (((marketDebtToCapital / 100) / (1 - (marketDebtToCapital / 100))))) > 1.5;
 
         // First Trade Date Evaluation (older companies are lower risk)
         boolean isOldCompany = (currentEpoch - firstTradeDateEpochUtc) > thresholdOldCompany;
@@ -142,11 +142,11 @@ public class Helper {
     }
 
     public static Double costOfCapital(CostOfCapital costOfCapital,
-                                       BasicInfoDataDTO basicInfoDataDTO,
-                                       FinancialDataDTO financialDataDTO,
-                                       IndustryAveragesUS industryAveragesUS,
-                                       IndustryAveragesGlobal industryAveragesGlobal,
-                                       Optional<InputStatDistribution> optionalInputStatDistribution) {
+            BasicInfoDataDTO basicInfoDataDTO,
+            FinancialDataDTO financialDataDTO,
+            IndustryAveragesUS industryAveragesUS,
+            IndustryAveragesGlobal industryAveragesGlobal,
+            Optional<InputStatDistribution> optionalInputStatDistribution) {
         double industryCostOfCapital = 0.0;
         double marketDebtToCapital = 0.0;
 
@@ -159,14 +159,14 @@ public class Helper {
             marketDebtToCapital = industryAveragesGlobal.getMarketDebtToCapital();
         }
         // Determine the company's risk category
-        double debtToEquity = basicInfoDataDTO.getDebtToEquity() != null ? basicInfoDataDTO.getDebtToEquity() / 100 : 0.0;
+        double debtToEquity = basicInfoDataDTO.getDebtToEquity() != null ? basicInfoDataDTO.getDebtToEquity() / 100
+                : 0.0;
         String risk = calculateRisk(
                 basicInfoDataDTO.getMarketCap(),
                 debtToEquity,
                 basicInfoDataDTO.getFirstTradeDateEpochUtc(),
                 basicInfoDataDTO.getCurrency(),
-                marketDebtToCapital
-        );
+                marketDebtToCapital);
 
         // Get the corresponding decile value from Damodaran's data
         String decileValueStr = getDecileValue(costOfCapital, risk);
@@ -184,8 +184,7 @@ public class Helper {
         double adjustedIndustryWACC = calculateIndustryScalingFactor(
                 companyDebtToCapital,
                 marketDebtToCapital,
-                industryCostOfCapital
-        );
+                industryCostOfCapital);
 
         double median = parseDoubleSafe(costOfCapital.getMedian());
         double ratio = median != 0 ? decileValue / median : 1.0;
@@ -194,13 +193,14 @@ public class Helper {
     }
 
     private static double calculateIndustryScalingFactor(double companyDebtRatio,
-                                                         double industryDebtRatio,
-                                                         double industryWACC) {
+            double industryDebtRatio,
+            double industryWACC) {
         if (industryDebtRatio == 0 || industryWACC == 0) {
             return industryWACC;
         }
 
-        // Compute the logarithmic impact of the company's debt ratio relative to the industry
+        // Compute the logarithmic impact of the company's debt ratio relative to the
+        // industry
         double debtRatioImpact = Math.log1p(companyDebtRatio) / Math.log1p(industryDebtRatio);
         // Apply a dampening factor to moderate the adjustment
         return industryWACC * (1 + (debtRatioImpact - 1) * 0.25);
@@ -215,55 +215,13 @@ public class Helper {
     }
 
     private static String getDecileValue(CostOfCapital costOfCapital, String risk) {
-        switch (risk.toLowerCase()) {
-            case "firstdecile": return costOfCapital.getFirstDecile();
-            case "firstquartile": return costOfCapital.getFirstQuartile();
-            case "thirdquartile": return costOfCapital.getThirdQuartile();
-            case "ninthdecile": return costOfCapital.getNinthDecile();
-            default: return costOfCapital.getMedian();
-        }
+        return switch (risk.toLowerCase()) {
+            case "firstdecile" -> costOfCapital.getFirstDecile();
+            case "firstquartile" -> costOfCapital.getFirstQuartile();
+            case "thirdquartile" -> costOfCapital.getThirdQuartile();
+            case "ninthdecile" -> costOfCapital.getNinthDecile();
+            default -> costOfCapital.getMedian();
+        };
     }
 
-    /*
-    public static Double costOfCapital(CostOfCapital costOfCapital,
-                                       BasicInfoDataDTO basicInfoDataDTO,
-                                       FinancialDataDTO financialDataDTO,
-                                       IndustryAveragesUS industryAveragesUS,
-                                       IndustryAveragesGlobal industryAveragesGlobal,
-                                       Optional<InputStatDistribution> optionalInputStatDistribution) {
-        double equityBeta = 0.00;
-        double industryCostOfCapital = 0.00;
-        double marketDebtToCapital = 0.00;
-        double factor = 1;
-
-        double debtToEq = 0.0D;
-        if (basicInfoDataDTO.getDebtToEquity() != null) {
-            debtToEq = basicInfoDataDTO.getDebtToEquity();
-        }
-
-        if(industryAveragesGlobal != null)
-            equityBeta = industryAveragesGlobal.getEquityBeta();
-
-        if(industryAveragesUS != null)
-            equityBeta = industryAveragesUS.getEquityBeta();
-
-
-        //if(basicInfoDataDTO.getBeta() != null && basicInfoDataDTO.getBeta() > 0 && equityBeta > 0) {
-        //    factor = basicInfoDataDTO.getBeta() / equityBeta;
-        //}
-
-        String risk = calculateRisk(
-                basicInfoDataDTO.getMarketCap(),
-                debtToEq,
-                basicInfoDataDTO.getFirstTradeDateEpochUtc(),
-                basicInfoDataDTO.getCurrency()
-        );
-
-        return switch (risk.toLowerCase()) {
-            case "firstquartile" -> Double.parseDouble(costOfCapital.getFirstDecile()) * factor;
-            case "thirdquartile" -> Double.parseDouble(costOfCapital.getThirdQuartile()) * factor;
-            case "ninthdecile" -> Double.parseDouble(costOfCapital.getNinthDecile()) * factor;
-            default -> Double.parseDouble(costOfCapital.getMedian()) * factor;
-        };
-    } */
 }

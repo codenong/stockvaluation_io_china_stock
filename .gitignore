@@ -41,6 +41,7 @@ wheels/
 .installed.cfg
 *.egg
 /shared/prompt_dump_from_container/
+clawhub-skills/
 
 # --- Java / Maven ---
 target/

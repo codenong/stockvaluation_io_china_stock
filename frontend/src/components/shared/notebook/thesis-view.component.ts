@@ -6,7 +6,7 @@ import { Cell, Thesis, Scenario, DCFSummary } from './cell.models';
 /**
  * Thesis View Component
  * Read-only view of a saved thesis - displays cells without edit capabilities.
- * User can fork thesis to a new session for continued work.
+ * User can resume the source session for continued work.
  */
 @Component({
     selector: 'app-thesis-view',
@@ -46,9 +46,9 @@ import { Cell, Thesis, Scenario, DCFSummary } from './cell.models';
           </div>
         </div>
         
-        <button class="fork-btn" (click)="onForkToNewSession()">
+        <button class="fork-btn" [disabled]="!thesis.session_id" (click)="onOpenSession()">
           <i class="pi pi-copy"></i>
-          <span>Fork to New Session</span>
+          <span>Open Live Session</span>
         </button>
       </div>
       
@@ -443,21 +443,24 @@ import { Cell, Thesis, Scenario, DCFSummary } from './cell.models';
 export class ThesisViewComponent {
     @Input({ required: true }) thesis!: Thesis;
 
-    @Output() forkToNewSession = new EventEmitter<string>();
+    @Output() openSession = new EventEmitter<string>();
 
     get dcfSummary(): DCFSummary | null {
         const snapshot = this.thesis.dcf_snapshot;
         if (!snapshot || Object.keys(snapshot).length === 0) return null;
+        const companyDto = snapshot['companyDTO'] || snapshot['java_valuation_output']?.['companyDTO'] || {};
 
         return {
-            fair_value: snapshot['fair_value'] || snapshot['fairValue'] || 0,
-            current_price: snapshot['current_price'] || snapshot['currentPrice'] || 0,
-            upside_pct: snapshot['upside_pct'] || snapshot['upsidePct'] || 0,
+            fair_value: snapshot['fair_value'] || snapshot['fairValue'] || companyDto['estimatedValuePerShare'] || 0,
+            current_price: snapshot['current_price'] || snapshot['currentPrice'] || companyDto['price'] || 0,
+            upside_pct: snapshot['upside_pct'] || snapshot['upsidePct'] || companyDto['upside'] || 0,
         };
     }
 
-    onForkToNewSession(): void {
-        this.forkToNewSession.emit(this.thesis.id);
+    onOpenSession(): void {
+        if (this.thesis.session_id) {
+            this.openSession.emit(this.thesis.session_id);
+        }
     }
 
     formatDate(dateString: string): string {
@@ -500,7 +503,7 @@ export class ThesisViewComponent {
 
     getAIMessage(cell: Cell): string {
         const aiOutput = cell.ai_output || (cell.author_type === 'ai' ? cell.content : null);
-        return aiOutput?.message || '';
+        return aiOutput?.message || aiOutput?.content || '';
     }
 
     formatMarkdown(text: string): string {

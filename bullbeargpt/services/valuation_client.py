@@ -31,6 +31,17 @@ class ValuationClient:
             or os.getenv('VALUATION_AGENT_URL')
             or getattr(Config, 'VALUATION_AGENT_URL', 'http://valuation-agent:5001')
         )
+        self.internal_api_key = os.getenv("INTERNAL_API_KEY", "").strip()
+
+    def _build_headers(self, auth_header: Optional[str] = None) -> Dict[str, str]:
+        headers: Dict[str, str] = {}
+        if auth_header:
+            headers["Authorization"] = auth_header
+        elif self.internal_api_key:
+            headers["Authorization"] = f"Bearer {self.internal_api_key}"
+        if self.internal_api_key:
+            headers["X-Internal-API-Key"] = self.internal_api_key
+        return headers
     
     def get_valuation_by_id(self, valuation_id: str, auth_header: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
@@ -49,11 +60,7 @@ class ValuationClient:
             url = f"{self.valuation_agent_url}/api-s/valuation/{valuation_id}"
             logger.info(f"Fetching valuation from {url}")
             
-            headers = {}
-            if auth_header:
-                headers["Authorization"] = auth_header
-
-            response = requests.get(url, timeout=10, headers=headers or None)
+            response = requests.get(url, timeout=10, headers=self._build_headers(auth_header) or None)
             
             if response.status_code == 404:
                 logger.warning(f"Valuation {valuation_id} not found")
@@ -73,6 +80,48 @@ class ValuationClient:
             return None
         except Exception as e:
             logger.error(f"Unexpected error fetching valuation: {e}")
+            return None
+
+    def recalculate_valuation_by_id(
+        self,
+        valuation_id: str,
+        top_level_overrides: Dict[str, Any],
+        sector_overrides: Optional[list[Dict[str, Any]]] = None,
+        persist: bool = True,
+        auth_header: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Request valuation-agent to recalculate an existing valuation by ID."""
+        if not valuation_id:
+            return None
+
+        try:
+            url = f"{self.valuation_agent_url}/api-s/valuation/{valuation_id}/recalculate"
+            payload = {
+                "top_level_overrides": top_level_overrides or {},
+                "sector_overrides": sector_overrides or [],
+                "persist": persist,
+            }
+            response = requests.post(
+                url,
+                json=payload,
+                timeout=60,
+                headers=self._build_headers(auth_header) or None,
+            )
+
+            if response.status_code == 404:
+                logger.warning(f"Valuation {valuation_id} not found for recalc")
+                return None
+
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.Timeout:
+            logger.error(f"Timeout recalculating valuation {valuation_id}")
+            return None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error recalculating valuation {valuation_id}: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error recalculating valuation {valuation_id}: {e}")
             return None
     
     def format_for_system_prompt(self, valuation: Dict[str, Any]) -> Dict[str, Any]:

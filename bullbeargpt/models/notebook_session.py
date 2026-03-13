@@ -25,6 +25,8 @@ class NotebookSession:
     is_public: bool = False
     parent_session_id: Optional[str] = None  # For forking
     base_analysis_json: Optional[Dict[str, Any]] = None  # Initial DCF data
+    valuation_input_json: Optional[Dict[str, Any]] = None
+    valuation_output_json: Optional[Dict[str, Any]] = None
     currency: Optional[str] = None
     valuation_id: Optional[str] = None  # Links to yfinance-generated base valuation
     
@@ -41,6 +43,8 @@ class NotebookSession:
             'is_public': self.is_public,
             'parent_session_id': self.parent_session_id,
             'base_analysis_json': self.base_analysis_json,
+            'valuation_input_json': self.valuation_input_json,
+            'valuation_output_json': self.valuation_output_json,
             'currency': self.currency,
             'valuation_id': self.valuation_id,
         }
@@ -57,6 +61,8 @@ class NotebookSession:
             is_public=data.get('is_public', False),
             parent_session_id=data.get('parent_session_id'),
             base_analysis_json=data.get('base_analysis_json'),
+            valuation_input_json=data.get('valuation_input_json'),
+            valuation_output_json=data.get('valuation_output_json'),
             currency=data.get('currency'),
             valuation_id=data.get('valuation_id'),
         )
@@ -82,6 +88,8 @@ class NotebookSession:
         company_name: Optional[str] = None,
         user_id: Optional[str] = None,
         valuation_data: Optional[Dict[str, Any]] = None,
+        valuation_input_json: Optional[Dict[str, Any]] = None,
+        valuation_output_json: Optional[Dict[str, Any]] = None,
         currency: Optional[str] = None,
         valuation_id: Optional[str] = None,
         session_id: Optional[str] = None
@@ -95,6 +103,8 @@ class NotebookSession:
             user_id=user_id,
             title=title,
             base_analysis_json=valuation_data,
+            valuation_input_json=valuation_input_json,
+            valuation_output_json=valuation_output_json,
             currency=currency,
             valuation_id=valuation_id,
         )

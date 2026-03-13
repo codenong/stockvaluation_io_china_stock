@@ -35,6 +35,12 @@ Need these APIs?
 | `bullbeargpt` | Notebook/chat API | `http://localhost:5002` |
 | `postgres` | Local persistence | `localhost:4322` |
 
+## Common Failure Reasons
+
+- The system depends on Yahoo Finance data. If Yahoo Finance does not provide the required company data, valuation can fail.
+- Historical coverage is limited because Yahoo Finance typically provides only about 5 years of history.
+- Financial sector companies are not supported.
+
 ## Security
 
 - Local-first defaults are meant for development on your machine.

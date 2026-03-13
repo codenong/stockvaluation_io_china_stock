@@ -3,6 +3,7 @@ Notebook Routes - REST API endpoints for Jupyter-style notebook cells.
 Unified API that combines chat features with notebook cell management.
 """
 import hashlib
+import json
 import logging
 import os
 import time
@@ -11,6 +12,7 @@ from flask import Blueprint, jsonify, request, Response, stream_with_context
 
 from services.notebook_service import get_notebook_service
 from services.chat_context_builder import build_full_valuation_context
+from services.agent_tool_service import get_agent_tool_service
 from services.opening_question_generator import generate_opening_question, generate_opening_suggestions
 from models.notebook_cell import NotebookCell
 
@@ -33,6 +35,51 @@ def generate_session_id(user_id: str, valuation_id: str) -> str:
     """
     combined = f"{user_id}:{valuation_id}"
     return hashlib.sha256(combined.encode()).hexdigest()[:32]
+
+
+def _sse(event_name: str, payload: dict) -> str:
+    return f"event: {event_name}\ndata: {json.dumps(payload)}\n\n"
+
+
+def _resolve_user_id(req, session=None) -> str:
+    return (
+        (req.get_json(silent=True) or {}).get('user_id')
+        or req.headers.get('X-Local-User')
+        or req.headers.get('X-User-ID')
+        or getattr(session, 'user_id', None)
+        or 'local'
+    )
+
+
+def _build_conversation_messages(cells, include_current_message: str = ""):
+    messages = []
+    for existing_cell in cells:
+        if existing_cell.user_input:
+            messages.append({"role": "user", "content": existing_cell.user_input})
+        if existing_cell.ai_output:
+            ai_content = existing_cell.ai_output.get('content') or existing_cell.ai_output.get('message', '')
+            if ai_content:
+                messages.append({"role": "assistant", "content": ai_content})
+    if include_current_message:
+        messages.append({"role": "user", "content": include_current_message})
+    return messages
+
+
+def _parse_tool_approval(message: str):
+    normalized = (message or "").strip().lower()
+    if normalized in {"yes", "y", "approve", "approved", "run it", "do it"}:
+        return True
+    if normalized in {"no", "n", "deny", "denied", "cancel", "skip"}:
+        return False
+    return None
+
+
+def _build_tool_plan_message(tool_name: str, tool_input: dict, reason: str) -> str:
+    return (
+        f"I can run `{tool_name}` with {json.dumps(tool_input or {}, ensure_ascii=True)}.\n\n"
+        f"Plan: {reason or 'Use the live valuation tool path for this question.'}\n\n"
+        "Reply `yes` to run it or `no` to skip."
+    )
 
 
 # ===== SESSION ENDPOINTS =====
@@ -63,6 +110,8 @@ def create_session():
         company_name = data.get('company_name')
         valuation_data = data.get('valuation_data', {})
         valuation_id = data.get('valuation_id')
+        valuation_input_json = data.get('valuation_input_json') or {}
+        valuation_output_json = data.get('valuation_output_json') or {}
         currency = data.get('currency')
         
         # Fetch valuation data if ID provided
@@ -76,6 +125,8 @@ def create_session():
                 )
                 if fetched:
                     valuation_data = fetched.get('valuation_data', {})
+                    valuation_input_json = fetched.get('input_json') or {}
+                    valuation_output_json = fetched.get('output_json') or {}
                     if not ticker:
                         ticker = fetched.get('ticker', '')
                     if not company_name:
@@ -110,6 +161,8 @@ def create_session():
             company_name=company_name,
             user_id=user_id,
             valuation_data=valuation_data,
+            valuation_input_json=valuation_input_json,
+            valuation_output_json=valuation_output_json,
             currency=currency,
             valuation_id=valuation_id,
             session_id=session_id  # Pass deterministic ID if available
@@ -502,13 +555,22 @@ def send_message(session_id: str):
     def generate():
         try:
             service = get_notebook_service()
+            tool_service = get_agent_tool_service()
             start_time = time.time()
             
             # Get session for context
             session = service.get_session(session_id)
             if not session:
-                yield f"event: error\ndata: {{'error': 'Session not found'}}\n\n"
+                yield _sse('error', {'error': 'Session not found'})
                 return
+
+            user_id = (
+                data.get('user_id')
+                or request.headers.get('X-Local-User')
+                or request.headers.get('X-User-ID')
+                or session.user_id
+                or 'local'
+            )
             
             # Create reasoning cell
             sequence = service.get_next_sequence_number(session_id)
@@ -520,39 +582,175 @@ def send_message(session_id: str):
             cell = service.add_cell(cell)
             
             # Emit cell created
-            import json
-            yield f"event: cell_start\ndata: {json.dumps({'cell_id': cell.id, 'type': 'reasoning'})}\n\n"
+            yield _sse('cell_start', {'cell_id': cell.id, 'type': 'reasoning'})
             
             # Build context from session's valuation data
             valuation_data = session.base_analysis_json or {}
+            recent_theses = service.list_recent_theses_for_ticker(
+                user_id=user_id,
+                ticker=session.ticker,
+                limit=2,
+                exclude_session_id=session_id,
+            )
             try:
                 system_context = build_full_valuation_context(
                     valuation_data=valuation_data,
                     ticker=session.ticker,
-                    name=session.company_name
+                    name=session.company_name,
+                    valuation_input_json=session.valuation_input_json or {},
+                    valuation_output_json=session.valuation_output_json or {},
+                    recent_theses=recent_theses,
                 )
             except Exception as e:
                 logger.error(f"Context build failed: {e}", exc_info=True)
                 system_context = f"Analyzing {session.company_name or session.ticker}."
             
-            # Stream LLM response - BYPASS message_handler to avoid chat_service session lookup
-            # Build conversation history from notebook cells
             from services.llm_service import get_llm_service
             llm_service = get_llm_service()
+            context = {
+                'ticker': session.ticker,
+                'company_name': session.company_name,
+                'valuation_data': valuation_data,
+                'valuation_input_json': session.valuation_input_json or {},
+                'valuation_output_json': session.valuation_output_json or {},
+                'recent_theses': recent_theses,
+            }
+            approval_decision = _parse_tool_approval(message)
+            pending_plan = service.get_latest_pending_tool_plan(session_id)
+
+            if pending_plan and approval_decision is not None:
+                if approval_decision:
+                    service.update_tool_plan_status(pending_plan['id'], 'approved')
+                    tool_result = tool_service.execute_tool(
+                        tool_name=pending_plan['tool_name'],
+                        params=pending_plan.get('tool_input_json') or {},
+                        session=session,
+                        recent_theses=recent_theses,
+                        auth_header=request.headers.get('Authorization'),
+                        user_message=message,
+                        llm_service=llm_service,
+                        notebook_service=service,
+                    )
+                    recent_theses = service.list_recent_theses_for_ticker(
+                        user_id=user_id,
+                        ticker=session.ticker,
+                        limit=2,
+                        exclude_session_id=session_id,
+                    )
+                    context = {
+                        'ticker': session.ticker,
+                        'company_name': session.company_name,
+                        'valuation_data': session.base_analysis_json or {},
+                        'valuation_input_json': session.valuation_input_json or {},
+                        'valuation_output_json': session.valuation_output_json or {},
+                        'recent_theses': recent_theses,
+                    }
+                    yield _sse('tool_result', {
+                        'cell_id': cell.id,
+                        'tool_name': tool_result.get('tool_name'),
+                        'status': tool_result.get('status'),
+                        'data': tool_result.get('data'),
+                        'error': tool_result.get('error'),
+                        'execution_time_ms': tool_result.get('execution_time_ms'),
+                    })
+
+                    original_cell = service.get_cell(pending_plan['cell_id'])
+                    original_message = (
+                        original_cell.user_input
+                        if original_cell and original_cell.user_input
+                        else message
+                    )
+                    rewritten_query = llm_service.rewrite_query(original_message, context)
+                    full_response = ""
+                    if tool_result.get('status') == 'error':
+                        full_response = f"I couldn't run `{pending_plan['tool_name']}`: {tool_result.get('error')}"
+                        yield _sse('stream', {'cell_id': cell.id, 'chunk': full_response})
+                        service.update_tool_plan_status(pending_plan['id'], 'failed')
+                    else:
+                        for chunk in llm_service.synthesize_response(
+                            original_message=original_message,
+                            rewritten_query=rewritten_query,
+                            tool_results=[tool_result],
+                            context=context,
+                        ):
+                            full_response += chunk
+                            yield _sse('stream', {'cell_id': cell.id, 'chunk': chunk})
+                        service.update_tool_plan_status(pending_plan['id'], 'completed')
+
+                    cell.ai_output = {
+                        'content': full_response,
+                        'model': data.get('model', 'default'),
+                        'rewritten_query': rewritten_query,
+                        'tool_results': [tool_result],
+                    }
+                else:
+                    service.update_tool_plan_status(pending_plan['id'], 'denied')
+                    full_response = f"Not running `{pending_plan['tool_name']}`. I can keep working from the current valuation context if you want."
+                    yield _sse('stream', {'cell_id': cell.id, 'chunk': full_response})
+                    cell.ai_output = {
+                        'content': full_response,
+                        'model': data.get('model', 'default'),
+                        'tool_results': [],
+                    }
+
+                cell.content['ai_output'] = cell.ai_output
+                cell.execution_time_ms = int((time.time() - start_time) * 1000)
+                service.update_cell(cell)
+                yield _sse('cell_complete', {'cell_id': cell.id, 'cell': cell.to_dict()})
+                yield _sse('done', {'status': 'complete'})
+                return
             
-            # Get conversation history from notebook cells
             existing_cells = service.get_cells(session_id)
-            messages = []
-            for existing_cell in existing_cells:
-                if existing_cell.user_input:
-                    messages.append({"role": "user", "content": existing_cell.user_input})
-                if existing_cell.ai_output:
-                    ai_content = existing_cell.ai_output.get('content') or existing_cell.ai_output.get('message', '')
-                    if ai_content:
-                        messages.append({"role": "assistant", "content": ai_content})
-            
-            # Add current message
-            messages.append({"role": "user", "content": message})
+            history_cells = [existing_cell for existing_cell in existing_cells if existing_cell.id != cell.id]
+            messages = _build_conversation_messages(history_cells, include_current_message=message)
+            rewritten_query = llm_service.rewrite_query(message, context)
+            selected_tools = llm_service.select_tools(
+                message=rewritten_query,
+                context=context,
+                available_tools=tool_service.get_live_tools(),
+            )
+            selected_tool = None
+            for candidate in selected_tools:
+                if candidate.get('tool') in tool_service.get_live_tools():
+                    selected_tool = candidate
+                    break
+
+            if selected_tool:
+                tool_name = selected_tool.get('tool')
+                tool_input = selected_tool.get('params') or {}
+                plan_text = _build_tool_plan_message(
+                    tool_name=tool_name,
+                    tool_input=tool_input,
+                    reason=selected_tool.get('reason', ''),
+                )
+                saved_plan = service.save_tool_plan(
+                    session_id=session_id,
+                    cell_id=cell.id,
+                    tool_name=tool_name,
+                    tool_input_json=tool_input,
+                    plan_text=plan_text,
+                    status='pending',
+                )
+                cell.ai_output = {
+                    'content': plan_text,
+                    'model': data.get('model', 'default'),
+                    'rewritten_query': rewritten_query,
+                    'tool_results': [],
+                }
+                cell.content['ai_output'] = cell.ai_output
+                cell.execution_time_ms = int((time.time() - start_time) * 1000)
+                service.update_cell(cell)
+                yield _sse('tool_plan', {
+                    'cell_id': cell.id,
+                    'tool_id': saved_plan.get('id') if saved_plan else None,
+                    'tool_name': tool_name,
+                    'tool_input': tool_input,
+                    'plan': plan_text,
+                    'awaiting_response': True,
+                })
+                yield _sse('cell_complete', {'cell_id': cell.id, 'cell': cell.to_dict()})
+                yield _sse('done', {'status': 'awaiting_tool_approval'})
+                return
             
             full_response = ""
             for chunk in llm_service.stream_chat(
@@ -570,19 +768,20 @@ def send_message(session_id: str):
             cell.ai_output = {
                 'content': full_response,
                 'model': data.get('model', 'default'),
+                'rewritten_query': rewritten_query,
+                'tool_results': [],
             }
             cell.content['ai_output'] = cell.ai_output
             cell.execution_time_ms = execution_time_ms
             service.update_cell(cell)
             
             # Emit complete
-            yield f"event: cell_complete\ndata: {json.dumps({'cell_id': cell.id, 'cell': cell.to_dict()})}\n\n"
-            yield f"event: done\ndata: {json.dumps({'status': 'complete'})}\n\n"
+            yield _sse('cell_complete', {'cell_id': cell.id, 'cell': cell.to_dict()})
+            yield _sse('done', {'status': 'complete'})
             
         except Exception as e:
             logger.error(f"Error in message stream: {e}", exc_info=True)
-            import json
-            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+            yield _sse('error', {'error': str(e)})
     
     return Response(
         stream_with_context(generate()),
@@ -943,7 +1142,8 @@ def save_thesis(session_id: str):
             dcf_snapshot=dcf_snapshot,
             user_id=user_id,
             scenarios_snapshot=scenarios_snapshot,
-            valuation_id=session.valuation_id
+            valuation_id=session.valuation_id,
+            preview_json=data.get('preview_json'),
         )
 
         if not thesis:

@@ -5,58 +5,57 @@ import org.springframework.mock.env.MockEnvironment;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RequiredRuntimePropertiesValidatorTest {
 
     @Test
-    void validate_withAllRequiredProperties_doesNotThrow() {
-        MockEnvironment env = new MockEnvironment()
-                .withProperty("provider.yfinance.base-url", "http://localhost:8000")
-                .withProperty("spring.datasource.url", "jdbc:postgresql://localhost:5432/test")
-                .withProperty("spring.datasource.username", "user")
-                .withProperty("spring.datasource.password", "pass")
-                .withProperty("currency.api.base-url", "https://example.com")
-                .withProperty("currency.api.key", "key")
-                .withProperty("default.username", "admin")
-                .withProperty("default.password", "password")
-                .withProperty("default.firstname", "Test")
-                .withProperty("default.lastname", "User")
-                .withProperty("default.contact", "test@example.com");
+    void validate_allPropertiesPresent_doesNotThrow() {
+        MockEnvironment env = new MockEnvironment();
+        env.setProperty("provider.yfinance.base-url", "http://example.com");
+        env.setProperty("spring.datasource.url", "jdbc:h2:mem:test");
+        env.setProperty("spring.datasource.username", "sa");
+        env.setProperty("spring.datasource.password", "pass");
+        env.setProperty("currency.api.base-url", "http://currency.com");
+        env.setProperty("currency.api.key", "key123");
+        env.setProperty("default.username", "user");
+        env.setProperty("default.password", "pass");
+        env.setProperty("default.firstname", "John");
+        env.setProperty("default.lastname", "Doe");
+        env.setProperty("default.contact", "contact");
 
         RequiredRuntimePropertiesValidator validator = new RequiredRuntimePropertiesValidator(env);
-
         assertDoesNotThrow(validator::validate);
     }
 
     @Test
-    void validate_missingProperty_throws() {
-        MockEnvironment env = new MockEnvironment()
-                .withProperty("provider.yfinance.base-url", "http://localhost:8000");
-
+    void validate_missingProperty_throwsIllegalStateException() {
+        MockEnvironment env = new MockEnvironment(); // Empty
         RequiredRuntimePropertiesValidator validator = new RequiredRuntimePropertiesValidator(env);
 
         IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
-        org.junit.jupiter.api.Assertions.assertTrue(ex.getMessage().contains("spring.datasource.url"));
+        assertTrue(ex.getMessage().contains("Missing required runtime configuration:"));
     }
 
     @Test
-    void validate_unresolvedPlaceholder_throws() {
-        MockEnvironment env = new MockEnvironment()
-                .withProperty("provider.yfinance.base-url", "http://localhost:8000")
-                .withProperty("spring.datasource.url", "${DB_URL}")
-                .withProperty("spring.datasource.username", "user")
-                .withProperty("spring.datasource.password", "pass")
-                .withProperty("currency.api.base-url", "https://example.com")
-                .withProperty("currency.api.key", "key")
-                .withProperty("default.username", "admin")
-                .withProperty("default.password", "password")
-                .withProperty("default.firstname", "Test")
-                .withProperty("default.lastname", "User")
-                .withProperty("default.contact", "test@example.com");
+    void validate_unresolvedPlaceholder_throwsIllegalStateException() {
+        MockEnvironment env = new MockEnvironment();
+        // Give valid values to all EXCEPT one
+        env.setProperty("provider.yfinance.base-url", "http://example.com");
+        env.setProperty("spring.datasource.url", "jdbc:h2:mem:test");
+        env.setProperty("spring.datasource.username", "sa");
+        env.setProperty("spring.datasource.password", "${unresolved.password}"); // unresolved
+        env.setProperty("currency.api.base-url", "http://currency.com");
+        env.setProperty("currency.api.key", "key123");
+        env.setProperty("default.username", "user");
+        env.setProperty("default.password", "pass");
+        env.setProperty("default.firstname", "John");
+        env.setProperty("default.lastname", "Doe");
+        env.setProperty("default.contact", "contact");
 
         RequiredRuntimePropertiesValidator validator = new RequiredRuntimePropertiesValidator(env);
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, validator::validate);
-        org.junit.jupiter.api.Assertions.assertTrue(ex.getMessage().contains("DB_URL"));
+        assertTrue(ex.getMessage().contains("unresolved.password"));
     }
 }

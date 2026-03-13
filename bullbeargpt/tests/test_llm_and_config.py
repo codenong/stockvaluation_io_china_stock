@@ -50,3 +50,56 @@ def test_config_parses_cors_origins(monkeypatch):
         "http://127.0.0.1:4200",
         "http://localhost:3000",
     ]
+
+
+def test_rewrite_query_prompt_forbids_unsupported_multiples(monkeypatch):
+    from services.llm_service import LLMService
+
+    service = object.__new__(LLMService)
+    service.default_provider = "claude"
+
+    monkeypatch.setattr(LLMService, "_normalize_provider", lambda self, provider=None: "claude")
+    monkeypatch.setattr(LLMService, "is_available", lambda self, provider=None: True)
+
+    captured = {}
+
+    def fake_invoke(self, prompt, provider, max_tokens, temperature=0.2, dump_agent_name=None, dump_metadata=None):
+        captured["prompt"] = prompt
+        return "rewritten question"
+
+    monkeypatch.setattr(LLMService, "_invoke_text_completion", fake_invoke)
+
+    result = LLMService.rewrite_query(
+        service,
+        message="Summarize the current MSFT valuation in one sentence using the current notebook context only.",
+        context={"ticker": "MSFT", "company_name": "Microsoft Corporation"},
+    )
+
+    assert result == "rewritten question"
+    assert 'Preserve hard constraints from the user such as "current notebook context only"' in captured["prompt"]
+    assert "Do NOT introduce unsupported valuation frameworks or metrics such as P/E, P/S, EV/EBITDA" in captured["prompt"]
+
+
+def test_rewrite_query_falls_back_when_llm_invents_unsupported_multiples(monkeypatch):
+    from services.llm_service import LLMService
+
+    service = object.__new__(LLMService)
+    service.default_provider = "claude"
+
+    monkeypatch.setattr(LLMService, "_normalize_provider", lambda self, provider=None: "claude")
+    monkeypatch.setattr(LLMService, "is_available", lambda self, provider=None: True)
+    monkeypatch.setattr(
+        LLMService,
+        "_invoke_text_completion",
+        lambda self, prompt, provider, max_tokens, temperature=0.2, dump_agent_name=None, dump_metadata=None:
+            'Provide a one-sentence valuation summary for MSFT relative to its key valuation multiples (P/E, P/S, EV/EBITDA).',
+    )
+
+    original = "Summarize the current MSFT valuation in one sentence using the current notebook context only."
+    result = LLMService.rewrite_query(
+        service,
+        message=original,
+        context={"ticker": "MSFT", "company_name": "Microsoft Corporation"},
+    )
+
+    assert result == original

@@ -36,6 +36,7 @@ export class NotebookService {
 
     // Current session state
     private _currentSession = signal<AnalysisSession | null>(null);
+    private _currentThesis = signal<Thesis | null>(null);
     private _cells = signal<Cell[]>([]);
     private _scenarios = signal<Scenario[]>([]);
     private _isLoading = signal(false);
@@ -44,6 +45,7 @@ export class NotebookService {
 
     // Thesis state
     private _groupedTheses = signal<GroupedTheses>({});
+    private thesisCache = new Map<string, Thesis>();
 
     // Tab state
     private _tabs = signal<NotebookTab[]>([]);
@@ -51,6 +53,7 @@ export class NotebookService {
 
     // Public computed signals
     readonly currentSession = computed(() => this._currentSession());
+    readonly currentThesis = computed(() => this._currentThesis());
     readonly cells = computed(() => this._cells());
     readonly scenarios = computed(() => this._scenarios());
     readonly isLoading = computed(() => this._isLoading());
@@ -84,6 +87,7 @@ export class NotebookService {
                 // Handle both wrapped {session: ...} and direct session response
                 const session = (response as SessionResponse).session || response as AnalysisSession;
                 this._currentSession.set(session);
+                this._currentThesis.set(null);
                 this._cells.set(session.cells || []);
                 this._scenarios.set(session.scenarios || []);
 
@@ -112,6 +116,7 @@ export class NotebookService {
                 // Handle both wrapped {session: ...} and direct session response
                 const session = (response as SessionResponse).session || response as AnalysisSession;
                 this._currentSession.set(session);
+                this._currentThesis.set(null);
                 this._cells.set(session.cells || []);
                 this._scenarios.set(session.scenarios || []);
                 return session;
@@ -216,6 +221,7 @@ export class NotebookService {
                 if (event.cell_id) {
                     this._streamingCellId.set(event.cell_id);
                     this._isStreaming.set(true);
+                    this.ensureStreamingCell(event.cell_id);
                 }
                 break;
 
@@ -241,6 +247,14 @@ export class NotebookService {
                 }
                 this._isStreaming.set(false);
                 this._streamingCellId.set(null);
+                break;
+
+            case 'tool_plan':
+                // The backend also follows with cell_complete containing the persisted approval prompt.
+                break;
+
+            case 'tool_result':
+                // The backend follows with stream/cell_complete for the actual response.
                 break;
 
             case 'done':
@@ -274,6 +288,32 @@ export class NotebookService {
             updated[existingIndex] = cell;
             this._cells.set(updated);
         }
+    }
+
+    private ensureStreamingCell(cellId: string): void {
+        const cells = this._cells();
+        if (cells.some((cell) => cell.id === cellId)) {
+            return;
+        }
+
+        const session = this._currentSession();
+        const nextSequence = cells.length > 0
+            ? Math.max(...cells.map((cell) => cell.sequence_number || 0)) + 1
+            : 1;
+
+        const placeholder: Cell = {
+            id: cellId,
+            session_id: session?.id || '',
+            sequence_number: nextSequence,
+            cell_type: 'reasoning',
+            user_input: '',
+            ai_output: { content: '' },
+            author_type: 'user',
+            created_at: new Date().toISOString(),
+            is_streaming: true,
+        };
+
+        this._cells.set([...cells, placeholder]);
     }
 
     /**
@@ -664,6 +704,8 @@ export class NotebookService {
     loadThesis(thesisId: string): Observable<Thesis> {
         return this.http.get<ThesisResponse>(`${this.baseUrl}/theses/${thesisId}`).pipe(
             map(response => {
+                this.thesisCache.set(response.thesis.id, response.thesis);
+                this._currentThesis.set(response.thesis);
                 // Open tab for this thesis
                 this.openThesisTab(response.thesis);
                 return response.thesis;
@@ -741,7 +783,17 @@ export class NotebookService {
         // Load session/thesis data for the tab
         const tab = tabs.find(t => t.id === tabId);
         if (tab?.type === 'session' && tab.sessionId) {
-            this.loadSession(tab.sessionId).subscribe();
+            this._currentThesis.set(null);
+            if (this._currentSession()?.id !== tab.sessionId) {
+                this.loadSession(tab.sessionId).subscribe();
+            }
+        } else if (tab?.type === 'thesis' && tab.thesisId) {
+            const thesis = this.thesisCache.get(tab.thesisId);
+            if (thesis) {
+                this._currentThesis.set(thesis);
+            } else {
+                this.loadThesis(tab.thesisId).subscribe();
+            }
         }
     }
 
@@ -766,10 +818,16 @@ export class NotebookService {
             const activeTab = remainingTabs[newActiveIndex];
             if (activeTab.type === 'session' && activeTab.sessionId) {
                 this.loadSession(activeTab.sessionId).subscribe();
+            } else if (activeTab.type === 'thesis' && activeTab.thesisId) {
+                const thesis = this.thesisCache.get(activeTab.thesisId);
+                if (thesis) {
+                    this._currentThesis.set(thesis);
+                }
             }
         } else if (remainingTabs.length === 0) {
             this._activeTabId.set(null);
             this._currentSession.set(null);
+            this._currentThesis.set(null);
             this._cells.set([]);
         }
 

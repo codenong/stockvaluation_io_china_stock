@@ -45,12 +45,14 @@ export interface ToolResult {
 }
 
 export interface ToolPlan {
-    session_id: string;
+    session_id?: string;
+    cell_id?: string;
     tool_id: string;
     tool_name: string;
     tool_input: any;
     plan: string;
-    timestamp: string;
+    awaiting_response?: boolean;
+    timestamp?: string;
 }
 
 export interface Hypothesis {
@@ -423,6 +425,10 @@ export class NotebookChatService {
      * Handle SSE events (maps cells to chat messages)
      */
     private handleSSEEvent(event: any): void {
+        if (event.type === 'cell_start') {
+            return;
+        }
+
         if (event.type === 'stream' && event.chunk) {
             // Streaming chunk
             this.streamingBuffer += event.chunk;
@@ -435,17 +441,49 @@ export class NotebookChatService {
             // Update UI
             const messages = this.chatService.getMessages();
             const typingMessageIndex = messages.findIndex((m) => m.isTyping);
+            const existingMessage = event.cell_id ? this.findMessageByCellId(event.cell_id) : null;
 
             if (typingMessageIndex >= 0) {
                 // First chunk
                 this.chatService.removeTypingIndicator();
-                const msg = this.chatService.addAiMessage(renderedContent as string);
-                this.currentStreamingMessageId = msg.id;
+                if (existingMessage) {
+                    this.chatService.updateMessage(existingMessage.id, {
+                        content: renderedContent as string,
+                        metadata: {
+                            ...(existingMessage.metadata || {}),
+                            cell_id: event.cell_id,
+                        },
+                    });
+                    this.currentStreamingMessageId = existingMessage.id;
+                } else {
+                    const msg = this.chatService.addAiMessage(renderedContent as string, {
+                        cell_id: event.cell_id,
+                    });
+                    this.currentStreamingMessageId = msg.id;
+                }
             } else if (this.currentStreamingMessageId) {
                 // Subsequent chunks
                 this.chatService.updateMessage(this.currentStreamingMessageId, {
                     content: renderedContent as string,
+                    metadata: {
+                        ...(messages.find((m) => m.id === this.currentStreamingMessageId)?.metadata || {}),
+                        cell_id: event.cell_id,
+                    },
                 });
+            } else if (existingMessage) {
+                this.chatService.updateMessage(existingMessage.id, {
+                    content: renderedContent as string,
+                    metadata: {
+                        ...(existingMessage.metadata || {}),
+                        cell_id: event.cell_id,
+                    },
+                });
+                this.currentStreamingMessageId = existingMessage.id;
+            } else {
+                const msg = this.chatService.addAiMessage(renderedContent as string, {
+                    cell_id: event.cell_id,
+                });
+                this.currentStreamingMessageId = msg.id;
             }
 
             // Emit chunk event
@@ -455,24 +493,103 @@ export class NotebookChatService {
                 messageId: this.currentStreamingMessageId || '',
             });
 
-        } else if (event.type === 'cell_complete' || event.type === 'complete' || event.type === 'done') {
-            // Streaming complete
+        } else if (event.type === 'cell_complete' && event.cell) {
+            const finalContent = this.extractCellContent(event.cell);
+            const renderedContent = finalContent
+                ? this.enhanceMessageWithQuestions(this.markdownRenderer.render(finalContent) as string)
+                : '';
+            const existingMessage = this.findMessageByCellId(event.cell.id);
+
+            if (renderedContent) {
+                if (this.currentStreamingMessageId) {
+                    const currentMessage = this.chatService.getMessages().find((m) => m.id === this.currentStreamingMessageId);
+                    this.chatService.updateMessage(this.currentStreamingMessageId, {
+                        content: renderedContent,
+                        metadata: {
+                            ...(currentMessage?.metadata || {}),
+                            ...(existingMessage?.metadata || {}),
+                            cell_id: event.cell.id,
+                            rewritten_query: event.cell.ai_output?.rewritten_query,
+                            tool_results: event.cell.ai_output?.tool_results,
+                        },
+                    });
+                } else if (existingMessage) {
+                    this.chatService.updateMessage(existingMessage.id, {
+                        content: renderedContent,
+                        metadata: {
+                            ...(existingMessage.metadata || {}),
+                            cell_id: event.cell.id,
+                            rewritten_query: event.cell.ai_output?.rewritten_query,
+                            tool_results: event.cell.ai_output?.tool_results,
+                        },
+                    });
+                    this.currentStreamingMessageId = existingMessage.id;
+                } else {
+                    const msg = this.chatService.addAiMessage(renderedContent, {
+                        cell_id: event.cell.id,
+                        rewritten_query: event.cell.ai_output?.rewritten_query,
+                        tool_results: event.cell.ai_output?.tool_results,
+                    });
+                    this.currentStreamingMessageId = msg.id;
+                }
+            }
+
             console.log('[NotebookChat] Message streaming complete');
             this.chatService.removeTypingIndicator();
             this.chatService.isLoading.set(false);
-
-            // Reset streaming state
-            this.streamingBuffer = '';
-            this.currentStreamingMessageId = null;
-
-            // Emit completion
             this.completionSubject.next();
-
-            // Save session
             const session = this.chatService.getCurrentSession();
             if (session) {
                 this.chatService.saveSession(session);
             }
+            this.streamingBuffer = '';
+            this.currentStreamingMessageId = null;
+
+        } else if (event.type === 'complete' || event.type === 'done') {
+            console.log('[NotebookChat] Message streaming complete');
+            this.chatService.removeTypingIndicator();
+            this.chatService.isLoading.set(false);
+            this.streamingBuffer = '';
+            this.currentStreamingMessageId = null;
+            this.completionSubject.next();
+
+            const session = this.chatService.getCurrentSession();
+            if (session) {
+                this.chatService.saveSession(session);
+            }
+
+        } else if (event.type === 'tool_plan') {
+            this.chatService.removeTypingIndicator();
+            this.chatService.isLoading.set(false);
+
+            const aiMessage = this.chatService.addAiMessage(event.plan || 'Tool approval required.', {
+                cell_id: event.cell_id,
+                tool_approval: true,
+                tool_id: event.tool_id,
+                tool_name: event.tool_name,
+                awaiting_response: !!event.awaiting_response,
+            });
+
+            this.toolPlanSubject.next({
+                session_id: this.currentSessionId || undefined,
+                cell_id: event.cell_id,
+                tool_id: event.tool_id,
+                tool_name: event.tool_name,
+                tool_input: event.tool_input,
+                plan: event.plan,
+                awaiting_response: event.awaiting_response,
+            });
+
+            this.streamingBuffer = '';
+            this.currentStreamingMessageId = aiMessage.id;
+
+        } else if (event.type === 'tool_result') {
+            this.toolResultSubject.next({
+                tool_name: event.tool_name,
+                result: event.data,
+                success: event.status === 'success',
+                error: event.error,
+            });
 
         } else if (event.type === 'error') {
             // Error event
@@ -482,6 +599,15 @@ export class NotebookChatService {
             this.errorSubject.next(event.error || 'Unknown error');
             this.chatService.addAiMessage(`Error: ${event.error}`, { error: true });
         }
+    }
+
+    private findMessageByCellId(cellId: string): ChatMessage | null {
+        return this.chatService.getMessages().find((message) => message.metadata?.['cell_id'] === cellId) || null;
+    }
+
+    private extractCellContent(cell: any): string {
+        const aiOutput = cell?.ai_output || cell?.content || {};
+        return aiOutput?.message || aiOutput?.content || '';
     }
 
     /**

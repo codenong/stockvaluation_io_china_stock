@@ -297,6 +297,137 @@ class ValuationWorkflowServiceImplTest {
                 verify(growthAnchorService).getAnchorByYahooIndustry("technology", "Europe");
         }
 
+        @Test
+        void getValuation_addStoryTrue_exercisesAddStoryBranch() {
+                // addStory=true exercises a different code branch in the workflow.
+                // When the downstream call succeeds (normal path), the flow is identical
+                // to addStory=false. This test ensures no UnstubbedMethodException is thrown.
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                ValuationTemplate template = fcffTemplate();
+
+                ValuationOutputDTO initial = valuationOutput(100.0, 100.0);
+                ValuationOutputDTO refined = valuationOutput(100.0, 100.0);
+
+                // Add stub for both false AND true variants
+                stubHappyPath(companyData, template, initial, refined);
+                lenient().when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class),
+                                eq(true), eq(template)))
+                                .thenReturn(refined);
+
+                // Should not throw any uncaught exception
+                assertDoesNotThrow(() -> workflow.getValuation("AAPL", new FinancialDataInput(), true));
+        }
+
+        @Test
+        void getValuation_marketPriceZero_returnsEmptyImpliedMetrics() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                ValuationTemplate template = fcffTemplate();
+
+                ValuationOutputDTO initial = valuationOutput(100.0, 95.0);
+                ValuationOutputDTO refined = valuationOutput(0.0, 95.0); // Market price is 0.0
+                stubHappyPath(companyData, template, initial, refined);
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput(), false);
+
+                assertNotNull(result.getAssumptionTransparency());
+                assertNotNull(result.getAssumptionTransparency().getMarketImpliedExpectations());
+                assertEquals(0, result.getAssumptionTransparency().getMarketImpliedExpectations().getMetrics().size());
+        }
+
+        @Test
+        void getValuation_calibrationNaNPath_completesPipeline() {
+                // When estimated value is NaN, calibration/implied expectations
+                // should still complete without exception (exception handled internally)
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                ValuationTemplate template = fcffTemplate();
+
+                // estimatedValue = NaN: the workflow internally handles NaN gracefully
+                ValuationOutputDTO initial = valuationOutput(100.0, 95.0);
+                ValuationOutputDTO refined = valuationOutput(100.0, Double.NaN);
+                stubHappyPath(companyData, template, initial, refined);
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput(), false);
+
+                // Pipeline should complete (not throw)
+                assertNotNull(result);
+        }
+
+        @Test
+        void calculatePercentileUtils_providesCorrectValues() {
+                // Tests that the normalizePercent utility correctly handles multiple ranges
+                // (covers the branch: value in range 1..100 returned as-is,
+                // value 0..1 multiplied by 100)
+                ValuationWorkflowServiceImpl workflow = workflow();
+
+                Double r1 = ReflectionTestUtils.invokeMethod(workflow, "normalizePercent", 8.0);
+                assertEquals(8.0, r1, 0.001); // 1 < 8 < 100 → as-is
+
+                Double r2 = ReflectionTestUtils.invokeMethod(workflow, "normalizePercent", 0.08);
+                assertEquals(8.0, r2, 0.001); // 0 < 0.08 < 1 → *100
+        }
+
+        @Test
+        void getValuation_strictGrowthPolicyLowConfidence_doesNotThrow() {
+                // Low confidence anchor (0.40 < 0.8) means strict policy does NOT enforce
+                // bounds
+                ValuationWorkflowServiceImpl workflow = workflow(properties -> properties.setStrictGrowthPolicy(true));
+                CompanyDataDTO companyData = companyData();
+                ValuationTemplate template = fcffTemplate();
+
+                GrowthAnchorDTO anchor = GrowthAnchorDTO.builder()
+                                .entity("software")
+                                .region("United States")
+                                .confidenceScore(0.40)
+                                .p10(0.04)
+                                .p90(0.18)
+                                .build();
+
+                // Provide full stubs so workflow completes
+                ValuationOutputDTO initial = valuationOutput(100.0, 90.0);
+                ValuationOutputDTO refined = valuationOutput(100.0, 90.0);
+                stubHappyPath(companyData, template, initial, refined);
+                // Override growthAnchor stub set in stubHappyPath
+                when(growthAnchorService.getAnchorByYahooIndustry(anyString(), anyString()))
+                                .thenReturn(Optional.of(anchor));
+
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setCompoundAnnualGrowth2_5(40.0); // outside bounds but ignored due to low confidence
+
+                assertDoesNotThrow(() -> workflow.getValuation("AAPL", overrides, false));
+        }
+
+        @Test
+        void getValuation_strictGrowthPolicyWithinBounds_doesNotThrow() {
+                // Growth value of 10.0 (10%) is within p10=4% p90=18% → no throw expected
+                ValuationWorkflowServiceImpl workflow = workflow(properties -> properties.setStrictGrowthPolicy(true));
+                CompanyDataDTO companyData = companyData();
+                ValuationTemplate template = fcffTemplate();
+
+                GrowthAnchorDTO anchor = GrowthAnchorDTO.builder()
+                                .entity("software")
+                                .region("United States")
+                                .confidenceScore(0.90)
+                                .p10(0.04)
+                                .p90(0.18)
+                                .build();
+
+                ValuationOutputDTO initial = valuationOutput(100.0, 90.0);
+                ValuationOutputDTO refined = valuationOutput(100.0, 90.0);
+                stubHappyPath(companyData, template, initial, refined);
+                when(growthAnchorService.getAnchorByYahooIndustry(anyString(), anyString()))
+                                .thenReturn(Optional.of(anchor));
+
+                FinancialDataInput overrides = new FinancialDataInput();
+                // 10.0 → normalizeMultiple → 0.10 → within [p10=0.04, p90=0.18] → should NOT
+                // throw
+                overrides.setCompoundAnnualGrowth2_5(10.0);
+
+                assertDoesNotThrow(() -> workflow.getValuation("AAPL", overrides, false));
+        }
+
         private ValuationWorkflowServiceImpl workflow() {
                 return workflow(properties -> {
                 });

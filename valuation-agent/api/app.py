@@ -1,6 +1,7 @@
 """
 Refactored Flask application for stockvaluation.io
 """
+import copy
 import json
 import logging
 import os
@@ -26,6 +27,13 @@ from domain.processing.helpers import preprocess_dcf_json, preprocess_financials
 from orchestration.orchestrator import AgentOrchestrator
 from orchestration.graph_builder import GraphBuilder
 from storage.persistence.valuation_persistence import valuation_service
+from services.java_override_mapper import (
+    map_adjustments_to_java_overrides,
+    map_friendly_recalculate_request,
+    normalize_percent_like_value,
+    normalize_sales_to_capital_value,
+    normalize_sector_sales_to_capital_value,
+)
 from services.valuation_service_client import (
     ValuationServiceClient,
     ValuationServiceClientError,
@@ -59,6 +67,12 @@ DEFAULT_CORS_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
+COMMON_FAILURE_REASON = (
+    "Common failure reasons: the system depends on Yahoo Finance data, so if Yahoo Finance "
+    "does not provide the required company data the valuation cannot run. Historical coverage "
+    "is also limited because Yahoo Finance typically provides only about 5 years of history. "
+    "Financial sector companies are not supported."
+)
 
 
 def _parse_cors_origins(raw: str) -> List[str]:
@@ -217,7 +231,15 @@ class StockValuationApp:
                 'current_price': valuation.get('current_price'),
                 'upside_percentage': valuation.get('upside_percentage'),
                 'valuation_data': valuation_data,
+                'input_json': valuation.get('input_json') or {},
+                'output_json': valuation.get('output_json') or {},
             })
+
+        @self.app.post('/api-s/valuation/<valuation_id>/recalculate')
+        def recalculate_saved_valuation(valuation_id: str):
+            if not self._is_internal_request_authorized():
+                return jsonify({"error": "unauthorized"}), 401
+            return self.recalculate_saved_valuation_endpoint(valuation_id)
 
     def _is_internal_request_authorized(self) -> bool:
         """
@@ -402,10 +424,10 @@ class StockValuationApp:
 
         except ValuationServiceClientError as e:
             logger.error(f"valuation-service error in /api-s/valuate for {ticker}: {e}")
-            return jsonify({"error": str(e), "ticker": ticker}), 502
+            return jsonify(self._build_common_failure_payload(error=str(e), ticker=ticker)), 502
         except Exception as e:
             logger.error(f"Error in valuate_endpoint: {e}", exc_info=True)
-            return jsonify({"error": f"Valuation failed: {e}", "ticker": ticker}), 500
+            return jsonify(self._build_common_failure_payload(error=f"Valuation failed: {e}", ticker=ticker)), 500
 
     def _process_valuation_request(self) -> tuple[Optional[ValuationRequest], Any]:
         try:
@@ -493,12 +515,17 @@ class StockValuationApp:
         }
 
     def _handle_missing_segments(self, ticker: str, company_name: str) -> Any:
-        return jsonify({
-            "error": "segments_required",
-            "message": "Unable to map company segments to supported sectors for this ticker.",
-            "ticker": ticker,
-            "company_name": company_name
-        }), 422
+        return jsonify(self._build_common_failure_payload(
+            error="segments_required",
+            message="Unable to map company segments to supported sectors for this ticker.",
+            ticker=ticker,
+            company_name=company_name,
+        )), 422
+
+    def _build_common_failure_payload(self, **payload: Any) -> Dict[str, Any]:
+        merged_payload = dict(payload)
+        merged_payload["reason"] = COMMON_FAILURE_REASON
+        return merged_payload
 
     def _gather_news(self, ticker: str, company_name: str, preprocessed_dcf: Dict[str, Any], preprocessed_financials: Dict[str, Any]) -> Dict[str, Any]:
         news_inputs = {
@@ -734,6 +761,8 @@ class StockValuationApp:
             ticker=ticker,
             company_name=company_name,
             valuation_data=persisted_payload,
+            input_json=recalc_result.get("java_recalculate_payload") or baseline_result.get("financial_data_input_payload") or {},
+            output_json=dcf,
         )
 
         response_payload = {
@@ -748,6 +777,205 @@ class StockValuationApp:
         }
 
         return jsonify(response_payload), 200
+
+    def recalculate_saved_valuation_endpoint(self, valuation_id: str) -> Response:
+        """Recalculate a persisted valuation using friendly BullBearGPT override keys."""
+        valuation = valuation_service.get_valuation_by_id(valuation_id)
+        if not valuation:
+            return jsonify({"error": "Valuation not found"}), 404
+
+        body = request.get_json(silent=True) or {}
+        top_level_overrides = body.get("top_level_overrides") or {}
+        sector_overrides = body.get("sector_overrides") or []
+        persist = body.get("persist", True)
+        auth_header = request.headers.get("Authorization")
+
+        stored_payload = valuation.get("valuation_data") or {}
+        mapped_segments = self._extract_mapped_segments_from_saved_valuation(
+            valuation_input=valuation.get("input_json") or {},
+            valuation_data=stored_payload,
+        )
+        java_overrides, mapping_meta = map_friendly_recalculate_request(
+            top_level_overrides=top_level_overrides,
+            sector_overrides=sector_overrides,
+            mapped_segments=mapped_segments,
+        )
+        java_payload = self._build_java_recalculate_payload(java_overrides, mapped_segments)
+
+        try:
+            dcf = self.valuation_service_client.recalculate_valuation(
+                ticker=valuation.get("ticker", ""),
+                overrides=java_payload,
+                auth_header=auth_header,
+            )
+        except ValuationServiceClientError as exc:
+            logger.error("Saved valuation recalc failed for %s: %s", valuation_id, exc)
+            return jsonify(self._build_common_failure_payload(error=str(exc))), 502
+
+        updated_payload = self._build_saved_recalculated_payload(
+            valuation=valuation,
+            stored_payload=stored_payload,
+            dcf=dcf,
+            top_level_overrides=top_level_overrides,
+            sector_overrides=sector_overrides,
+            java_overrides=java_overrides,
+            java_payload=java_payload,
+            mapping_meta=mapping_meta,
+            mapped_segments=mapped_segments,
+        )
+
+        response_record = {
+            "id": valuation.get("id"),
+            "ticker": valuation.get("ticker"),
+            "company_name": valuation.get("company_name"),
+            "valuation_date": valuation.get("valuation_date"),
+            "fair_value": None,
+            "current_price": None,
+            "upside_percentage": None,
+            "valuation_data": updated_payload,
+            "input_json": java_payload,
+            "output_json": dcf,
+            "applied_overrides": java_overrides,
+        }
+
+        if persist:
+            saved_id = valuation_service.save_valuation(
+                ticker=valuation.get("ticker", ""),
+                company_name=valuation.get("company_name", "") or valuation.get("ticker", ""),
+                valuation_data=updated_payload,
+                valuation_date=datetime.fromisoformat(valuation["valuation_date"]).date() if valuation.get("valuation_date") else None,
+                input_json=java_payload,
+                output_json=dcf,
+            )
+            if not saved_id:
+                return jsonify(self._build_common_failure_payload(error="Failed to persist recalculated valuation")), 500
+            reloaded = valuation_service.get_valuation_by_id(saved_id)
+            if reloaded:
+                response_record.update(reloaded)
+
+        return jsonify(response_record), 200
+
+    def _extract_mapped_segments_from_saved_valuation(
+        self,
+        valuation_input: Dict[str, Any],
+        valuation_data: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Recover mapped segments from stored valuation input or metadata."""
+        raw_segments = (
+            ((valuation_input.get("segments") or {}).get("segments"))
+            or (((valuation_data.get("valuation_metadata") or {}).get("recalculate_financial_data_input") or {}).get("segments") or {}).get("segments")
+            or []
+        )
+        normalized = []
+        for item in raw_segments:
+            if not isinstance(item, dict):
+                continue
+            normalized.append({
+                "sector": item.get("sector"),
+                "industry": item.get("industry"),
+                "components": item.get("components") or [],
+                "mapping_score": item.get("mappingScore"),
+                "revenue_share": item.get("revenueShare"),
+                "operating_margin": item.get("operatingMargin"),
+            })
+        return normalized
+
+    def _build_saved_recalculated_payload(
+        self,
+        valuation: Dict[str, Any],
+        stored_payload: Dict[str, Any],
+        dcf: Dict[str, Any],
+        top_level_overrides: Dict[str, Any],
+        sector_overrides: List[Dict[str, Any]],
+        java_overrides: Dict[str, Any],
+        java_payload: Dict[str, Any],
+        mapping_meta: Dict[str, Any],
+        mapped_segments: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        payload = copy.deepcopy(stored_payload) if isinstance(stored_payload, dict) else {}
+        merged_result = payload.get("merged_result") if isinstance(payload.get("merged_result"), dict) else {}
+        merged_result = copy.deepcopy(merged_result)
+        existing_dcf_analysis = payload.get("dcf_analysis") if isinstance(payload.get("dcf_analysis"), dict) else {}
+        dcf_analysis = copy.deepcopy(existing_dcf_analysis or (merged_result.get("dcf_analysis") if isinstance(merged_result.get("dcf_analysis"), dict) else {}))
+        friendly_adjustments = self._build_friendly_adjustments(top_level_overrides)
+
+        dcf["assumptionTransparency"] = self._build_assumption_transparency(
+            dcf=dcf,
+            adjustments=friendly_adjustments,
+            java_overrides=java_overrides,
+            mapped_segments=mapped_segments,
+        )
+
+        effective_assumptions = self._derive_effective_assumptions_from_dcf(dcf)
+        requested_assumptions = {
+            key: value for key, value in (top_level_overrides or {}).items()
+            if key in {"revenue_growth", "operating_margin", "sales_to_capital", "wacc", "terminal_growth"}
+        }
+
+        if isinstance(merged_result, dict):
+            merged_result["dcf_analysis"] = dict(merged_result.get("dcf_analysis") or {})
+            merged_result["dcf_analysis"]["requested_assumptions"] = requested_assumptions
+            merged_result["dcf_analysis"]["proposed_assumptions"] = effective_assumptions
+            merged_result["dcf_analysis"]["effective_assumptions"] = effective_assumptions
+            merged_result["dcf_analysis"]["dcf_adjustment_instructions"] = friendly_adjustments
+            merged_result["dcf_analysis"]["sector_adjustment_instructions"] = sector_overrides or []
+
+        company_dto = dcf.get("companyDTO") or {}
+        fair_value = company_dto.get("estimatedValuePerShare")
+        current_price = company_dto.get("price")
+        dcf_analysis["fair_value"] = fair_value
+        dcf_analysis["intrinsic_value"] = fair_value
+        dcf_analysis["requested_assumptions"] = requested_assumptions
+        dcf_analysis["proposed_assumptions"] = effective_assumptions
+        dcf_analysis["effective_assumptions"] = effective_assumptions
+        dcf_analysis["dcf_adjustment_instructions"] = friendly_adjustments
+        dcf_analysis["sector_adjustment_instructions"] = sector_overrides or []
+
+        financials = payload.get("financials") if isinstance(payload.get("financials"), dict) else {}
+        financials = copy.deepcopy(financials)
+        if current_price is not None:
+            financials["current_price"] = current_price
+
+        valuation_metadata = payload.get("valuation_metadata") if isinstance(payload.get("valuation_metadata"), dict) else {}
+        valuation_metadata = copy.deepcopy(valuation_metadata)
+        valuation_metadata["java_overrides"] = java_overrides
+        valuation_metadata["recalculate_financial_data_input"] = java_payload
+        valuation_metadata["mapping_meta"] = mapping_meta
+        valuation_metadata.setdefault("baseline_financial_data_input", valuation.get("input_json") or {})
+
+        payload.update({
+            "ticker": valuation.get("ticker"),
+            "company_name": valuation.get("company_name"),
+            "merged_result": merged_result,
+            "dcf_analysis": dcf_analysis,
+            "financials": financials,
+            "java_valuation_output": dcf,
+            "financialDTO": dcf.get("financialDTO"),
+            "companyDTO": dcf.get("companyDTO"),
+            "terminalValueDTO": dcf.get("terminalValueDTO"),
+            "baseYearComparison": dcf.get("baseYearComparison"),
+            "valuation_metadata": valuation_metadata,
+        })
+        return payload
+
+    @staticmethod
+    def _build_friendly_adjustments(top_level_overrides: Dict[str, Any]) -> List[Dict[str, Any]]:
+        adjustments = []
+        for source_key, parameter in (
+            ("revenue_growth", "revenue_cagr"),
+            ("operating_margin", "operating_margin"),
+            ("sales_to_capital", "sales_to_capital"),
+            ("wacc", "wacc"),
+            ("terminal_growth", "terminal_growth"),
+        ):
+            if source_key not in top_level_overrides:
+                continue
+            adjustments.append({
+                "parameter": parameter,
+                "new_value": top_level_overrides.get(source_key),
+                "source": "bullbeargpt_recalculate",
+            })
+        return adjustments
 
     def _derive_effective_assumptions_from_dcf(self, dcf: Dict[str, Any]) -> Dict[str, Optional[float]]:
         financial_dto = dcf.get("financialDTO") if isinstance(dcf, dict) else {}
@@ -768,151 +996,11 @@ class StockValuationApp:
         sector_adjustments: Any = None,
         mapped_segments: Optional[List[Dict[str, Any]]] = None,
     ) -> tuple[Dict[str, Any], Dict[str, Any]]:
-        """Map agent dcf_adjustment_instructions to Java FinancialDataInput overrides."""
-        if not isinstance(adjustments, list):
-            adjustments = []
-        if not isinstance(sector_adjustments, list):
-            sector_adjustments = []
-
-        overrides: Dict[str, Any] = {}
-        mapped = []
-        unmapped = []
-
-        for item in adjustments:
-            if not isinstance(item, dict):
-                continue
-
-            param = str(item.get("parameter", "")).strip().lower()
-            unit = str(item.get("unit", "")).strip().lower()
-            new_value = item.get("new_value")
-            try:
-                new_value = float(new_value)
-            except (TypeError, ValueError):
-                unmapped.append({"parameter": param, "reason": "invalid_new_value", "value": item.get("new_value")})
-                continue
-            rounded_value = round(new_value, 2)
-
-            if param == "revenue_cagr":
-                overrides["compoundAnnualGrowth2_5"] = rounded_value
-            elif param == "operating_margin":
-                overrides["targetPreTaxOperatingMargin"] = rounded_value
-            elif param == "wacc":
-                overrides["initialCostCapital"] = round(self._normalize_percent_like_value(new_value), 2)
-            elif param in {"terminal_growth", "terminal_growth_rate"}:
-                overrides["terminalGrowthRate"] = round(self._normalize_percent_like_value(new_value), 2)
-            elif param == "tax_rate":
-                overrides["overrideAssumptionTaxRate"] = {
-                    "overrideCost": round(self._normalize_percent_like_value(new_value), 2),
-                    "isOverride": True,
-                    "additionalInputValue": 0.0,
-                    "additionalRadioValue": None,
-                }
-            elif param in {"sales_to_capital", "sales_to_capital_ratio", "reinvestment", "reinvestment_rate"}:
-                stc_value = round(self._normalize_sales_to_capital_value(new_value), 2)
-                overrides["salesToCapitalYears1To5"] = stc_value
-                overrides.setdefault("salesToCapitalYears6To10", stc_value)
-            else:
-                unmapped.append({"parameter": param, "reason": "unsupported_parameter", "value": new_value, "unit": unit})
-                continue
-
-            mapped.append({
-                "parameter": param,
-                "new_value": rounded_value,
-                "unit": unit,
-                "rationale": str(item.get("rationale", "")).strip(),
-            })
-
-        allowed_adjustment_types = {"absolute", "relative_multiplier", "relative_additive"}
-        allowed_timeframes = {"years_1_to_5", "years_6_to_10", "both"}
-        allowed_sector_params = {"revenue_growth", "operating_margin", "sales_to_capital"}
-        valid_sector_lookup = {
-            str(item.get("sector", "")).strip().lower(): str(item.get("sector", "")).strip()
-            for item in (mapped_segments or [])
-            if isinstance(item, dict) and str(item.get("sector", "")).strip()
-        }
-        sector_mapped = []
-        sector_unmapped = []
-        java_sector_overrides: List[Dict[str, Any]] = []
-
-        for item in sector_adjustments:
-            if not isinstance(item, dict):
-                continue
-
-            raw_sector = str(item.get("sector", "")).strip()
-            sector_name = valid_sector_lookup.get(raw_sector.lower())
-            if not sector_name:
-                sector_unmapped.append({"sector": raw_sector, "reason": "unknown_sector"})
-                continue
-
-            parameter = str(item.get("parameter", "")).strip().lower()
-            if parameter not in allowed_sector_params:
-                sector_unmapped.append(
-                    {"sector": sector_name, "parameter": parameter, "reason": "unsupported_parameter"}
-                )
-                continue
-
-            value = item.get("value", item.get("new_value"))
-            try:
-                value = float(value)
-            except (TypeError, ValueError):
-                sector_unmapped.append(
-                    {"sector": sector_name, "parameter": parameter, "reason": "invalid_value", "value": value}
-                )
-                continue
-
-            unit = str(item.get("unit", "")).strip().lower()
-            if parameter == "sales_to_capital":
-                normalized_value = round(self._normalize_sector_sales_to_capital_value(value), 2)
-            elif unit in {"percent", "%"}:
-                normalized_value = round(self._normalize_percent_like_value(value), 2)
-            else:
-                normalized_value = round(value, 2)
-
-            adjustment_type = str(item.get("adjustment_type", "absolute")).strip().lower()
-            if adjustment_type not in allowed_adjustment_types:
-                sector_unmapped.append(
-                    {
-                        "sector": sector_name,
-                        "parameter": parameter,
-                        "reason": "invalid_adjustment_type",
-                        "adjustment_type": adjustment_type,
-                    }
-                )
-                continue
-
-            timeframe = str(item.get("timeframe", "both")).strip().lower()
-            if timeframe not in allowed_timeframes:
-                timeframe = "both"
-
-            java_item = {
-                "sectorName": sector_name,
-                "parameterType": parameter,
-                "value": normalized_value,
-                "adjustmentType": adjustment_type,
-                "timeframe": timeframe,
-            }
-            java_sector_overrides.append(java_item)
-            sector_mapped.append(
-                {
-                    "sector": sector_name,
-                    "parameter": parameter,
-                    "value": normalized_value,
-                    "adjustmentType": adjustment_type,
-                    "timeframe": timeframe,
-                }
-            )
-
-        if java_sector_overrides:
-            overrides["sectorOverrides"] = java_sector_overrides
-
-        return overrides, {
-            "count": len(adjustments),
-            "mapped": mapped,
-            "unmapped": unmapped,
-            "sector_count": len(sector_adjustments),
-            "sector_mapped": sector_mapped,
-            "sector_unmapped": sector_unmapped,
-        }
+        return map_adjustments_to_java_overrides(
+            adjustments=adjustments,
+            sector_adjustments=sector_adjustments,
+            mapped_segments=mapped_segments,
+        )
 
     @staticmethod
     def _normalize_percent_like_value(value: float) -> float:
@@ -920,9 +1008,7 @@ class StockValuationApp:
         Normalize rate values that may arrive as decimal (0.105) or percent (10.5).
         Java FinancialDataInput override fields expect percent-form numbers.
         """
-        if abs(value) <= 1.0:
-            return value * 100.0
-        return value
+        return normalize_percent_like_value(value)
 
     @staticmethod
     def _normalize_sales_to_capital_value(value: float) -> float:
@@ -930,9 +1016,7 @@ class StockValuationApp:
         Sales-to-capital is stored as plain x units (e.g., 2.0x).
         Backward-compat: normalize legacy percentage-style values (e.g. 200) to 2.0x.
         """
-        if abs(value) > 50.0:
-            return value / 100.0
-        return value
+        return normalize_sales_to_capital_value(value)
 
     @staticmethod
     def _normalize_sector_sales_to_capital_value(value: float) -> float:
@@ -941,9 +1025,7 @@ class StockValuationApp:
         Backward-compat: if legacy callers send percentage-style numbers (e.g. 320),
         normalize back to 3.2x for sector-level override payloads.
         """
-        if abs(value) > 50.0:
-            return value / 100.0
-        return value
+        return normalize_sector_sales_to_capital_value(value)
 
     def _extract_mapped_segments(self, segments_result: Any, expected_industry: str = "") -> List[Dict[str, Any]]:
         if not isinstance(segments_result, dict):
