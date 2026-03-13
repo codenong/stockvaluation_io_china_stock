@@ -26,7 +26,11 @@ Need these APIs?
 
 ## Product Video
 
-[Watch the product video](https://golpo-podcast-inputs.s3.amazonaws.com/files/3a92bf82-998d-432e-8297-8ec22343c726.mp4?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAZ3MGNKK4PFXK67XK%2F20260313%2Fus-east-2%2Fs3%2Faws4_request&X-Amz-Date=20260313T084056Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=75c284dccbaf5e405f6d9c07bcefc25a55c5c5f2f91557521a56327c78646b21)
+<video controls width="100%">
+  <source src="https://golpo-podcast-inputs.s3.amazonaws.com/files/3a92bf82-998d-432e-8297-8ec22343c726.mp4?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAZ3MGNKK4PFXK67XK%2F20260313%2Fus-east-2%2Fs3%2Faws4_request&X-Amz-Date=20260313T084056Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=75c284dccbaf5e405f6d9c07bcefc25a55c5c5f2f91557521a56327c78646b21" type="video/mp4">
+  Your browser does not support the video tag.
+  <a href="https://golpo-podcast-inputs.s3.amazonaws.com/files/3a92bf82-998d-432e-8297-8ec22343c726.mp4?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAZ3MGNKK4PFXK67XK%2F20260313%2Fus-east-2%2Fs3%2Faws4_request&X-Amz-Date=20260313T084056Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=75c284dccbaf5e405f6d9c07bcefc25a55c5c5f2f91557521a56327c78646b21">Watch the product video</a>.
+</video>
 
 ![StockValuation.io Automated DCF Analysis](./assets/StockValuation-io-—-Automated-DCF-Analysis-03-05-2026_02_04_PM.png)
 
