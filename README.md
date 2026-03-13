@@ -19,6 +19,12 @@ curl -fsSL https://raw.githubusercontent.com/stockvaluation-io/stockvaluation_io
 
 > **Note:** The script will check prerequisites, download the project if needed, bootstrap local secrets, and interactively prompt for your API keys. It supports **Anthropic, OpenAI, Gemini, Groq, and OpenRouter** for LLM access, plus **`TAVILY_API_KEY`** and **`CURRENCY_API_KEY`** before starting up the containers.
 
+### Why These Keys Are Required
+
+- **LLM key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY`):** This is needed for the AI features. Without it, the app can still run, but it will not generate the narrative, explain the assumptions, or help you build an investment thesis in chat.
+- **`TAVILY_API_KEY`:** This is needed for live web search. Without it, the app cannot pull in recent company news, earnings coverage, or other outside research used in the analysis.
+- **`CURRENCY_API_KEY`:** This is needed for exchange rates. Without it, the app cannot properly handle companies where the stock price and financial statements use different currencies.
+
 Need these APIs?
 
 - **Tavily (Web Search):** Create a free account at [tavily.com](https://tavily.com)
