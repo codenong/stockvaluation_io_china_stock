@@ -356,10 +356,10 @@ public class SegmentWeightedParameterService {
                 asPercent(companyDataDTO.getCompanyDriveDataDTO().getCompoundAnnualGrowth2_5()));
         Double salesToCapitalYears1To5 = coalesce(
                 financialDataInput.getSalesToCapitalYears1To5(),
-                asSalesToCapitalRatio(companyDataDTO.getCompanyDriveDataDTO().getSalesToCapitalYears1To5()));
+                companyDataDTO.getCompanyDriveDataDTO().getSalesToCapitalYears1To5());
         Double salesToCapitalYears6To10 = coalesce(
                 financialDataInput.getSalesToCapitalYears6To10(),
-                asSalesToCapitalRatio(companyDataDTO.getCompanyDriveDataDTO().getSalesToCapitalYears6To10()));
+                companyDataDTO.getCompanyDriveDataDTO().getSalesToCapitalYears6To10());
 
         // Growth helper uses decimal form for next-year growth/margin (e.g., 0.10 not
         // 10.0).
@@ -535,11 +535,10 @@ public class SegmentWeightedParameterService {
         SegmentWeightedParameters segmentParams = new SegmentWeightedParameters();
         segmentParams.setWeightedRevenueNextYear(weightedRevGrowthNext);
         segmentParams.setWeightedCompoundAnnualGrowth2_5(weightedRevGrowth2_5);
-        // CRITICAL FIX: Convert operating margin from decimal to percentage
         segmentParams.setWeightedOperatingMarginNextYear(
-                companyDataDTO.getCompanyDriveDataDTO().getOperatingMarginNextYear() * 100);
+                financialDataInput.getOperatingMarginNextYear());
         segmentParams.setWeightedTargetPreTaxOperatingMargin(weightedTargetMargin);
-        segmentParams.setConvergenceYearMargin(companyDataDTO.getCompanyDriveDataDTO().getConvergenceYearMargin());
+        segmentParams.setConvergenceYearMargin(financialDataInput.getConvergenceYearMargin());
         segmentParams.setWeightedSalesToCapitalYears1To5(weightedSalesToCapital1To5);
         segmentParams.setWeightedSalesToCapitalYears6To10(weightedSalesToCapital6To10);
         segmentParams.setWeightedInitialCostCapital(weightedCostOfCapital);
@@ -639,8 +638,7 @@ public class SegmentWeightedParameterService {
             // needed
             sectorParams.setOperatingMarginNextYear(operatingMarginNextYear * 100); // Convert to percentage
             sectorParams.setTargetPreTaxOperatingMargin(segmentTargetMargin * 100); // Convert back to percentage
-            sectorParams
-                    .setConvergenceYearMargin(companyDataDTO.getCompanyDriveDataDTO().getConvergenceYearMargin());
+            sectorParams.setConvergenceYearMargin(financialDataInput.getConvergenceYearMargin());
 
             // Get sales to capital ratio for this sector
             Double segmentSalesToCapital1To5;
@@ -720,6 +718,7 @@ public class SegmentWeightedParameterService {
         // Recalculate weighted values from final per-sector parameters (after sector +
         // top-level overrides)
         recomputeWeightedFromSectorParameters(segmentParams);
+        segmentParams.setConvergenceYearMargin(financialDataInput.getConvergenceYearMargin());
 
         // Store in thread-safe context for use in ValuationOutputService
         SegmentParameterContext.setParameters(segmentParams);
@@ -727,7 +726,9 @@ public class SegmentWeightedParameterService {
         // Apply weighted parameters to FinancialDataInput (for backward compatibility)
         financialDataInput.setRevenueNextYear(segmentParams.getWeightedRevenueNextYear());
         financialDataInput.setCompoundAnnualGrowth2_5(segmentParams.getWeightedCompoundAnnualGrowth2_5());
+        financialDataInput.setOperatingMarginNextYear(segmentParams.getWeightedOperatingMarginNextYear());
         financialDataInput.setTargetPreTaxOperatingMargin(segmentParams.getWeightedTargetPreTaxOperatingMargin());
+        financialDataInput.setConvergenceYearMargin(segmentParams.getConvergenceYearMargin());
         financialDataInput.setSalesToCapitalYears1To5(segmentParams.getWeightedSalesToCapitalYears1To5());
         financialDataInput.setSalesToCapitalYears6To10(segmentParams.getWeightedSalesToCapitalYears6To10());
         financialDataInput.setInitialCostCapital(segmentParams.getWeightedInitialCostCapital());
@@ -750,17 +751,6 @@ public class SegmentWeightedParameterService {
             return 0.0;
         }
         return Math.abs(value) <= 1.0 ? value * 100.0 : value;
-    }
-
-    private static double asSalesToCapitalRatio(Double value) {
-        if (value == null) {
-            return 0.0;
-        }
-        // Backward compatibility for legacy callers that still send 200 == 2.0x
-        if (Math.abs(value) > 50.0) {
-            return value / 100.0;
-        }
-        return value;
     }
 
     private double reAdjustSalesToCapitalFirstPhases(Double salesToCapitalFirstPhase, Double salesToCapital) {
@@ -865,6 +855,10 @@ public class SegmentWeightedParameterService {
             if (adjustedParameterSet.contains("targetPreTaxOperatingMargin")
                     && financialDataInput.getTargetPreTaxOperatingMargin() != null) {
                 sectorParams.setTargetPreTaxOperatingMargin(financialDataInput.getTargetPreTaxOperatingMargin());
+            }
+            if (adjustedParameterSet.contains("convergenceYearMargin")
+                    && financialDataInput.getConvergenceYearMargin() != null) {
+                sectorParams.setConvergenceYearMargin(financialDataInput.getConvergenceYearMargin());
             }
         }
 

@@ -41,23 +41,23 @@ class ValuationModelTest {
     }
 
     @Test
-    void sustainableAdvantageAboveThresholdUsesLongGrowthPeriodAndTwoStagePattern() {
+    void sustainableAdvantageAboveThresholdUsesLongGrowthPeriodAndThreeStagePattern() {
         ValuationModel model = createModel(true, false, false, false, "", true, 0.12, "");
 
         assertEquals("10 or more years", model.getGrowthPeriodLength());
-        assertEquals(GrowthPattern.TWO_STAGE, model.getGrowthPattern());
+        assertEquals(GrowthPattern.THREE_STAGE, model.getGrowthPattern());
         assertEquals(ModelType.DISCOUNTED_CF.getDisplayName(), model.getModelTypeString());
         assertEquals(EarningsLevel.CURRENT.getDisplayName(), model.getEarningsLevelString());
         assertEquals(CashflowType.FCFF.getDisplayName(), model.getCashflowToDiscountString());
-        assertEquals(GrowthPattern.TWO_STAGE.getDisplayName(), model.getGrowthPatternString());
+        assertEquals(GrowthPattern.THREE_STAGE.getDisplayName(), model.getGrowthPatternString());
     }
 
     @Test
-    void nonSustainableGrowthAboveThresholdStillUsesMediumGrowthPeriod() {
+    void nonSustainableGrowthAboveThresholdStillUsesMediumGrowthPeriodAndThreeStagePattern() {
         ValuationModel model = createModel(true, false, false, false, "", false, 0.12, "");
 
         assertEquals("5 to 10 years", model.getGrowthPeriodLength());
-        assertEquals(GrowthPattern.TWO_STAGE, model.getGrowthPattern());
+        assertEquals(GrowthPattern.THREE_STAGE, model.getGrowthPattern());
     }
 
     private static ValuationModel createModel(

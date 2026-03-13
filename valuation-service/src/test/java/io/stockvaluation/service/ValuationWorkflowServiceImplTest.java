@@ -144,7 +144,7 @@ class ValuationWorkflowServiceImplTest {
                 invalidTemplate.setCashflowToDiscount(null);
 
                 when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
-                when(valuationTemplateService.determineTemplate(isNull(), eq(companyData))).thenReturn(invalidTemplate);
+                when(valuationTemplateService.determineTemplate(nullable(FinancialDataInput.class), eq(companyData))).thenReturn(invalidTemplate);
 
                 assertThrows(IllegalStateException.class, () -> workflow.getValuation("AAPL", null, true));
                 assertNull(SegmentParameterContext.getParameters());
@@ -220,14 +220,17 @@ class ValuationWorkflowServiceImplTest {
 
                 ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput(), false);
 
-                List<Boolean> solvedFlags = result.getAssumptionTransparency()
+                Map<String, Boolean> solvedByKey = result.getAssumptionTransparency()
                                 .getMarketImpliedExpectations()
                                 .getMetrics()
                                 .stream()
-                                .map(metric -> Boolean.TRUE.equals(metric.getSolved()))
-                                .collect(Collectors.toList());
-                assertEquals(3, solvedFlags.size());
-                assertTrue(solvedFlags.stream().allMatch(Boolean::booleanValue));
+                                .collect(Collectors.toMap(
+                                                AssumptionTransparencyDTO.ImpliedMetric::getKey,
+                                                metric -> Boolean.TRUE.equals(metric.getSolved())));
+                assertEquals(3, solvedByKey.size());
+                assertEquals(Boolean.TRUE, solvedByKey.get("revenue_cagr"));
+                assertEquals(Boolean.TRUE, solvedByKey.get("operating_margin"));
+                assertEquals(Boolean.FALSE, solvedByKey.get("sales_to_capital"));
         }
 
         @Test
@@ -259,7 +262,7 @@ class ValuationWorkflowServiceImplTest {
                 ValuationTemplate template = fcffTemplate();
 
                 when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
-                when(valuationTemplateService.determineTemplate(isNull(), eq(companyData))).thenReturn(template);
+                when(valuationTemplateService.determineTemplate(nullable(FinancialDataInput.class), eq(companyData))).thenReturn(template);
 
                 GrowthAnchorDTO anchor = GrowthAnchorDTO.builder()
                                 .entity("software")
@@ -317,6 +320,219 @@ class ValuationWorkflowServiceImplTest {
 
                 // Should not throw any uncaught exception
                 assertDoesNotThrow(() -> workflow.getValuation("AAPL", new FinancialDataInput(), true));
+        }
+
+        @Test
+        void initializeFinancialDataInput_usesTerminalTargetMarginAndTemplateConvergence() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                ValuationTemplate template = fcffTemplate();
+                template.setGrowthPattern(GrowthPattern.THREE_STAGE);
+                template.setProjectionYears(15);
+                template.setArrayLength(17);
+
+                FinancialDataInput initialized = ReflectionTestUtils.invokeMethod(
+                                workflow,
+                                "initializeFinancialDataInput",
+                                companyData,
+                                template);
+
+                assertNotNull(initialized);
+                assertEquals(20.0, initialized.getOperatingMarginNextYear(), 0.001);
+                assertEquals(22.0, initialized.getTargetPreTaxOperatingMargin(), 0.001);
+                assertEquals(10.0, initialized.getConvergenceYearMargin(), 0.001);
+                assertEquals(2.2, initialized.getSalesToCapitalYears1To5(), 0.001);
+                assertEquals(2.1, initialized.getSalesToCapitalYears6To10(), 0.001);
+        }
+
+        @Test
+        void getValuation_priceToValueGapForcesThreeStageRerun() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                ValuationTemplate firstPassTemplate = fcffTemplate();
+                ValuationTemplate forcedTemplate = fcffTemplate();
+                forcedTemplate.setGrowthPattern(GrowthPattern.THREE_STAGE);
+                forcedTemplate.setProjectionYears(15);
+                forcedTemplate.setArrayLength(17);
+
+                when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
+                when(valuationTemplateService.determineTemplate(nullable(FinancialDataInput.class), eq(companyData)))
+                                .thenReturn(firstPassTemplate);
+                when(valuationTemplateService.withGrowthPattern(eq(firstPassTemplate), eq(GrowthPattern.THREE_STAGE), anyString()))
+                                .thenReturn(forcedTemplate);
+                when(growthAnchorService.getAnchorByYahooIndustry(anyString(), anyString()))
+                                .thenReturn(Optional.empty());
+                when(valuationOutputService.calculateCurrentSalesToCapitalRatio(any(FinancialDataInput.class),
+                                any(RDResult.class), any()))
+                                .thenReturn(1.0);
+                when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class), eq(false),
+                                any(ValuationTemplate.class)))
+                                .thenReturn(
+                                                valuationOutput(200.0, 100.0),
+                                                valuationOutput(120.0, 100.0),
+                                                valuationOutput(120.0, 100.0));
+                when(commonService.calculateRDConverterValue(anyString(), anyDouble(), anyMap()))
+                                .thenReturn(new RDResult(0.0, 0.0, 0.0, 0.0));
+                when(commonService.calculateOperatingLeaseConverter())
+                                .thenReturn(new LeaseResultDTO(0.0, 0.0, 0.0, 0.0));
+                when(optionValueService.calculateOptionValue(anyString(), anyDouble(), anyDouble(), anyDouble(),
+                                anyDouble()))
+                                .thenReturn(new OptionValueResultDTO(0.0, 0.0));
+
+                CompanyDTO calibrationCompany = new CompanyDTO();
+                calibrationCompany.setEstimatedValuePerShare(100.0);
+                lenient().when(valuationOutputService.calculateFinancialData(any(FinancialDataInput.class),
+                                any(RDResult.class), any(), anyString(), isNull()))
+                                .thenReturn(new FinancialDTO());
+                lenient().when(valuationOutputService.calculateCompanyData(any(FinancialDTO.class),
+                                any(FinancialDataInput.class), any(OptionValueResultDTO.class), any()))
+                                .thenReturn(calibrationCompany);
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput(), false);
+
+                assertEquals(GrowthPattern.THREE_STAGE, result.getGrowthPattern());
+                assertEquals(15, result.getProjectionYears());
+                assertTrue(result.getTemplateSelectionReason().startsWith("Forced THREE_STAGE due to price/value gap"));
+                assertNotNull(result.getAssumptionTransparency());
+                assertEquals("THREE_STAGE", result.getAssumptionTransparency().getGrowthPattern());
+                assertTrue(result.getAssumptionTransparency().getNotes().stream()
+                                .anyMatch(note -> note.contains("Projection was upgraded to THREE_STAGE")));
+        }
+
+        @Test
+        void getValuation_segmentAwarePriceGapForcesThreeStageRerun() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                ValuationTemplate firstPassTemplate = fcffTemplate();
+                firstPassTemplate.setGrowthPattern(GrowthPattern.STABLE);
+                ValuationTemplate forcedTemplate = fcffTemplate();
+                forcedTemplate.setGrowthPattern(GrowthPattern.THREE_STAGE);
+                forcedTemplate.setProjectionYears(15);
+                forcedTemplate.setArrayLength(17);
+
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setSegments(new SegmentResponseDTO(List.of(
+                                new SegmentResponseDTO.Segment("software", "technology", List.of("Cloud"), 0.9, 0.7,
+                                                0.3),
+                                new SegmentResponseDTO.Segment("hardware", "technology", List.of("Devices"), 0.8, 0.3,
+                                                0.2))));
+
+                when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
+                when(valuationTemplateService.determineTemplate(eq(overrides), eq(companyData)))
+                                .thenReturn(firstPassTemplate);
+                when(valuationTemplateService.withGrowthPattern(eq(firstPassTemplate), eq(GrowthPattern.THREE_STAGE),
+                                anyString()))
+                                .thenReturn(forcedTemplate);
+                when(growthAnchorService.getAnchorByYahooIndustry(anyString(), anyString()))
+                                .thenReturn(Optional.empty());
+                when(valuationOutputService.calculateCurrentSalesToCapitalRatio(any(FinancialDataInput.class),
+                                any(RDResult.class), any()))
+                                .thenReturn(1.0);
+                when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class), eq(false),
+                                any(ValuationTemplate.class)))
+                                .thenReturn(
+                                                valuationOutput(100.0, 100.0),
+                                                valuationOutput(100.0, 10.0),
+                                                valuationOutput(120.0, 100.0),
+                                                valuationOutput(120.0, 100.0));
+                when(commonService.calculateRDConverterValue(anyString(), anyDouble(), anyMap()))
+                                .thenReturn(new RDResult(0.0, 0.0, 0.0, 0.0));
+                when(commonService.calculateOperatingLeaseConverter())
+                                .thenReturn(new LeaseResultDTO(0.0, 0.0, 0.0, 0.0));
+                when(optionValueService.calculateOptionValue(anyString(), anyDouble(), anyDouble(), anyDouble(),
+                                anyDouble()))
+                                .thenReturn(new OptionValueResultDTO(0.0, 0.0));
+
+                CompanyDTO calibrationCompany = new CompanyDTO();
+                calibrationCompany.setEstimatedValuePerShare(100.0);
+                lenient().when(valuationOutputService.calculateFinancialData(any(FinancialDataInput.class),
+                                any(RDResult.class), any(), anyString(), isNull()))
+                                .thenReturn(new FinancialDTO());
+                lenient().when(valuationOutputService.calculateCompanyData(any(FinancialDTO.class),
+                                any(FinancialDataInput.class), any(OptionValueResultDTO.class), any()))
+                                .thenReturn(calibrationCompany);
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides, false);
+
+                assertEquals(GrowthPattern.THREE_STAGE, result.getGrowthPattern());
+                assertEquals(15, result.getProjectionYears());
+                assertTrue(result.getTemplateSelectionReason().startsWith("Forced THREE_STAGE due to price/value gap"));
+                assertTrue(result.getAssumptionTransparency().getNotes().stream()
+                                .anyMatch(note -> note.contains("Projection was upgraded to THREE_STAGE")));
+                verify(commonService, times(2)).applySegmentWeightedParameters(any(FinancialDataInput.class),
+                                eq(companyData), anyList());
+        }
+
+        @Test
+        void getValuation_explicitGrowthPatternOverrideSkipsForcedThreeStageRerun() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                ValuationTemplate template = fcffTemplate();
+                template.setGrowthPattern(GrowthPattern.STABLE);
+
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setGrowthPatternOverride(GrowthPattern.STABLE);
+
+                when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
+                when(valuationTemplateService.determineTemplate(eq(overrides), eq(companyData))).thenReturn(template);
+                when(growthAnchorService.getAnchorByYahooIndustry(anyString(), anyString()))
+                                .thenReturn(Optional.empty());
+                when(valuationOutputService.calculateCurrentSalesToCapitalRatio(any(FinancialDataInput.class),
+                                any(RDResult.class), any()))
+                                .thenReturn(1.0);
+                when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class), eq(false),
+                                eq(template)))
+                                .thenReturn(valuationOutput(200.0, 100.0), valuationOutput(200.0, 100.0));
+                when(commonService.calculateRDConverterValue(anyString(), anyDouble(), anyMap()))
+                                .thenReturn(new RDResult(0.0, 0.0, 0.0, 0.0));
+                when(commonService.calculateOperatingLeaseConverter())
+                                .thenReturn(new LeaseResultDTO(0.0, 0.0, 0.0, 0.0));
+                when(optionValueService.calculateOptionValue(anyString(), anyDouble(), anyDouble(), anyDouble(),
+                                anyDouble()))
+                                .thenReturn(new OptionValueResultDTO(0.0, 0.0));
+
+                CompanyDTO calibrationCompany = new CompanyDTO();
+                calibrationCompany.setEstimatedValuePerShare(100.0);
+                lenient().when(valuationOutputService.calculateFinancialData(any(FinancialDataInput.class),
+                                any(RDResult.class), any(), anyString(), isNull()))
+                                .thenReturn(new FinancialDTO());
+                lenient().when(valuationOutputService.calculateCompanyData(any(FinancialDTO.class),
+                                any(FinancialDataInput.class), any(OptionValueResultDTO.class), any()))
+                                .thenReturn(calibrationCompany);
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides, false);
+
+                assertEquals(GrowthPattern.STABLE, result.getGrowthPattern());
+                verify(valuationTemplateService, never()).withGrowthPattern(any(ValuationTemplate.class), any(), anyString());
+        }
+
+        @Test
+        void adjustSalesToCapitalRatio_keepsLongRunRatioWhenMatureValueIsLower() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                FinancialDataInput input = new FinancialDataInput();
+                BasicInfoDataDTO basic = new BasicInfoDataDTO();
+                basic.setTicker("AAPL");
+                input.setBasicInfoDataDTO(basic);
+                FinancialDataDTO financial = new FinancialDataDTO();
+                financial.setMarginalTaxRate(0.25);
+                financial.setResearchAndDevelopmentMap(Map.of());
+                input.setFinancialDataDTO(financial);
+                input.setIndustry("technology");
+                input.setSalesToCapitalYears1To5(2.0);
+                input.setSalesToCapitalYears6To10(1.5);
+
+                when(commonService.calculateRDConverterValue(anyString(), anyDouble(), anyMap()))
+                                .thenReturn(new RDResult(0.0, 0.0, 0.0, 0.0));
+                when(commonService.calculateOperatingLeaseConverter())
+                                .thenReturn(new LeaseResultDTO(0.0, 0.0, 0.0, 0.0));
+                when(valuationOutputService.calculateCurrentSalesToCapitalRatio(any(FinancialDataInput.class),
+                                any(RDResult.class), any()))
+                                .thenReturn(3.0);
+
+                ReflectionTestUtils.invokeMethod(workflow, "adjustSalesToCapitalRatio", input);
+
+                assertEquals(3.0, input.getSalesToCapitalYears1To5(), 0.001);
+                assertEquals(1.5, input.getSalesToCapitalYears6To10(), 0.001);
         }
 
         @Test
@@ -421,8 +637,7 @@ class ValuationWorkflowServiceImplTest {
                                 .thenReturn(Optional.of(anchor));
 
                 FinancialDataInput overrides = new FinancialDataInput();
-                // 10.0 → normalizeMultiple → 0.10 → within [p10=0.04, p90=0.18] → should NOT
-                // throw
+                // 10.0% -> 0.10 decimal -> within [p10=0.04, p90=0.18] -> should NOT throw
                 overrides.setCompoundAnnualGrowth2_5(10.0);
 
                 assertDoesNotThrow(() -> workflow.getValuation("AAPL", overrides, false));
@@ -454,7 +669,9 @@ class ValuationWorkflowServiceImplTest {
                         ValuationOutputDTO initial,
                         ValuationOutputDTO refined) {
                 when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
-                when(valuationTemplateService.determineTemplate(isNull(), eq(companyData))).thenReturn(template);
+                when(valuationTemplateService.determineTemplate(nullable(FinancialDataInput.class), eq(companyData))).thenReturn(template);
+                lenient().when(valuationTemplateService.withGrowthPattern(any(ValuationTemplate.class), any(GrowthPattern.class), anyString()))
+                                .thenReturn(template);
                 when(growthAnchorService.getAnchorByYahooIndustry(anyString(), anyString()))
                                 .thenReturn(Optional.empty());
 
@@ -463,7 +680,7 @@ class ValuationWorkflowServiceImplTest {
                                 .thenReturn(1.0);
                 when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class), eq(false),
                                 eq(template)))
-                                .thenReturn(initial, refined);
+                                .thenReturn(initial, refined, refined, refined);
 
                 when(commonService.calculateRDConverterValue(anyString(), anyDouble(), anyMap()))
                                 .thenReturn(new RDResult(0.0, 0.0, 0.0, 0.0));
@@ -489,7 +706,9 @@ class ValuationWorkflowServiceImplTest {
                         ValuationOutputDTO initial,
                         ValuationOutputDTO refined) {
                 when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
-                when(valuationTemplateService.determineTemplate(isNull(), eq(companyData))).thenReturn(template);
+                when(valuationTemplateService.determineTemplate(nullable(FinancialDataInput.class), eq(companyData))).thenReturn(template);
+                lenient().when(valuationTemplateService.withGrowthPattern(any(ValuationTemplate.class), any(GrowthPattern.class), anyString()))
+                                .thenReturn(template);
                 when(growthAnchorService.getAnchorByYahooIndustry(anyString(), anyString()))
                                 .thenReturn(Optional.empty());
 
@@ -498,7 +717,7 @@ class ValuationWorkflowServiceImplTest {
                                 .thenReturn(1.0);
                 when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class), eq(false),
                                 eq(template)))
-                                .thenReturn(initial, refined);
+                                .thenReturn(initial, refined, refined, refined);
 
                 when(commonService.calculateRDConverterValue(anyString(), anyDouble(), anyMap()))
                                 .thenReturn(new RDResult(0.0, 0.0, 0.0, 0.0));
@@ -625,13 +844,16 @@ class ValuationWorkflowServiceImplTest {
         @Test
         void testNormalizeMultiple() {
                 Double result1 = ReflectionTestUtils.invokeMethod(workflow(), "normalizeMultiple", 15.0);
-                assertEquals(0.15, result1);
+                assertEquals(15.0, result1);
 
                 Double result2 = ReflectionTestUtils.invokeMethod(workflow(), "normalizeMultiple", 0.15);
                 assertEquals(0.15, result2);
 
-                Double result3 = ReflectionTestUtils.invokeMethod(workflow(), "normalizeMultiple", (Double) null);
-                assertNull(result3);
+                Double result3 = ReflectionTestUtils.invokeMethod(workflow(), "normalizeMultiple", 200.0);
+                assertEquals(200.0, result3);
+
+                Double result4 = ReflectionTestUtils.invokeMethod(workflow(), "normalizeMultiple", (Double) null);
+                assertNull(result4);
         }
 
         @Test

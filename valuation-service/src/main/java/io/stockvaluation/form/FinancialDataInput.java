@@ -7,6 +7,7 @@ import io.stockvaluation.dto.FinancialDataDTO;
 import io.stockvaluation.dto.GrowthDto;
 import io.stockvaluation.dto.OverrideAssumption;
 import io.stockvaluation.dto.SegmentResponseDTO;
+import io.stockvaluation.enums.GrowthPattern;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -46,7 +47,8 @@ public class FinancialDataInput {
                 + ", salesToCapitalYears1To5=" + salesToCapitalYears1To5 + ", salesToCapitalYears6To10="
                 + salesToCapitalYears6To10
                 + ", riskFreeRate=" + riskFreeRate + ", initialCostCapital=" + initialCostCapital + ", industry="
-                + industry + ", segments=" + segments + ", sectorOverrides=" + sectorOverrides + "]";
+                + industry + ", growthPatternOverride=" + growthPatternOverride + ", segments=" + segments
+                + ", sectorOverrides=" + sectorOverrides + "]";
     }
 
     private BasicInfoDataDTO basicInfoDataDTO;
@@ -83,6 +85,7 @@ public class FinancialDataInput {
     private Double initialCostCapital;
     private Double terminalGrowthRate; // User override for terminal growth rate (%)
     private String industry;
+    private GrowthPattern growthPatternOverride;
     private SegmentResponseDTO segments;
     private List<SectorParameterOverride> sectorOverrides;
 
@@ -120,6 +123,7 @@ public class FinancialDataInput {
             this.initialCostCapital = financialDataInput.initialCostCapital;
             this.terminalGrowthRate = financialDataInput.terminalGrowthRate;
             this.industry = financialDataInput.industry;
+            this.growthPatternOverride = financialDataInput.growthPatternOverride;
             this.segments = financialDataInput.segments;
             this.sectorOverrides = financialDataInput.sectorOverrides != null
                     ? new ArrayList<>(financialDataInput.sectorOverrides)

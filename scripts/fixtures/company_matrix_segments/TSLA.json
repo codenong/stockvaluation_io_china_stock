@@ -1,0 +1,22 @@
+{
+  "segments": {
+    "segments": [
+      {
+        "sector": "auto-manufacturers",
+        "industry": "consumer-cyclical",
+        "components": ["Automotive"],
+        "mappingScore": 0.96,
+        "revenueShare": 0.82,
+        "operatingMargin": 0.14
+      },
+      {
+        "sector": "solar",
+        "industry": "technology",
+        "components": ["Energy Generation and Storage"],
+        "mappingScore": 0.78,
+        "revenueShare": 0.18,
+        "operatingMargin": 0.11
+      }
+    ]
+  }
+}

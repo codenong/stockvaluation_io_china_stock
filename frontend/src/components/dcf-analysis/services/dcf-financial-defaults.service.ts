@@ -196,18 +196,10 @@ export class DCFFinancialDefaultsService {
     financialData: FinancialDataDTO | null,
     driveData: CompanyDriveDataDTO | null
   ): number {
-    // Primary: Use API-provided default
     if (driveData?.salesToCapitalYears1To5 && driveData.salesToCapitalYears1To5 > 0) {
-      // API might return very small decimals, check if we need to scale up
-      let apiDefault = driveData.salesToCapitalYears1To5;
-      
-      // If the value is very small (< 0.1), it might need scaling
-      if (apiDefault < 0.1) {
-        apiDefault = apiDefault * 100; // Scale up small decimals
-      }
-      
+      const apiDefault = driveData.salesToCapitalYears1To5;
       this.logger.debug(`Using API sales/capital 1-5 default: ${apiDefault}`, undefined, 'DCFFinancialDefaultsService');
-      return Math.round(apiDefault * 100) / 100; // Round to 2 decimal places
+      return Math.round(apiDefault * 100) / 100;
     }
 
     // Secondary: Calculate from revenue and capital efficiency
@@ -235,18 +227,10 @@ export class DCFFinancialDefaultsService {
     financialData: FinancialDataDTO | null,
     driveData: CompanyDriveDataDTO | null
   ): number {
-    // Primary: Use API-provided default
     if (driveData?.salesToCapitalYears6To10 && driveData.salesToCapitalYears6To10 > 0) {
-      // API might return very small decimals, check if we need to scale up
-      let apiDefault = driveData.salesToCapitalYears6To10;
-      
-      // If the value is very small (< 0.1), it might need scaling
-      if (apiDefault < 0.1) {
-        apiDefault = apiDefault * 100; // Scale up small decimals
-      }
-      
+      const apiDefault = driveData.salesToCapitalYears6To10;
       this.logger.debug(`Using API sales/capital 6-10 default: ${apiDefault}`, undefined, 'DCFFinancialDefaultsService');
-      return Math.round(apiDefault * 100) / 100; // Round to 2 decimal places
+      return Math.round(apiDefault * 100) / 100;
     }
 
     // Secondary: Use industry average for mature companies

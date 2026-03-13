@@ -136,6 +136,26 @@ class ValuationTemplateServiceTest {
         assertEquals(15, ((Integer) invoke("determineProjectionYears", new Class[]{GrowthPattern.class}, GrowthPattern.THREE_STAGE)).intValue());
     }
 
+    @Test
+    void determineTemplateHonorsGrowthPatternOverride() {
+        FinancialDataInput input = new FinancialDataInput();
+        input.setRevenueNextYear(5.0);
+        input.setGrowthPatternOverride(GrowthPattern.THREE_STAGE);
+
+        FinancialDataDTO financialData = new FinancialDataDTO();
+        financialData.setOperatingIncomeTTM(120.0);
+
+        CompanyDataDTO companyData = new CompanyDataDTO();
+        companyData.setFinancialDataDTO(financialData);
+
+        ValuationTemplate template = service.determineTemplate(input, companyData);
+
+        assertEquals(GrowthPattern.THREE_STAGE, template.getGrowthPattern());
+        assertEquals(15, template.getProjectionYears());
+        assertEquals(17, template.getArrayLength());
+        assertEquals("Explicit growthPatternOverride request", template.getMetadata().get("templateSelectionReason"));
+    }
+
     @SuppressWarnings("unchecked")
     private <T> T invoke(String methodName, Class<?>[] parameterTypes, Object... args) throws Exception {
         Method method = ValuationTemplateService.class.getDeclaredMethod(methodName, parameterTypes);

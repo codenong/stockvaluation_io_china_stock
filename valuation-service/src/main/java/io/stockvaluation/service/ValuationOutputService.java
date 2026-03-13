@@ -380,29 +380,33 @@ public class ValuationOutputService {
 
         int projectionYears = arrayLength - 2; // base + projection + terminal
         int terminalIndex = arrayLength - 1;
+        Double nextYearMargin = SegmentParameterContext.getParameterOrDefault(
+                SegmentWeightedParameters::getWeightedOperatingMarginNextYear,
+                financialDataInput.getOperatingMarginNextYear());
+        if (nextYearMargin == null) {
+            nextYearMargin = ebitMargin[0];
+        }
+        Double targetMargin = SegmentParameterContext.getParameterOrDefault(
+                SegmentWeightedParameters::getWeightedTargetPreTaxOperatingMargin,
+                financialDataInput.getTargetPreTaxOperatingMargin());
+        if (targetMargin == null) {
+            targetMargin = nextYearMargin;
+        }
+        Double convergenceYear = SegmentParameterContext.getParameterOrDefault(
+                SegmentWeightedParameters::getConvergenceYearMargin,
+                financialDataInput.getConvergenceYearMargin());
+        double effectiveConvergenceYear = convergenceYear != null && convergenceYear > 0 ? convergenceYear : 1.0;
 
         for (int year = 1; year < arrayLength; year++) {
             if (year == 1) {
-                ebitMargin[year] = ebitMargin[year - 1];
+                ebitMargin[year] = nextYearMargin;
             } else if (year <= projectionYears) {
-                // Use segment-weighted parameters if available, otherwise fall back to
-                // company-level parameters
-                Double targetMargin = SegmentParameterContext.getParameterOrDefault(
-                        SegmentWeightedParameters::getWeightedTargetPreTaxOperatingMargin,
-                        financialDataInput.getTargetPreTaxOperatingMargin());
-                Double convergenceYear = SegmentParameterContext.getParameterOrDefault(
-                        SegmentWeightedParameters::getConvergenceYearMargin,
-                        financialDataInput.getConvergenceYearMargin());
-
-                if (year > convergenceYear) {
+                if (year >= effectiveConvergenceYear) {
                     ebitMargin[year] = targetMargin;
                 } else {
-                    Double preTax = targetMargin;
-                    Double prevMargin = ebitMargin[1];
-                    log.info("convergence year: {}, preTax:{}, prevMargin:{}", convergenceYear, preTax, prevMargin);
-
-                    ebitMargin[year] = preTax - (((preTax - prevMargin) / convergenceYear) * (convergenceYear - year));
-
+                    double interpolationWindow = Math.max(1.0, effectiveConvergenceYear - 1.0);
+                    double progress = (year - 1.0) / interpolationWindow;
+                    ebitMargin[year] = nextYearMargin + ((targetMargin - nextYearMargin) * progress);
                 }
             } else {
                 // Terminal year
@@ -1546,7 +1550,7 @@ public class ValuationOutputService {
                 baseMargin = SegmentParameterContext.getSectorParameterOrDefault(
                         sectorKey,
                         SegmentWeightedParameters.SectorParameters::getOperatingMarginNextYear,
-                        financialDataInput.getOperatingMarginNextYear() * 100 // Convert fallback to percentage
+                        financialDataInput.getOperatingMarginNextYear()
                 );
                 targetMargin = SegmentParameterContext.getSectorParameterOrDefault(
                         sectorKey,
@@ -1561,7 +1565,7 @@ public class ValuationOutputService {
                         sectorKey, baseMargin, targetMargin, convergenceYear);
             } else {
                 // Fallback to company-level parameters
-                baseMargin = financialDataInput.getOperatingMarginNextYear() * 100; // Convert to percentage
+                baseMargin = financialDataInput.getOperatingMarginNextYear();
                 targetMargin = financialDataInput.getTargetPreTaxOperatingMargin();
                 convergenceYear = financialDataInput.getConvergenceYearMargin();
 
@@ -1890,11 +1894,12 @@ public class ValuationOutputService {
         if (year == 1) {
             return baseValue;
         } else if (year <= lastProjectionIndex) {
-            if (year > convergenceYear) {
+            if (year >= convergenceYear) {
                 return targetValue;
             } else {
-                // Linear interpolation
-                return baseValue + (((targetValue - baseValue) / convergenceYear) * year);
+                double interpolationWindow = Math.max(1.0, convergenceYear - 1.0);
+                double progress = (year - 1.0) / interpolationWindow;
+                return baseValue + ((targetValue - baseValue) * progress);
             }
         } else {
             // Terminal year

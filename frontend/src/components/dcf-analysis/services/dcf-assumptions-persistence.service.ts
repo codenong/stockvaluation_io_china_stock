@@ -179,8 +179,8 @@ export class DCFAssumptionsPersistenceService {
       operatingMarginNextYear: this.normalizePercentValue(this.parseValue(driveData.operatingMarginNextYear)) || 15,
       compoundAnnualGrowth2_5: this.normalizePercentValue(this.parseValue(driveData.compoundAnnualGrowth2_5)) || 8,
       targetPreTaxOperatingMargin: this.normalizePercentValue(this.parseValue(driveData.targetPreTaxOperatingMargin)) || 20,
-      salesToCapitalYears1To5: this.normalizeMultipleValue(this.parseValue(driveData.salesToCapitalYears1To5)) || 2.5,
-      salesToCapitalYears6To10: this.normalizeMultipleValue(this.parseValue(driveData.salesToCapitalYears6To10)) || 1.5,
+      salesToCapitalYears1To5: this.parseValue(driveData.salesToCapitalYears1To5) || 2.5,
+      salesToCapitalYears6To10: this.parseValue(driveData.salesToCapitalYears6To10) || 1.5,
       riskFreeRate: this.normalizePercentValue(this.parseValue(driveData.riskFreeRate)) || 4.5,
       initialCostCapital: this.normalizePercentValue(this.parseValue(driveData.initialCostCapital)) || 10.5
     };
@@ -274,16 +274,6 @@ export class DCFAssumptionsPersistenceService {
     return value;
   }
 
-  private normalizeMultipleValue(value: number): number {
-    if (!Number.isFinite(value) || value === 0) {
-      return 0;
-    }
-    if (Math.abs(value) > 10) {
-      return value / 100;
-    }
-    return value;
-  }
-
   private normalizeLoadedFormData(formData: DCFAssumptionsFormData): DCFAssumptionsFormData {
     if (!formData?.coreAssumptions) {
       return formData;
@@ -298,8 +288,8 @@ export class DCFAssumptionsPersistenceService {
         operatingMarginNextYear: this.normalizePercentValue(this.parseValue(core.operatingMarginNextYear)),
         compoundAnnualGrowth2_5: this.normalizePercentValue(this.parseValue(core.compoundAnnualGrowth2_5)),
         targetPreTaxOperatingMargin: this.normalizePercentValue(this.parseValue(core.targetPreTaxOperatingMargin)),
-        salesToCapitalYears1To5: this.normalizeMultipleValue(this.parseValue(core.salesToCapitalYears1To5)),
-        salesToCapitalYears6To10: this.normalizeMultipleValue(this.parseValue(core.salesToCapitalYears6To10)),
+        salesToCapitalYears1To5: this.parseValue(core.salesToCapitalYears1To5),
+        salesToCapitalYears6To10: this.parseValue(core.salesToCapitalYears6To10),
         riskFreeRate: this.normalizePercentValue(this.parseValue(core.riskFreeRate)),
         initialCostCapital: this.normalizePercentValue(this.parseValue(core.initialCostCapital)),
       }

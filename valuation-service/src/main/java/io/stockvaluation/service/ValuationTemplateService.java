@@ -117,6 +117,7 @@ public class ValuationTemplateService {
         int projectionYears = determineProjectionYears(model.getGrowthPattern());
         template.setProjectionYears(projectionYears);
         template.setArrayLength(projectionYears + 2); // base + projection + terminal
+        template.getMetadata().put("templateSelectionReason", "ValuationModel heuristic");
 
         log.info("[TEMPLATE] Selected: {} ({} years)",
                 template.getGrowthPattern().getDisplayName(), template.getProjectionYears());
@@ -132,6 +133,31 @@ public class ValuationTemplateService {
             log.info("   Normalized Margin: {}%", normalizedMargin);
         }
 
+        GrowthPattern overridePattern = financialDataInput != null ? financialDataInput.getGrowthPatternOverride() : null;
+        if (overridePattern != null) {
+            log.info("[TEMPLATE] Applying explicit growth pattern override: {}", overridePattern);
+            return withGrowthPattern(template, overridePattern, "Explicit growthPatternOverride request");
+        }
+
+        return template;
+    }
+
+    public ValuationTemplate withGrowthPattern(
+            ValuationTemplate baseTemplate,
+            GrowthPattern growthPattern,
+            String selectionReason) {
+        if (baseTemplate == null) {
+            throw new IllegalArgumentException("baseTemplate is required");
+        }
+
+        ValuationTemplate template = copyTemplate(baseTemplate);
+        template.setGrowthPattern(growthPattern);
+        int projectionYears = determineProjectionYears(growthPattern);
+        template.setProjectionYears(projectionYears);
+        template.setArrayLength(projectionYears + 2);
+        if (selectionReason != null && !selectionReason.isBlank()) {
+            template.getMetadata().put("templateSelectionReason", selectionReason);
+        }
         return template;
     }
 
@@ -154,6 +180,20 @@ public class ValuationTemplateService {
                 yield valuationTemplateProperties.getDefaultProjectionYears();
             }
         };
+    }
+
+    private ValuationTemplate copyTemplate(ValuationTemplate source) {
+        ValuationTemplate copy = new ValuationTemplate();
+        copy.setProjectionYears(source.getProjectionYears());
+        copy.setArrayLength(source.getArrayLength());
+        copy.setGrowthPattern(source.getGrowthPattern());
+        copy.setEarningsLevel(source.getEarningsLevel());
+        copy.setCashflowToDiscount(source.getCashflowToDiscount());
+        copy.setGrowthPeriodLength(source.getGrowthPeriodLength());
+        copy.setModelType(source.getModelType());
+        copy.setNormalizedOperatingMargin(source.getNormalizedOperatingMargin());
+        copy.setMetadata(source.getMetadata() != null ? new java.util.HashMap<>(source.getMetadata()) : new java.util.HashMap<>());
+        return copy;
     }
 
     /**

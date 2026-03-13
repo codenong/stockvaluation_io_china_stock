@@ -20,6 +20,9 @@ public class AssumptionTransparencyDTO {
     private String currency;
     private Integer segmentCount;
     private boolean segmentAware;
+    private String growthPattern;
+    private Integer projectionYears;
+    private String templateSelectionReason;
     private DiscountRate discountRate;
     private OperatingAssumptions operatingAssumptions;
     private List<String> notes = new ArrayList<>();
@@ -78,7 +81,9 @@ public class AssumptionTransparencyDTO {
     @Setter
     public static class OperatingAssumptions {
         private Double revenueGrowthRateYears2To5;
+        private Double operatingMarginNextYear;
         private Double targetOperatingMargin;
+        private Double convergenceYearMargin;
         private Double salesToCapitalYears1To5;
         private Double salesToCapitalYears6To10;
         private String revenueGrowthSource;

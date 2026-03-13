@@ -1,0 +1,22 @@
+{
+  "segments": {
+    "segments": [
+      {
+        "sector": "consumer-electronics",
+        "industry": "technology",
+        "components": ["iPhone", "Mac", "iPad", "Wearables"],
+        "mappingScore": 0.92,
+        "revenueShare": 0.62,
+        "operatingMargin": 0.33
+      },
+      {
+        "sector": "software-application",
+        "industry": "technology",
+        "components": ["Services"],
+        "mappingScore": 0.88,
+        "revenueShare": 0.38,
+        "operatingMargin": 0.42
+      }
+    ]
+  }
+}

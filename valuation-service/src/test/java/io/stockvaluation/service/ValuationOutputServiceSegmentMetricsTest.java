@@ -99,6 +99,9 @@ class ValuationOutputServiceSegmentMetricsTest {
 
         assertEquals(9.0, financial.getRevenueGrowthRateBySector().get("software")[1], 0.0001);
         assertEquals(6.0, financial.getRevenueGrowthRateBySector().get("hardware")[1], 0.0001);
+        assertEquals(30.0, financial.getEbitOperatingMarginBySector().get("software")[1], 0.0001);
+        assertTrue(financial.getEbitOperatingMargin()[1] > 26.8);
+        assertTrue(financial.getEbitOperatingMargin()[1] < 27.0);
 
         assertNotNull(financial.getEbitOperatingMarginBySector().get("software")[10]);
         assertTrue(financial.getEbitOperatingMarginBySector().get("software")[10] > 30.0,

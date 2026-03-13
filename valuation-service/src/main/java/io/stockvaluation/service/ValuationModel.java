@@ -255,8 +255,7 @@ public class ValuationModel {
                 } else if (firmGrowthRate < t2) {
                     this.growthPattern = GrowthPattern.TWO_STAGE;
                 } else {
-                    // this.growthPattern = GrowthPattern.THREE_STAGE;
-                    this.growthPattern = GrowthPattern.TWO_STAGE;
+                    this.growthPattern = GrowthPattern.THREE_STAGE;
                 }
             } else {
                 this.growthPattern = GrowthPattern.N_STAGE;
@@ -267,8 +266,7 @@ public class ValuationModel {
             } else if (firmGrowthRate < t2) {
                 this.growthPattern = GrowthPattern.TWO_STAGE;
             } else {
-                // this.growthPattern = GrowthPattern.THREE_STAGE;
-                this.growthPattern = GrowthPattern.TWO_STAGE;
+                this.growthPattern = GrowthPattern.THREE_STAGE;
             }
         }
     }

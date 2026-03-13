@@ -77,6 +77,7 @@ class ValuationOutputServiceBranchCoverageTest {
         baseInput.setOverrideAssumptionCashPosition(new OverrideAssumption(0.0, false, 0.0, null));
         baseInput.setOverrideAssumptionTaxRate(new OverrideAssumption(0.0, false, 0.0, null));
 
+        baseInput.setOperatingMarginNextYear(22.0);
         baseInput.setTargetPreTaxOperatingMargin(20.0);
         baseInput.setConvergenceYearMargin(5.0);
         baseInput.setSalesToCapitalYears1To5(2.0);
@@ -160,6 +161,7 @@ class ValuationOutputServiceBranchCoverageTest {
     void calculateEbitMargin_yearExceedsConvergenceYear_takesTargetMargin() {
         // Convergence year = 1 → year 2 already past it
         baseInput.setConvergenceYearMargin(1.0);
+        baseInput.setOperatingMarginNextYear(22.0);
         baseInput.setTargetPreTaxOperatingMargin(30.0);
         baseInput.setHasOperatingLease(false);
         baseInput.setIsExpensesCapitalize(false);
@@ -174,6 +176,27 @@ class ValuationOutputServiceBranchCoverageTest {
         assertNotNull(result);
         // Year 2 should equal target margin
         assertEquals(30.0, result[2], 0.01);
+    }
+
+    @Test
+    void calculateEbitMargin_yearOneUsesOperatingMarginNextYearAndThenConverges() {
+        baseInput.setOperatingMarginNextYear(24.0);
+        baseInput.setTargetPreTaxOperatingMargin(30.0);
+        baseInput.setConvergenceYearMargin(5.0);
+        baseInput.setHasOperatingLease(false);
+        baseInput.setIsExpensesCapitalize(false);
+
+        LeaseResultDTO lease = new LeaseResultDTO(0.0, 0.0, 0.0, 0.0);
+        RDResult rd = new RDResult(0.0, 0.0, 0.0, 0.0);
+
+        Double[] result = ReflectionTestUtils.invokeMethod(
+                valuationOutputService, "calculateEbitMargin", baseInput, rd, lease, 7);
+
+        assertNotNull(result);
+        assertEquals(24.0, result[1], 0.01);
+        assertTrue(result[2] > result[1]);
+        assertEquals(30.0, result[5], 0.01);
+        assertEquals(result[5], result[6], 0.01);
     }
 
     // =========================================================

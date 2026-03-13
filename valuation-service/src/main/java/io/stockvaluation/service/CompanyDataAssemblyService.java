@@ -238,10 +238,10 @@ public class CompanyDataAssemblyService {
         if (Objects.nonNull(salesToCapitalFirstPhase)) {
             salesToCapitalFirstPhase = reAdjustSalesToCapitalFirstPhases(null, salesToCapitalFirstPhase);
             salesToCapital = reAdjustSalesToCapitalFirstPhases(salesToCapitalFirstPhase, salesToCapital);
-            companyDriveDataDTO.setSalesToCapitalYears1To5(convertPercentage(salesToCapitalFirstPhase));
+            companyDriveDataDTO.setSalesToCapitalYears1To5(salesToCapitalFirstPhase);
         } else {
             salesToCapital = reAdjustSalesToCapitalFirstPhases(null, salesToCapital);
-            companyDriveDataDTO.setSalesToCapitalYears1To5(convertPercentage(salesToCapital));
+            companyDriveDataDTO.setSalesToCapitalYears1To5(salesToCapital);
         }
 
         GrowthDto growthDto = null;
@@ -253,7 +253,7 @@ public class CompanyDataAssemblyService {
                     finalOptionalInputStatDistribution.get().getPreTaxOperatingMarginThirdQuartile());
         }
 
-        companyDriveDataDTO.setSalesToCapitalYears6To10(convertPercentage(salesToCapital));
+        companyDriveDataDTO.setSalesToCapitalYears6To10(salesToCapital);
 
         CompanyDataDTO companyDataDTO = new CompanyDataDTO();
         companyDataDTO.setGrowthDto(growthDto);

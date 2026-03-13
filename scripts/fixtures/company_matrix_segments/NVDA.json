@@ -1,0 +1,22 @@
+{
+  "segments": {
+    "segments": [
+      {
+        "sector": "semiconductors",
+        "industry": "technology",
+        "components": ["Data Center", "Gaming", "Automotive"],
+        "mappingScore": 0.97,
+        "revenueShare": 0.86,
+        "operatingMargin": 0.57
+      },
+      {
+        "sector": "information-technology-services",
+        "industry": "technology",
+        "components": ["Software and Services"],
+        "mappingScore": 0.81,
+        "revenueShare": 0.14,
+        "operatingMargin": 0.34
+      }
+    ]
+  }
+}

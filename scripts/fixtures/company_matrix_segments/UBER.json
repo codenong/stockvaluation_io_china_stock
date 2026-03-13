@@ -1,0 +1,22 @@
+{
+  "segments": {
+    "segments": [
+      {
+        "sector": "travel-services",
+        "industry": "consumer-cyclical",
+        "components": ["Mobility"],
+        "mappingScore": 0.91,
+        "revenueShare": 0.55,
+        "operatingMargin": 0.16
+      },
+      {
+        "sector": "internet-content-information",
+        "industry": "communication-services",
+        "components": ["Delivery", "Advertising"],
+        "mappingScore": 0.8,
+        "revenueShare": 0.45,
+        "operatingMargin": 0.09
+      }
+    ]
+  }
+}

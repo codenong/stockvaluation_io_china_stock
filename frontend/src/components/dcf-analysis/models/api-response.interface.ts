@@ -335,6 +335,9 @@ export interface AssumptionTransparency {
   currency?: string;
   segmentCount?: number;
   segmentAware?: boolean;
+  growthPattern?: string;
+  projectionYears?: number;
+  templateSelectionReason?: string;
   discountRate?: {
     riskFreeRate?: number | null;
     equityRiskPremium?: number | null;
@@ -347,7 +350,9 @@ export interface AssumptionTransparency {
   };
   operatingAssumptions?: {
     revenueGrowthRateYears2To5?: number | null;
+    operatingMarginNextYear?: number | null;
     targetOperatingMargin?: number | null;
+    convergenceYearMargin?: number | null;
     salesToCapitalYears1To5?: number | null;
     salesToCapitalYears6To10?: number | null;
     revenueGrowthSource?: string;
@@ -438,6 +443,7 @@ export interface DCFCalculationRequest {
   riskFreeRate?: number;
   initialCostCapital?: number;
   terminalGrowthRate?: number;
+  growthPatternOverride?: 'STABLE' | 'TWO_STAGE' | 'THREE_STAGE' | 'N_STAGE';
   basicInfoDataDTO?: BasicInfoDataDTO;
   financialDataDTO?: FinancialDataDTO;
   industry?: string;

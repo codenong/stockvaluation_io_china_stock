@@ -281,7 +281,6 @@ class SegmentWeightedParameterServiceTest {
         assertEquals(0.5, ReflectionTestUtils.invokeMethod(service, "convertPercentage", 50.0));
         assertEquals(5.0, ReflectionTestUtils.invokeMethod(service, "coalesce", null, 5.0));
         assertEquals(10.0, ReflectionTestUtils.invokeMethod(service, "asPercent", 0.10));
-        assertEquals(2.2, ReflectionTestUtils.invokeMethod(service, "asSalesToCapitalRatio", 220.0));
         assertEquals(4.0, ReflectionTestUtils.invokeMethod(service, "reAdjustSalesToCapitalFirstPhases", 8.0, 3.0));
 
         SegmentWeightedParameters segmentParams = new SegmentWeightedParameters();

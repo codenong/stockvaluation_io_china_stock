@@ -1,0 +1,22 @@
+{
+  "segments": {
+    "segments": [
+      {
+        "sector": "entertainment",
+        "industry": "communication-services",
+        "components": ["Entertainment", "Sports"],
+        "mappingScore": 0.94,
+        "revenueShare": 0.69,
+        "operatingMargin": 0.19
+      },
+      {
+        "sector": "internet-content-information",
+        "industry": "communication-services",
+        "components": ["Direct-to-Consumer"],
+        "mappingScore": 0.83,
+        "revenueShare": 0.31,
+        "operatingMargin": 0.12
+      }
+    ]
+  }
+}

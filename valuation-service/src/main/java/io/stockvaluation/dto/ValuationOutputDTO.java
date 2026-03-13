@@ -2,6 +2,7 @@ package io.stockvaluation.dto;
 
 import io.stockvaluation.dto.valuationoutput.*;
 import io.stockvaluation.enums.CashflowType;
+import io.stockvaluation.enums.GrowthPattern;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -36,6 +37,9 @@ public class ValuationOutputDTO {
 
             this.primaryModel = other.primaryModel;
             this.modelSelectionRationale = other.modelSelectionRationale;
+            this.growthPattern = other.growthPattern;
+            this.projectionYears = other.projectionYears;
+            this.templateSelectionReason = other.templateSelectionReason;
 
             // Valuation IDs
             this.valuationId = other.valuationId;
@@ -92,6 +96,9 @@ public class ValuationOutputDTO {
      * Explanation for why the primary model was selected.
      */
     private String modelSelectionRationale;
+    private GrowthPattern growthPattern;
+    private Integer projectionYears;
+    private String templateSelectionReason;
 
     /**
      * Get the recommended intrinsic value from deterministic DCF output.

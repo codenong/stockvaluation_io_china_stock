@@ -21,9 +21,14 @@ import { ValuationResults } from '../../../../models';
 
       <div class="meta-row">
         <span class="meta-chip" *ngIf="data.valuationModel">Model: {{ data.valuationModel }}</span>
+        <span class="meta-chip" *ngIf="data.growthPattern">Growth: {{ formatGrowthPattern(data.growthPattern) }}</span>
+        <span class="meta-chip" *ngIf="data.projectionYears">Projection: {{ data.projectionYears }} years</span>
         <span class="meta-chip" *ngIf="data.industryGlobal">Industry: {{ data.industryGlobal }}</span>
         <span class="meta-chip" *ngIf="data.segmentCount !== undefined">Segments: {{ data.segmentCount }}</span>
       </div>
+      <p class="source" *ngIf="data.templateSelectionReason">
+        <strong>Template Selection:</strong> {{ data.templateSelectionReason }}
+      </p>
 
       <div class="cards-grid">
         <article class="assumption-card">
@@ -60,8 +65,16 @@ import { ValuationResults } from '../../../../models';
               <dd>{{ formatPercent(data.operatingAssumptions?.revenueGrowthRateYears2To5) }}</dd>
             </div>
             <div class="metric-row">
+              <dt>Next-Year Operating Margin</dt>
+              <dd>{{ formatPercent(data.operatingAssumptions?.operatingMarginNextYear) }}</dd>
+            </div>
+            <div class="metric-row">
               <dt>Target Operating Margin</dt>
               <dd>{{ formatPercent(data.operatingAssumptions?.targetOperatingMargin) }}</dd>
+            </div>
+            <div class="metric-row">
+              <dt>Margin Converges By</dt>
+              <dd>{{ formatConvergenceYear(data.operatingAssumptions?.convergenceYearMargin) }}</dd>
             </div>
             <div class="metric-row">
               <dt>Sales to Capital (Years 1-5)</dt>
@@ -212,7 +225,7 @@ export class AssumptionsTransparencySectionComponent {
     if (value === null || value === undefined || Number.isNaN(value)) {
       return 'N/A';
     }
-    return `${this.normalizeMultiple(value).toFixed(2)}x`;
+    return `${value.toFixed(2)}x`;
   }
 
   hasAnyRationale(data: NonNullable<ValuationResults['assumptionTransparency']>): boolean {
@@ -246,7 +259,7 @@ export class AssumptionsTransparencySectionComponent {
     const unitKey = String(unit || '').trim().toLowerCase();
     const prefix = value > 0 ? '+' : '';
     if (unitKey === 'multiple' || unitKey === 'x') {
-      return `${prefix}${this.normalizeMultiple(value).toFixed(2)}x`;
+      return `${prefix}${value.toFixed(2)}x`;
     }
     return `${prefix}${this.normalizePercent(value).toFixed(2)}%`;
   }
@@ -257,6 +270,25 @@ export class AssumptionsTransparencySectionComponent {
       return 'Damodaran Historical Growth Rate in Earnings';
     }
     return String(source).trim();
+  }
+
+  formatGrowthPattern(value: string | null | undefined): string {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+      return 'N/A';
+    }
+    return normalized
+      .toLowerCase()
+      .split('_')
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  }
+
+  formatConvergenceYear(value: number | null | undefined): string {
+    if (value === null || value === undefined || Number.isNaN(value)) {
+      return 'N/A';
+    }
+    return `Year ${value}`;
   }
 
   /**
@@ -317,12 +349,5 @@ export class AssumptionsTransparencySectionComponent {
       normalized = normalized / 100;
     }
     return normalized;
-  }
-
-  private normalizeMultiple(value: number): number {
-    if (Math.abs(value) > 10) {
-      return value / 100;
-    }
-    return value;
   }
 }

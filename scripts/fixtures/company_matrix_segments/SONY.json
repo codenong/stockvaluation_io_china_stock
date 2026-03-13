@@ -1,0 +1,22 @@
+{
+  "segments": {
+    "segments": [
+      {
+        "sector": "consumer-electronics",
+        "industry": "technology",
+        "components": ["Electronics", "Sensors"],
+        "mappingScore": 0.93,
+        "revenueShare": 0.46,
+        "operatingMargin": 0.17
+      },
+      {
+        "sector": "entertainment",
+        "industry": "communication-services",
+        "components": ["Gaming", "Music", "Pictures"],
+        "mappingScore": 0.89,
+        "revenueShare": 0.54,
+        "operatingMargin": 0.24
+      }
+    ]
+  }
+}

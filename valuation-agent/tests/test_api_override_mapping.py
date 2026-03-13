@@ -108,6 +108,29 @@ def test_map_adjustments_to_java_overrides_keeps_top_level_sales_to_capital_in_x
     assert overrides["salesToCapitalYears6To10"] == 2.8
 
 
+def test_build_java_recalculate_payload_forwards_growth_pattern_override():
+    app = _app()
+    payload = app._build_java_recalculate_payload(
+        overrides={"compoundAnnualGrowth2_5": 8.5},
+        mapped_segments=[{"sector": "software-application", "industry": "technology", "revenue_share": 0.6}],
+        growth_pattern_override="THREE_STAGE",
+    )
+
+    assert payload["growthPatternOverride"] == "THREE_STAGE"
+    assert payload["compoundAnnualGrowth2_5"] == 8.5
+    assert payload["segments"]["segments"][0]["sector"] == "software-application"
+
+
+def test_extract_growth_pattern_override_reads_java_output_fields():
+    app = _app()
+
+    assert app._extract_growth_pattern_override({"growthPattern": "THREE_STAGE"}) == "THREE_STAGE"
+    assert app._extract_growth_pattern_override(
+        {"assumptionTransparency": {"growthPattern": "two_stage"}}
+    ) == "TWO_STAGE"
+    assert app._extract_growth_pattern_override({"growthPattern": "custom"}) is None
+
+
 def test_assumption_transparency_does_not_use_terminal_growth_as_risk_free():
     app = _app()
     transparency = app._build_assumption_transparency(
@@ -145,6 +168,44 @@ def test_assumption_transparency_preserves_market_implied_expectations_from_java
 
     assert transparency["marketImpliedExpectations"]["marketPrice"] == 100.0
     assert transparency["marketImpliedExpectations"]["metrics"][0]["key"] == "revenue_cagr"
+
+
+def test_assumption_transparency_preserves_template_metadata_from_java():
+    app = _app()
+    transparency = app._build_assumption_transparency(
+        dcf={
+            "growthPattern": "THREE_STAGE",
+            "projectionYears": 15,
+            "templateSelectionReason": "Forced THREE_STAGE due to price/value gap (price-to-value 165.00% outside 67%-150% band)",
+            "assumptionTransparency": {
+                "growthPattern": "THREE_STAGE",
+                "projectionYears": 15,
+                "templateSelectionReason": "Forced THREE_STAGE due to price/value gap (price-to-value 165.00% outside 67%-150% band)",
+                "operatingAssumptions": {
+                    "operatingMarginNextYear": 24.0,
+                    "convergenceYearMargin": 10.0,
+                },
+                "notes": ["Projection was upgraded to THREE_STAGE because market price and intrinsic value diverged materially in the first-pass baseline."],
+            },
+            "financialDTO": {
+                "costOfCapital": [8.0, 8.1, 8.2],
+                "ebitOperatingMargin": [20.0, 24.0, 25.0, 26.0, 27.0, 28.0, 28.0],
+                "salesToCapitalRatio": [None, 2.0, 2.0, 1.9, 1.9, 1.9, 1.8],
+                "revenueGrowthRate": [None, 9.0, 8.0, 7.0, 6.0, 6.0, 4.0],
+            },
+            "terminalValueDTO": {"costOfCapital": 8.2},
+        },
+        adjustments=[],
+        java_overrides={},
+        mapped_segments=[],
+    )
+
+    assert transparency["growthPattern"] == "THREE_STAGE"
+    assert transparency["projectionYears"] == 15
+    assert transparency["templateSelectionReason"].startswith("Forced THREE_STAGE")
+    assert transparency["operatingAssumptions"]["operatingMarginNextYear"] == 24.0
+    assert transparency["operatingAssumptions"]["convergenceYearMargin"] == 10.0
+    assert any("Projection was upgraded to THREE_STAGE" in note for note in transparency["notes"])
 
 
 def test_assumption_transparency_uses_effective_final_values_when_segment_weighted():

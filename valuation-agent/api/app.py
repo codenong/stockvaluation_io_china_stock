@@ -377,7 +377,8 @@ class StockValuationApp:
                 ticker,
                 graph_result["merged_result"],
                 mapped_segments,
-                auth_header
+                auth_header,
+                baseline_result.get("dcf"),
             )
 
             # Step 7: Run analyst on fresh DCF after recalculation
@@ -617,7 +618,14 @@ class StockValuationApp:
         payload["analyzer_metadata"] = analyzer_metadata
         return payload
 
-    def _recalculate_java_dcf(self, ticker: str, merged_result: Dict[str, Any], mapped_segments: List[Dict[str, Any]], auth_header: Optional[str]) -> Dict[str, Any]:
+    def _recalculate_java_dcf(
+        self,
+        ticker: str,
+        merged_result: Dict[str, Any],
+        mapped_segments: List[Dict[str, Any]],
+        auth_header: Optional[str],
+        baseline_dcf: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         dcf_analysis = (merged_result.get("dcf_analysis") or {}) if isinstance(merged_result, dict) else {}
         adjustments = dcf_analysis.get("dcf_adjustment_instructions", [])
         sector_adjustments = dcf_analysis.get("sector_adjustment_instructions", [])
@@ -626,7 +634,12 @@ class StockValuationApp:
             sector_adjustments=sector_adjustments,
             mapped_segments=mapped_segments,
         )
-        java_recalculate_payload = self._build_java_recalculate_payload(java_overrides, mapped_segments)
+        growth_pattern_override = self._extract_growth_pattern_override(baseline_dcf)
+        java_recalculate_payload = self._build_java_recalculate_payload(
+            java_overrides,
+            mapped_segments,
+            growth_pattern_override=growth_pattern_override,
+        )
 
         dcf = self.valuation_service_client.recalculate_valuation(
             ticker=ticker,
@@ -800,7 +813,15 @@ class StockValuationApp:
             sector_overrides=sector_overrides,
             mapped_segments=mapped_segments,
         )
-        java_payload = self._build_java_recalculate_payload(java_overrides, mapped_segments)
+        growth_pattern_override = self._extract_growth_pattern_override(
+            (stored_payload.get("java_valuation_output") if isinstance(stored_payload, dict) else None)
+            or valuation.get("output_json")
+        )
+        java_payload = self._build_java_recalculate_payload(
+            java_overrides,
+            mapped_segments,
+            growth_pattern_override=growth_pattern_override,
+        )
 
         try:
             dcf = self.valuation_service_client.recalculate_valuation(
@@ -1118,12 +1139,32 @@ class StockValuationApp:
         self,
         overrides: Dict[str, Any],
         mapped_segments: List[Dict[str, Any]],
+        growth_pattern_override: Optional[str] = None,
     ) -> Dict[str, Any]:
         payload = dict(overrides or {})
+        if growth_pattern_override:
+            payload["growthPatternOverride"] = growth_pattern_override
         java_segments = self._to_java_segments(mapped_segments)
         if java_segments:
             payload["segments"] = {"segments": java_segments}
         return payload
+
+    def _extract_growth_pattern_override(self, dcf: Any) -> Optional[str]:
+        if not isinstance(dcf, dict):
+            return None
+
+        candidate = dcf.get("growthPattern") or dcf.get("growth_pattern")
+        if not candidate and isinstance(dcf.get("assumptionTransparency"), dict):
+            candidate = dcf["assumptionTransparency"].get("growthPattern")
+        if not candidate and isinstance(dcf.get("assumption_transparency"), dict):
+            candidate = dcf["assumption_transparency"].get("growth_pattern")
+        if not isinstance(candidate, str):
+            return None
+
+        normalized = candidate.strip().upper()
+        if normalized in {"STABLE", "TWO_STAGE", "THREE_STAGE", "N_STAGE"}:
+            return normalized
+        return None
 
     def _to_java_segments(self, mapped_segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         java_segments: List[Dict[str, Any]] = []
@@ -1327,11 +1368,13 @@ class StockValuationApp:
         sales_to_capital_values = financial_dto.get("salesToCapitalRatio") if isinstance(financial_dto, dict) else []
         existing_transparency = dcf.get("assumptionTransparency") if isinstance(dcf.get("assumptionTransparency"), dict) else {}
         existing_discount = existing_transparency.get("discountRate") if isinstance(existing_transparency.get("discountRate"), dict) else {}
+        existing_operating = existing_transparency.get("operatingAssumptions") if isinstance(existing_transparency.get("operatingAssumptions"), dict) else {}
         existing_market_implied = (
             existing_transparency.get("marketImpliedExpectations")
             if isinstance(existing_transparency.get("marketImpliedExpectations"), dict)
             else None
         )
+        existing_notes = existing_transparency.get("notes") if isinstance(existing_transparency.get("notes"), list) else []
 
         initial_cost_of_capital = self._normalize_percent_output(self._first_numeric(cost_of_capital_values))
         terminal_cost_of_capital = self._normalize_percent_output(
@@ -1373,6 +1416,11 @@ class StockValuationApp:
         operating_margin = self._average_percent_window(margin_values, 2, 5)
         if operating_margin is None:
             operating_margin = requested_operating_margin
+        operating_margin_next_year = self._normalize_percent_output(
+            self._safe_number(existing_operating.get("operatingMarginNextYear"))
+            or self._projection_value(margin_values, 1)
+        )
+        convergence_year_margin = self._safe_number(existing_operating.get("convergenceYearMargin"))
 
         sales_to_capital_1_5 = self._average_multiple_window(sales_to_capital_values, 1, 5)
         if sales_to_capital_1_5 is None:
@@ -1438,26 +1486,45 @@ class StockValuationApp:
             if coc_parts:
                 adjustment_rationales["costOfCapital"] = " ".join(coc_parts)
 
+        notes: List[str] = []
+        for note in existing_notes + [
+            "Rates are shown in percent.",
+            "Sales-to-capital is shown as x multiple.",
+            "Values are rounded and reflect the final valuation run.",
+        ]:
+            if isinstance(note, str) and note not in notes:
+                notes.append(note)
+
         return {
-            "valuationModel": dcf.get("primaryModel") or "FCFF",
-            "industryUs": dcf.get("industryUs"),
-            "industryGlobal": dcf.get("industryGlobal"),
-            "currency": dcf.get("currency") or dcf.get("stockCurrency"),
-            "segmentCount": len(mapped_segments or []),
-            "segmentAware": len(mapped_segments or []) > 1,
+            "valuationModel": dcf.get("primaryModel") or existing_transparency.get("valuationModel") or "FCFF",
+            "industryUs": dcf.get("industryUs") or existing_transparency.get("industryUs"),
+            "industryGlobal": dcf.get("industryGlobal") or existing_transparency.get("industryGlobal"),
+            "currency": dcf.get("currency") or dcf.get("stockCurrency") or existing_transparency.get("currency"),
+            "segmentCount": existing_transparency.get("segmentCount")
+            if existing_transparency.get("segmentCount") is not None
+            else len(mapped_segments or []),
+            "segmentAware": bool(existing_transparency.get("segmentAware"))
+            if existing_transparency.get("segmentAware") is not None
+            else len(mapped_segments or []) > 1,
+            "growthPattern": existing_transparency.get("growthPattern") or dcf.get("growthPattern"),
+            "projectionYears": existing_transparency.get("projectionYears") or dcf.get("projectionYears"),
+            "templateSelectionReason": existing_transparency.get("templateSelectionReason") or dcf.get("templateSelectionReason"),
             "discountRate": {
                 "riskFreeRate": risk_free_rate,
                 "equityRiskPremium": equity_risk_premium,
                 "initialCostOfCapital": initial_cost_of_capital,
                 "terminalCostOfCapital": terminal_cost_of_capital,
-                "costOfCapitalFormula": "Terminal WACC = risk-free rate + mature market premium; path values from FCFF model output.",
+                "costOfCapitalFormula": existing_discount.get("costOfCapitalFormula")
+                or "Terminal WACC = risk-free rate + mature market premium; path values from FCFF model output.",
                 "riskFreeRateSource": risk_free_rate_source,
                 "equityRiskPremiumSource": "Derived from terminal WACC minus risk-free anchor.",
                 "initialCostOfCapitalSource": "Final FCFF output (analyzer override request applied)" if has_wacc_override else "Final FCFF output",
             },
             "operatingAssumptions": {
                 "revenueGrowthRateYears2To5": revenue_growth,
+                "operatingMarginNextYear": operating_margin_next_year,
                 "targetOperatingMargin": operating_margin,
+                "convergenceYearMargin": convergence_year_margin,
                 "salesToCapitalYears1To5": sales_to_capital_1_5,
                 "salesToCapitalYears6To10": sales_to_capital_6_10,
                 "revenueGrowthSource": growth_source,
@@ -1470,11 +1537,7 @@ class StockValuationApp:
             "adjustmentRationales": adjustment_rationales,
             "growthAnchor": self._build_growth_anchor(dcf),
             "marketImpliedExpectations": existing_market_implied,
-            "notes": [
-                "Rates are shown in percent.",
-                "Sales-to-capital is shown as x multiple.",
-                "Values are rounded and reflect the final valuation run.",
-            ],
+            "notes": notes,
         }
 
     def _extract_adjustment_rationales(self, adjustments: Any) -> Dict[str, str]:

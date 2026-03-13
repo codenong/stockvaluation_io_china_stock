@@ -1,0 +1,30 @@
+{
+  "segments": {
+    "segments": [
+      {
+        "sector": "internet-content-information",
+        "industry": "communication-services",
+        "components": ["Search", "YouTube", "Google Network"],
+        "mappingScore": 0.96,
+        "revenueShare": 0.74,
+        "operatingMargin": 0.34
+      },
+      {
+        "sector": "information-technology-services",
+        "industry": "technology",
+        "components": ["Google Cloud"],
+        "mappingScore": 0.89,
+        "revenueShare": 0.14,
+        "operatingMargin": 0.18
+      },
+      {
+        "sector": "software-application",
+        "industry": "technology",
+        "components": ["Subscriptions", "Workspace"],
+        "mappingScore": 0.82,
+        "revenueShare": 0.12,
+        "operatingMargin": 0.28
+      }
+    ]
+  }
+}

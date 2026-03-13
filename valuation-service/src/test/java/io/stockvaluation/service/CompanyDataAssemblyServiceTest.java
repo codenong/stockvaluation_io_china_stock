@@ -172,7 +172,7 @@ class CompanyDataAssemblyServiceTest {
         sectorMapping.setIndustryAsPerExcel("Technology");
         when(sectorMappingRepository.findByIndustryName("Technology")).thenReturn(sectorMapping);
 
-        when(industryAvgUSRepository.findSalesToCapitalByIndustryName("Technology")).thenReturn(Optional.of(150.0));
+        when(industryAvgUSRepository.findSalesToCapitalByIndustryName("Technology")).thenReturn(Optional.of(1.5));
 
         IndustryAveragesUS avgUS = new IndustryAveragesUS();
         avgUS.setPreTaxOperatingMargin(25.0);
@@ -183,7 +183,7 @@ class CompanyDataAssemblyServiceTest {
         inputStat.setPreTaxOperatingMarginFirstQuartile(10.0);
         inputStat.setPreTaxOperatingMarginMedian(20.0);
         inputStat.setPreTaxOperatingMarginThirdQuartile(30.0);
-        inputStat.setSalesToInvestedCapitalThirdQuartile(200.0);
+        inputStat.setSalesToInvestedCapitalThirdQuartile(2.0);
         when(inputStatRepository.findFirstByIndustryGroupOrderByIdAsc("Technology"))
                 .thenReturn(Optional.of(inputStat));
 
@@ -202,6 +202,8 @@ class CompanyDataAssemblyServiceTest {
         assertEquals(0.15, result.getFinancialDataDTO().getEffectiveTaxRate(), 0.01); // 15000 / 100000
         assertEquals(21.0, result.getFinancialDataDTO().getMarginalTaxRate(), 0.01);
         assertEquals(0.05, result.getCompanyDriveDataDTO().getRevenueNextYear());
+        assertEquals(2.0, result.getCompanyDriveDataDTO().getSalesToCapitalYears1To5(), 0.01);
+        assertEquals(1.5, result.getCompanyDriveDataDTO().getSalesToCapitalYears6To10(), 0.01);
     }
 
     @Test
@@ -286,7 +288,7 @@ class CompanyDataAssemblyServiceTest {
         avgGlo.setPreTaxOperatingMargin(20.0);
         avgGlo.setAnnualAverageRevenueGrowth(5.0);
         when(industryAvgGloRepository.findByIndustryName("Manufacturing")).thenReturn(avgGlo);
-        when(industryAvgGloRepository.findSalesToCapitalByIndustryName("Manufacturing")).thenReturn(Optional.of(120.0));
+        when(industryAvgGloRepository.findSalesToCapitalByIndustryName("Manufacturing")).thenReturn(Optional.of(1.2));
 
         CostOfCapital costOfCapital = new CostOfCapital();
         when(costOfCapitalRepository.findCostOfCapitalByRegion("Europe")).thenReturn(Optional.of(costOfCapital));
@@ -295,5 +297,7 @@ class CompanyDataAssemblyServiceTest {
 
         assertNotNull(result);
         assertEquals(19.0, result.getFinancialDataDTO().getMarginalTaxRate(), 0.01);
+        assertEquals(1.2, result.getCompanyDriveDataDTO().getSalesToCapitalYears1To5(), 0.01);
+        assertEquals(1.2, result.getCompanyDriveDataDTO().getSalesToCapitalYears6To10(), 0.01);
     }
 }

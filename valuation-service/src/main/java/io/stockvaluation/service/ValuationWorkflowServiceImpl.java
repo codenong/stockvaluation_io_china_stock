@@ -9,6 +9,7 @@ import io.stockvaluation.dto.valuationoutput.CompanyDTO;
 import io.stockvaluation.dto.valuationoutput.FinancialDTO;
 import io.stockvaluation.dto.valuationoutput.SimulationResultsDTO;
 import io.stockvaluation.enums.CashflowType;
+import io.stockvaluation.enums.GrowthPattern;
 import io.stockvaluation.form.FinancialDataInput;
 import io.stockvaluation.utils.MarketRegionResolver;
 import io.stockvaluation.utils.SegmentParameterContext;
@@ -29,6 +30,8 @@ import static io.stockvaluation.service.GrowthCalculatorService.*;
 @Service
 @RequiredArgsConstructor
 public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
+        private static final double FORCE_THREE_STAGE_PREMIUM_THRESHOLD = 150.0;
+        private static final double FORCE_THREE_STAGE_DISCOUNT_THRESHOLD = 67.0;
 
         private final CommonService commonService;
         private final OptionValueService optionValueService;
@@ -97,10 +100,11 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 .resolveGrowthAnchorRegion(companyDataDTO.getBasicInfoDataDTO());
 
                 // Step 2: Determine valuation template based on company characteristics
-                ValuationTemplate template = valuationTemplateService.determineTemplate(null, companyDataDTO);
+                ValuationTemplate template = valuationTemplateService.determineTemplate(overrides, companyDataDTO);
                 log.info("[TEMPLATE] Selected for {}: {} years, Growth: {}, Earnings: {}",
                                 ticker, template.getProjectionYears(), template.getGrowthPattern(),
                                 template.getEarningsLevel());
+                String templateSelectionReason = resolveTemplateSelectionReason(template);
                 ModelSelectionDecision modelDecision = resolveModelSelection(template);
 
                 // Step 3: Initialize financial data with baseline values
@@ -114,6 +118,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
 
                 // VAL-3: Strict Growth Policy Guard (Optional)
                 if (valuationAssumptionProperties.isStrictGrowthPolicy()) {
+                        final FinancialDataInput strictGrowthInput = financialDataInput;
                         growthAnchorService.getAnchorByYahooIndustry(
                                         companyDataDTO.getBasicInfoDataDTO().getIndustryGlobal(),
                                         growthAnchorRegion)
@@ -121,7 +126,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                                 // Only enforce rigorously if we have high heuristic confidence
                                                 if (anchor.getConfidenceScore() != null
                                                                 && anchor.getConfidenceScore() > 0.8) {
-                                                        double inputCagr = financialDataInput
+                                                        double inputCagr = strictGrowthInput
                                                                         .getCompoundAnnualGrowth2_5() / 100.0;
                                                         Double p10 = anchor.getP10();
                                                         Double p90 = anchor.getP90();
@@ -150,12 +155,55 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 ValuationOutputDTO valuationOutputDTOCheck = valuationOutputService.getValuationOutput(
                                 ticker, financialDataInput, false, template);
 
+                if (shouldForceThreeStageTemplate(template, overrides, valuationOutputDTOCheck)) {
+                        Double priceToValuePct = calculatePriceToValuePct(valuationOutputDTOCheck);
+                        templateSelectionReason = buildForcedThreeStageReason(priceToValuePct);
+                        template = valuationTemplateService.withGrowthPattern(
+                                        template,
+                                        GrowthPattern.THREE_STAGE,
+                                        templateSelectionReason);
+                        log.info("[TEMPLATE] Forcing THREE_STAGE for {} after baseline check (price/value={}%)",
+                                        ticker, round2(priceToValuePct));
+
+                        financialDataInput = initializeFinancialDataInput(companyDataDTO, template);
+                        adjustedParameters = new ArrayList<>();
+                        if (overrides != null) {
+                                adjustedParameters = applyUserOverrides(financialDataInput, overrides);
+                        }
+                        adjustSalesToCapitalRatio(financialDataInput);
+                        valuationOutputDTOCheck = valuationOutputService.getValuationOutput(
+                                        ticker, financialDataInput, false, template);
+                }
+
                 // Step 7: Apply calibration fallback if needed
                 // Note: Segment analysis is performed INSIDE applyCalibrationAndMLAdjustments
                 // after any calibration adjustments, ensuring consistent parameter processing
                 ValuationOutputDTO valuationOutputDTO = applyCalibrationAndMLAdjustments(
                                 ticker, financialDataInput, companyDataDTO, valuationOutputDTOCheck, enableDCFAnalysis,
                                 addStory, template, true, adjustedParameters);
+
+                if (shouldForceThreeStageTemplate(template, overrides, valuationOutputDTO)) {
+                        Double priceToValuePct = calculatePriceToValuePct(valuationOutputDTO);
+                        templateSelectionReason = buildForcedThreeStageReason(priceToValuePct);
+                        template = valuationTemplateService.withGrowthPattern(
+                                        template,
+                                        GrowthPattern.THREE_STAGE,
+                                        templateSelectionReason);
+                        log.info("[TEMPLATE] Forcing THREE_STAGE for {} after segment-aware valuation (price/value={}%)",
+                                        ticker, round2(priceToValuePct));
+
+                        financialDataInput = initializeFinancialDataInput(companyDataDTO, template);
+                        adjustedParameters = new ArrayList<>();
+                        if (overrides != null) {
+                                adjustedParameters = applyUserOverrides(financialDataInput, overrides);
+                        }
+                        adjustSalesToCapitalRatio(financialDataInput);
+                        valuationOutputDTOCheck = valuationOutputService.getValuationOutput(
+                                        ticker, financialDataInput, false, template);
+                        valuationOutputDTO = applyCalibrationAndMLAdjustments(
+                                        ticker, financialDataInput, companyDataDTO, valuationOutputDTOCheck,
+                                        enableDCFAnalysis, addStory, template, true, adjustedParameters);
+                }
 
                 // Step 8: Single calibration to market price
                 Double currentMarketPrice = valuationOutputDTO.getCompanyDTO() != null
@@ -176,6 +224,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
 
                 // Step 10: Set model metadata from the model resolved in Step 2.
                 assignModelSelectionMetadata(valuationOutputDTO, ticker, modelDecision);
+                assignTemplateMetadata(valuationOutputDTO, template, templateSelectionReason);
                 if (companyDataDTO.getBasicInfoDataDTO() != null) {
                         valuationOutputDTO.setIndustryUs(companyDataDTO.getBasicInfoDataDTO().getIndustryUs());
                         valuationOutputDTO.setIndustryGlobal(companyDataDTO.getBasicInfoDataDTO().getIndustryGlobal());
@@ -186,7 +235,8 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 ticker,
                                 financialDataInput,
                                 valuationOutputDTO,
-                                template));
+                                template,
+                                templateSelectionReason));
 
                 // Step 12: Add story (if requested)
                 if (addStory) {
@@ -221,6 +271,18 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 ticker, modelDecision.primaryModel(), modelDecision.requestedModel());
         }
 
+        private void assignTemplateMetadata(
+                        ValuationOutputDTO valuationOutputDTO,
+                        ValuationTemplate template,
+                        String templateSelectionReason) {
+                if (valuationOutputDTO == null || template == null) {
+                        return;
+                }
+                valuationOutputDTO.setGrowthPattern(template.getGrowthPattern());
+                valuationOutputDTO.setProjectionYears(template.getProjectionYears());
+                valuationOutputDTO.setTemplateSelectionReason(templateSelectionReason);
+        }
+
         private ModelSelectionDecision resolveModelSelection(ValuationTemplate template) {
                 CashflowType requestedModel = template != null ? template.getCashflowToDiscount() : CashflowType.FCFF;
                 if (requestedModel != CashflowType.FCFF) {
@@ -242,7 +304,8 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         String ticker,
                         FinancialDataInput financialDataInput,
                         ValuationOutputDTO valuationOutputDTO,
-                        ValuationTemplate template) {
+                        ValuationTemplate template,
+                        String templateSelectionReason) {
                 AssumptionTransparencyDTO dto = new AssumptionTransparencyDTO();
                 dto.setValuationModel(valuationOutputDTO.getPrimaryModel() != null
                                 ? valuationOutputDTO.getPrimaryModel().name()
@@ -250,6 +313,11 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 dto.setIndustryUs(valuationOutputDTO.getIndustryUs());
                 dto.setIndustryGlobal(valuationOutputDTO.getIndustryGlobal());
                 dto.setCurrency(valuationOutputDTO.getCurrency());
+                dto.setGrowthPattern(template != null && template.getGrowthPattern() != null
+                                ? template.getGrowthPattern().name()
+                                : null);
+                dto.setProjectionYears(template != null ? template.getProjectionYears() : null);
+                dto.setTemplateSelectionReason(templateSelectionReason);
                 dto.setSegmentCount(financialDataInput.getSegments() != null
                                 && financialDataInput.getSegments().getSegments() != null
                                                 ? financialDataInput.getSegments().getSegments().size()
@@ -283,11 +351,32 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                                 : "Not available",
                                 "Final FCFF output"));
 
+                Double effectiveRevenueGrowth = SegmentParameterContext.getParameterOrDefault(
+                                SegmentWeightedParameters::getWeightedCompoundAnnualGrowth2_5,
+                                financialDataInput.getCompoundAnnualGrowth2_5());
+                Double effectiveOperatingMarginNextYear = SegmentParameterContext.getParameterOrDefault(
+                                SegmentWeightedParameters::getWeightedOperatingMarginNextYear,
+                                financialDataInput.getOperatingMarginNextYear());
+                Double effectiveTargetOperatingMargin = SegmentParameterContext.getParameterOrDefault(
+                                SegmentWeightedParameters::getWeightedTargetPreTaxOperatingMargin,
+                                financialDataInput.getTargetPreTaxOperatingMargin());
+                Double effectiveConvergenceYear = SegmentParameterContext.getParameterOrDefault(
+                                SegmentWeightedParameters::getConvergenceYearMargin,
+                                financialDataInput.getConvergenceYearMargin());
+                Double effectiveSalesToCapitalYears1To5 = SegmentParameterContext.getParameterOrDefault(
+                                SegmentWeightedParameters::getWeightedSalesToCapitalYears1To5,
+                                financialDataInput.getSalesToCapitalYears1To5());
+                Double effectiveSalesToCapitalYears6To10 = SegmentParameterContext.getParameterOrDefault(
+                                SegmentWeightedParameters::getWeightedSalesToCapitalYears6To10,
+                                financialDataInput.getSalesToCapitalYears6To10());
+
                 dto.setOperatingAssumptions(new AssumptionTransparencyDTO.OperatingAssumptions(
-                                normalizePercent(financialDataInput.getCompoundAnnualGrowth2_5()),
-                                normalizePercent(financialDataInput.getTargetPreTaxOperatingMargin()),
-                                normalizeMultiple(financialDataInput.getSalesToCapitalYears1To5()),
-                                normalizeMultiple(financialDataInput.getSalesToCapitalYears6To10()),
+                                normalizePercent(effectiveRevenueGrowth),
+                                normalizePercent(effectiveOperatingMarginNextYear),
+                                normalizePercent(effectiveTargetOperatingMargin),
+                                round2(effectiveConvergenceYear),
+                                normalizeMultiple(effectiveSalesToCapitalYears1To5),
+                                normalizeMultiple(effectiveSalesToCapitalYears6To10),
                                 "Valuation input baseline/override",
                                 "Valuation input baseline/override",
                                 "Valuation input baseline/override",
@@ -295,10 +384,14 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 null,
                                 null));
 
-                dto.setNotes(List.of(
-                                "Rates are shown in percent.",
-                                "Sales-to-capital is shown as x multiple.",
-                                "Market-implied values solve one variable at a time while others stay fixed."));
+                List<String> notes = new ArrayList<>();
+                notes.add("Rates are shown in percent.");
+                notes.add("Sales-to-capital is shown as x multiple.");
+                notes.add("Market-implied values solve one variable at a time while others stay fixed.");
+                if (isForcedThreeStageReason(templateSelectionReason)) {
+                        notes.add("Projection was upgraded to THREE_STAGE because market price and intrinsic value diverged materially in the first-pass baseline.");
+                }
+                dto.setNotes(notes);
 
                 dto.setMarketImpliedExpectations(buildMarketImpliedExpectations(
                                 ticker,
@@ -578,11 +671,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 if (rawValue == null) {
                         return null;
                 }
-                double normalized = rawValue;
-                if (Math.abs(normalized) > 10.0) {
-                        normalized /= 100.0;
-                }
-                return round2(normalized);
+                return round2(rawValue);
         }
 
         private Double firstFinite(Double[] values) {
@@ -619,6 +708,66 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         return null;
                 }
                 return Math.round(value * 100.0) / 100.0;
+        }
+
+        private String resolveTemplateSelectionReason(ValuationTemplate template) {
+                if (template == null || template.getMetadata() == null) {
+                        return "ValuationModel heuristic";
+                }
+                Object reason = template.getMetadata().get("templateSelectionReason");
+                return reason instanceof String && !((String) reason).isBlank()
+                                ? (String) reason
+                                : "ValuationModel heuristic";
+        }
+
+        private boolean shouldForceThreeStageTemplate(
+                        ValuationTemplate template,
+                        FinancialDataInput overrides,
+                        ValuationOutputDTO valuationOutputDTOCheck) {
+                if (template == null || template.getGrowthPattern() == null) {
+                        return false;
+                }
+                if (overrides != null && overrides.getGrowthPatternOverride() != null) {
+                        return false;
+                }
+                if (template.getGrowthPattern() != GrowthPattern.STABLE
+                                && template.getGrowthPattern() != GrowthPattern.TWO_STAGE) {
+                        return false;
+                }
+                Double priceToValuePct = calculatePriceToValuePct(valuationOutputDTOCheck);
+                return priceToValuePct != null
+                                && (priceToValuePct > FORCE_THREE_STAGE_PREMIUM_THRESHOLD
+                                                || priceToValuePct < FORCE_THREE_STAGE_DISCOUNT_THRESHOLD);
+        }
+
+        private Double calculatePriceToValuePct(ValuationOutputDTO valuationOutputDTO) {
+                if (valuationOutputDTO == null || valuationOutputDTO.getCompanyDTO() == null) {
+                        return null;
+                }
+                Double marketPrice = valuationOutputDTO.getCompanyDTO().getPrice();
+                Double intrinsicValue = valuationOutputDTO.getCompanyDTO().getEstimatedValuePerShare();
+                if (marketPrice == null || intrinsicValue == null
+                                || !Double.isFinite(marketPrice) || !Double.isFinite(intrinsicValue)
+                                || marketPrice <= 0 || intrinsicValue <= 0) {
+                        return null;
+                }
+                return (marketPrice / intrinsicValue) * 100.0;
+        }
+
+        private String buildForcedThreeStageReason(Double priceToValuePct) {
+                if (priceToValuePct == null) {
+                        return "Forced THREE_STAGE due to price/value gap";
+                }
+                return String.format(
+                                "Forced THREE_STAGE due to price/value gap (price-to-value %.2f%% outside %.0f%%-%.0f%% band)",
+                                priceToValuePct,
+                                FORCE_THREE_STAGE_DISCOUNT_THRESHOLD,
+                                FORCE_THREE_STAGE_PREMIUM_THRESHOLD);
+        }
+
+        private boolean isForcedThreeStageReason(String templateSelectionReason) {
+                return templateSelectionReason != null
+                                && templateSelectionReason.startsWith("Forced THREE_STAGE due to price/value gap");
         }
 
         @FunctionalInterface
@@ -1089,6 +1238,11 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 // Company drive parameters (Yahoo Finance baseline)
                 double operatingMarginNextYear = companyDataDTO.getCompanyDriveDataDTO().getOperatingMarginNextYear()
                                 * 100;
+                double targetPreTaxOperatingMargin = isPositiveFinite(
+                                companyDataDTO.getCompanyDriveDataDTO().getTargetPreTaxOperatingMargin())
+                                                ? companyDataDTO.getCompanyDriveDataDTO()
+                                                                .getTargetPreTaxOperatingMargin() * 100
+                                                : operatingMarginNextYear;
 
                 // Apply template adjustments if provided
                 if (template != null && template.getNormalizedOperatingMargin() != null) {
@@ -1100,13 +1254,12 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 financialDataInput.setOperatingMarginNextYear(operatingMarginNextYear);
                 financialDataInput.setCompoundAnnualGrowth2_5(
                                 companyDataDTO.getCompanyDriveDataDTO().getCompoundAnnualGrowth2_5() * 100);
-                financialDataInput.setTargetPreTaxOperatingMargin(operatingMarginNextYear);
-                financialDataInput.setConvergenceYearMargin(
-                                companyDataDTO.getCompanyDriveDataDTO().getConvergenceYearMargin() * 100);
+                financialDataInput.setTargetPreTaxOperatingMargin(targetPreTaxOperatingMargin);
+                financialDataInput.setConvergenceYearMargin(defaultConvergenceYear(template));
                 financialDataInput.setSalesToCapitalYears1To5(
-                                companyDataDTO.getCompanyDriveDataDTO().getSalesToCapitalYears1To5() * 100);
+                                companyDataDTO.getCompanyDriveDataDTO().getSalesToCapitalYears1To5());
                 financialDataInput.setSalesToCapitalYears6To10(
-                                companyDataDTO.getCompanyDriveDataDTO().getSalesToCapitalYears6To10() * 100);
+                                companyDataDTO.getCompanyDriveDataDTO().getSalesToCapitalYears6To10());
                 financialDataInput.setRiskFreeRate(
                                 companyDataDTO.getCompanyDriveDataDTO().getRiskFreeRate() * 100);
                 financialDataInput.setInitialCostCapital(
@@ -1116,6 +1269,21 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 initializeOverrideAssumptions(financialDataInput);
 
                 return financialDataInput;
+        }
+
+        private double defaultConvergenceYear(ValuationTemplate template) {
+                if (template == null || template.getGrowthPattern() == null) {
+                        return 5.0;
+                }
+                return switch (template.getGrowthPattern()) {
+                        case STABLE -> 3.0;
+                        case TWO_STAGE, N_STAGE -> 5.0;
+                        case THREE_STAGE -> 10.0;
+                };
+        }
+
+        private boolean isPositiveFinite(Double value) {
+                return value != null && Double.isFinite(value) && value > 0;
         }
 
         /**
@@ -1192,10 +1360,9 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
         }
 
         /**
-         * **CRITICAL FIX**: Adjusts sales-to-capital ratio for both Years 1-5 and Years
-         * 6-10.
-         * Ensures ratios are at least as high as the current ratio to prevent
-         * unrealistic DCF calculations.
+         * Adjusts near-term sales-to-capital ratio so it does not fall below the
+         * current company ratio.
+         * Long-run sales-to-capital remains available for mature-state reversion.
          * 
          * Per Damodaran: Sales-to-capital ratio should be consistent with the company's
          * current
@@ -1222,15 +1389,12 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         double adjustedSalesToCapital1To5 = Math.max(inputSalesToCapital1To5, currentSalesToCapital);
                         financialDataInput.setSalesToCapitalYears1To5(adjustedSalesToCapital1To5);
 
-                        // Adjust Years 6-10 sales-to-capital ratio
                         double inputSalesToCapital6To10 = financialDataInput.getSalesToCapitalYears6To10();
-                        double adjustedSalesToCapital6To10 = Math.max(inputSalesToCapital6To10, currentSalesToCapital);
-                        financialDataInput.setSalesToCapitalYears6To10(adjustedSalesToCapital6To10);
 
-                        log.info("Sales-to-capital adjustment for {}: Years 1-5: input={}, adjusted={} | Years 6-10: input={}, adjusted={} | current={}",
+                        log.info("Sales-to-capital adjustment for {}: Years 1-5: input={}, adjusted={} | Years 6-10: input={}, retained={} | current={}",
                                         financialDataInput.getBasicInfoDataDTO().getTicker(),
                                         inputSalesToCapital1To5, adjustedSalesToCapital1To5,
-                                        inputSalesToCapital6To10, adjustedSalesToCapital6To10,
+                                        inputSalesToCapital6To10, inputSalesToCapital6To10,
                                         currentSalesToCapital);
                 } catch (Exception e) {
                         log.error("Failed to adjust sales-to-capital ratio, using input values", e);
@@ -1291,6 +1455,12 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 if (overrides.getConvergenceYearMargin() != null) {
                         baseline.setConvergenceYearMargin(overrides.getConvergenceYearMargin());
                         log.info("   Override: convergenceYearMargin = {}", overrides.getConvergenceYearMargin());
+                        overrideCount++;
+                }
+
+                if (overrides.getGrowthPatternOverride() != null) {
+                        baseline.setGrowthPatternOverride(overrides.getGrowthPatternOverride());
+                        log.info("   Override: growthPatternOverride = {}", overrides.getGrowthPatternOverride());
                         overrideCount++;
                 }
 
@@ -1381,6 +1551,8 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 if (input.getInitialCostCapital() != null)
                         count++;
                 if (input.getTerminalGrowthRate() != null)
+                        count++;
+                if (input.getGrowthPatternOverride() != null)
                         count++;
                 if (input.getSectorOverrides() != null && !input.getSectorOverrides().isEmpty())
                         count++;
