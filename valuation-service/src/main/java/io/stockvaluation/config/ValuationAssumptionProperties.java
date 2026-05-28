@@ -34,7 +34,7 @@ public class ValuationAssumptionProperties {
     @Getter
     @Setter
     public static class DamodaranAssumptions {
-        private double matureMarketErp = 4.77;
+        private double matureMarketErp = 4.23;
         private String dataDate = "2026-04-01";
         private String countryRiskSource = "ctrypremApr26.xlsx";
     }
