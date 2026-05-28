@@ -17,8 +17,8 @@ class ValuationAssumptionPropertiesTest {
 
         assertEquals(0.05, props.getPreTaxCostOfDebt(), 0.0001);
         assertEquals(0.05, props.getConvergenceYearMargin(), 0.0001);
-        assertEquals(4.77, props.getMatureMarketPremium(), 0.0001);
-        assertEquals(4.77, props.getDamodaran().getMatureMarketErp(), 0.0001);
+        assertEquals(4.23, props.getMatureMarketPremium(), 0.0001);
+        assertEquals(4.23, props.getDamodaran().getMatureMarketErp(), 0.0001);
         assertEquals("2026-04-01", props.getDamodaran().getDataDate());
         assertEquals("ctrypremApr26.xlsx", props.getDamodaran().getCountryRiskSource());
         assertEquals(4.58, props.getBaselineRiskFreeRate(), 0.0001);

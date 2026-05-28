@@ -128,7 +128,7 @@ Use a quick or no-questions path only when the user explicitly asks for it.
 
 ## Quick start
 
-Docker Desktop or a compatible Docker Engine with Compose is required. The v1 local runtime is the Docker Compose stack in `docker-compose.local.yml`; it does not install or support a separate native Java/Postgres/yfinance runtime.
+Docker Desktop or a compatible Docker Engine with Compose is required. The v1 local runtime is the Docker Compose stack in `docker-compose.local.yml`; no native Java/Postgres/yfinance runtime is installed or supported for v1.
 
 From a local checkout:
 
