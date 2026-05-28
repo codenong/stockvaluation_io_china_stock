@@ -183,6 +183,12 @@ Value NVDA using stockvaluation.io.
 
 For the default researched flow, expect the agent to research first, build a mechanical baseline, build an evidence-constrained case, then stop and ask guided valuation questions. The final report comes after those answers unless you explicitly ask for a quick or no-questions run.
 
+## Demo video
+
+Watch a real Codex CLI run valuing GOOGL with the local StockValuation.io workflow and guided default answers:
+
+[GOOGL Codex Valuation Demo](docs/assets/googl-codex-valuation-demo.mp4)
+
 ## MCP tools
 
 - `stockvaluation.health`
