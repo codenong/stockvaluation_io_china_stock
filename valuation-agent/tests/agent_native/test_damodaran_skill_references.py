@@ -150,7 +150,9 @@ def test_report_template_requires_rich_damodaran_data_displays_without_invention
     for phrase in [
         "central narrative tension",
         "valuation snapshot",
-        "mechanical baseline vs evidence-constrained base vs market-implied",
+        "user-refined scenario is the main scenario",
+        "internal baseline audit",
+        "explicit audit/debug",
         "guided user judgment and user-refined scenario",
         "user answers define a scenario; they are not independent evidence",
         "market-implied expectations",
@@ -179,18 +181,19 @@ def test_report_template_preserves_required_section_order():
         "## Investment Efficiency",
         "## Risk",
         "## Market-Implied Expectations",
+        "## Assumptions Used",
+        "## Data Quality And Limitations",
+        "## Key Takeaways",
         "## Break-Even / Priced-In Frontier",
         "## Scenario Headline Table",
         "## Sensitivity Analysis",
-        "## Mechanical Baseline Vs Evidence-Constrained Base Vs Market-Implied",
         "## Guided User Judgment And User-Refined Scenario",
         "## Evidence And Segment Summary",
         "## Assumption Judgment Summary",
+        "## Internal Baseline Audit",
         "## Terminal Value And Cash-Flow Composition",
         "## Tax And Accounting Adjustments",
         "## Effective Assumptions",
-        "## Data Quality And Limitations",
-        "## Key Takeaways",
     ]
 
     positions = [template.index(heading) for heading in ordered_headings]
@@ -227,7 +230,9 @@ def test_guided_refinement_is_default_with_quick_bypass_and_bounded_questions():
     assert "guided-valuation-refinement.md" in skill
     assert "unless the user explicitly requested quick valuation, no questions, skip questions, one-shot report, automation, or smoke-test" in skill
     assert "do not treat a plain \"value company using stockvaluation.io\" request as a one-shot path" in skill
-    assert "generate 4-6 bounded company-specific valuation questions by default" in skill
+    assert "build a hidden guided question plan" in skill
+    assert "ask one question at a time" in skill
+    assert "do not ask a batch of 4-6 questions" in skill
     assert "at most 8 in deep mode" in skill
     assert skill.index("baseline-plausibility.md") < skill.index("guided-valuation-refinement.md")
     assert "quick valuation, no-questions, automation, smoke-test" in guide
@@ -252,9 +257,13 @@ def test_guided_question_reference_requires_company_specific_auditable_shape():
     ]:
         assert field in guide
     assert "reject generic checklist questions" in lower
-    assert "recommended bounded answer" in lower
+    assert "modeling default" in lower
+    assert "my analysis" in lower
+    assert "why this default" in lower
+    assert "evidence used" in lower
+    assert "business impact" in lower
+    assert "model impact" in lower
     assert "not financial advice" in lower
-    assert "recommended:" in lower
     assert "user answers are user judgment, not external evidence" in lower
     assert '"source_type": "user_judgment"' in guide
     assert "not independent evidence" in guide

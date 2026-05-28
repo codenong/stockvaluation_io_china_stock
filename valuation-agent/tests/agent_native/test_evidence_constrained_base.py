@@ -60,7 +60,9 @@ def test_report_template_distinguishes_mechanical_evidence_constrained_and_marke
     template = _reference("report-template.md")
     lower = template.lower()
 
-    assert "## Mechanical Baseline Vs Evidence-Constrained Base Vs Market-Implied" in template
+    assert "## Internal Baseline Audit" in template
+    assert "explicit audit/debug" in lower
+    assert "do not include mechanical baseline value as a primary valuation case" in lower
     assert "mechanical baseline" in lower
     assert "evidence-constrained base" in lower
     assert "market-implied diagnostics" in lower

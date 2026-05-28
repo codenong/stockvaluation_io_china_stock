@@ -1,6 +1,6 @@
 # MCP Tools
 
-All StockValuation tools return MCP `structuredContent` with JSON. Read `structuredContent` first. The text block is a serialized copy for clients that do not expose structured output.
+All StockValuation tools return full MCP `structuredContent` with JSON. Read `structuredContent` first. The visible text block is intentionally compact for CLI clients and is not a serialized copy of the full structured payload.
 
 ## `stockvaluation.health`
 

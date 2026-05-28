@@ -167,7 +167,16 @@ def test_value_ticker_returns_structured_dcf_json_for_msft():
     assert result["structuredContent"]["dcf"]["estimatedValuePerShare"] == 412.34
     assert result["structuredContent"]["assumptions"]["growth"]["revenueGrowthRateYears2To5"] == 7.0
     assert result["structuredContent"]["policy"]["notFinancialAdvice"] is True
-    assert json.loads(result["content"][0]["text"]) == result["structuredContent"]
+    visible_text = result["content"][0]["text"]
+    assert "stockvaluation.value_ticker" in visible_text
+    assert "MSFT" in visible_text
+    assert "structuredContent" in visible_text
+    assert "not financial advice" in visible_text.lower()
+    assert len(visible_text) < 500
+    assert '"valuation"' not in visible_text
+    assert "financialDTO" not in visible_text
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(visible_text)
     assert client.calls == [("MSFT", {})]
 
 
@@ -213,6 +222,13 @@ def test_invalid_ticker_returns_agent_readable_error_without_service_call():
     assert result["structuredContent"]["ok"] is False
     assert result["structuredContent"]["error"]["code"] == "INVALID_TICKER"
     assert result["structuredContent"]["recovery"]["agentAction"]
+    visible_text = result["content"][0]["text"]
+    assert "INVALID_TICKER" in visible_text
+    assert "valid public ticker" in visible_text
+    assert "structuredContent" in visible_text
+    assert len(visible_text) < 700
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(visible_text)
     assert client.calls == []
 
 

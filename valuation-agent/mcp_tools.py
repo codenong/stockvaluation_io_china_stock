@@ -1360,12 +1360,96 @@ def tool_result(payload: dict[str, Any], is_error: bool) -> dict[str, Any]:
         "content": [
             {
                 "type": "text",
-                "text": json.dumps(safe_payload, sort_keys=True, separators=(",", ":")),
+                "text": compact_text_content(safe_payload, is_error),
             }
         ],
         "structuredContent": safe_payload,
         "isError": is_error,
     }
+
+
+def compact_text_content(payload: dict[str, Any], is_error: bool) -> str:
+    tool = str(payload.get("tool") or "stockvaluation")
+    ticker = _string_or_none(payload.get("ticker"))
+    subject = f"{tool} {ticker}" if ticker else tool
+    if is_error or not payload.get("ok"):
+        error = _dict(payload.get("error"))
+        recovery = _dict(payload.get("recovery"))
+        code = _string_or_none(error.get("code")) or "ERROR"
+        category = _string_or_none(payload.get("failureCategory")) or "unknown_failure"
+        message = _string_or_none(error.get("message")) or "The tool call failed."
+        action = _string_or_none(recovery.get("agentAction"))
+        parts = [
+            f"{subject}: error {code} ({category}).",
+            message,
+        ]
+        if action:
+            parts.append(f"Recovery: {action}")
+        parts.append("Full details are in structuredContent.")
+        return " ".join(parts)
+
+    policy = _dict(payload.get("policy"))
+    policy_text = ""
+    if policy.get("educationalUseOnly") or policy.get("notFinancialAdvice"):
+        policy_text = " Educational use only; not financial advice."
+
+    dcf = _dict(payload.get("dcf"))
+    if dcf:
+        company_name = _string_or_none(dcf.get("companyName"))
+        currency = _string_or_none(dcf.get("currency")) or _string_or_none(dcf.get("stockCurrency"))
+        estimated_value = compact_number(dcf.get("estimatedValuePerShare"))
+        market_price = compact_number(dcf.get("marketPrice"))
+        baseline = _dict(payload.get("baseline"))
+        baseline_status = _string_or_none(baseline.get("baselineUseStatus"))
+        summary = f"{subject}: ok."
+        if company_name:
+            summary += f" {company_name}."
+        if estimated_value is not None:
+            value_text = f" Estimated value/share {estimated_value}"
+            if currency:
+                value_text += f" {currency}"
+            summary += value_text + "."
+        if market_price is not None:
+            price_text = f" Market price {market_price}"
+            if currency:
+                price_text += f" {currency}"
+            summary += price_text + "."
+        if baseline_status:
+            summary += f" Baseline use {baseline_status}."
+        return f"{summary}{policy_text} Full JSON is in structuredContent."
+
+    if tool == "stockvaluation.health":
+        service = _dict(payload.get("service"))
+        status = _string_or_none(service.get("status")) or "unknown"
+        return f"{subject}: ok. Service status {status}.{policy_text} Full JSON is in structuredContent."
+
+    if tool == "stockvaluation.get_assumptions":
+        return f"{subject}: ok. Assumption transparency returned.{policy_text} Full JSON is in structuredContent."
+
+    if tool == "stockvaluation.get_growth_anchor":
+        anchor = _dict(payload.get("growthAnchor"))
+        entity = _string_or_none(anchor.get("mappedEntityDisplay")) or _string_or_none(anchor.get("mappedEntity"))
+        suffix = f" Growth anchor {entity}." if entity else " Growth anchor returned."
+        return f"{subject}: ok.{suffix}{policy_text} Full JSON is in structuredContent."
+
+    if tool == "stockvaluation.get_reference_data_status":
+        return f"{subject}: ok. Reference-data status returned.{policy_text} Full JSON is in structuredContent."
+
+    if tool == "stockvaluation.explain_failure":
+        category = _string_or_none(payload.get("failureCategory")) or "unknown_failure"
+        message = _string_or_none(payload.get("message")) or "Failure classified."
+        return f"{subject}: ok. {category}: {message} Full JSON is in structuredContent."
+
+    return f"{subject}: ok.{policy_text} Full JSON is in structuredContent."
+
+
+def compact_number(value: Any) -> str | None:
+    number = _number_or_none(value)
+    if number is None:
+        return None
+    if abs(number) >= 1000:
+        return f"{number:,.2f}"
+    return f"{number:.2f}"
 
 
 def dedupe(items: list[str]) -> list[str]:

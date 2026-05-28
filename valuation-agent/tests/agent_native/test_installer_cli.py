@@ -22,6 +22,7 @@ def test_install_skills_is_idempotent_for_codex_and_claude(tmp_path):
     assert codex_skill.exists()
     assert claude_skill.exists()
     assert "stockvaluation.value_ticker" in codex_skill.read_text(encoding="utf-8")
+    assert "ask one question at a time" in codex_skill.read_text(encoding="utf-8").lower()
     assert (codex_skill.parent / "references" / "mcp-tools.md").exists()
 
 

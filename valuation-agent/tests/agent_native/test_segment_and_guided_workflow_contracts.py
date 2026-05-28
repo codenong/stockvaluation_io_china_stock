@@ -51,8 +51,12 @@ def test_guided_refinement_reference_defines_bounded_user_judgment_flow():
 
     for phrase in [
         "default full researched valuation: use guided refinement",
-        "ask 4-6 questions",
+        "ask one question at a time",
+        "hidden guided question plan",
+        "do not ask a batch of 4-6 questions",
+        "use defaults",
         "user answers are user judgment, not external evidence",
+        "one final user-refined recalculation",
         "request_policy.mode = \"user_refined_scenario\"",
         "send only supported mapped assumptions",
         "not financial advice",
@@ -60,15 +64,35 @@ def test_guided_refinement_reference_defines_bounded_user_judgment_flow():
         assert phrase in lower
 
     for field in [
+        '"id"',
+        '"driver"',
+        '"evidence_basis"',
+        '"evidence_used"',
+        '"default_answer"',
         '"company_specific_rationale"',
         '"business_tension"',
-        '"why_this_matters"',
+        '"why_default_selected"',
+        '"business_impact"',
+        '"model_impact"',
         '"bounded_choices"',
         '"recommended_answer"',
+        '"hidden_model_mapping"',
+        '"confidence"',
+        '"status"',
         '"mapping_notes"',
         '"priority_reason"',
     ]:
         assert field in reference
+
+    for phrase in [
+        "my analysis",
+        "why this default",
+        "evidence used",
+        "business impact",
+        "model impact",
+        "confidence",
+    ]:
+        assert phrase in lower
 
 
 def test_guided_refinement_documents_supported_and_report_only_fields():

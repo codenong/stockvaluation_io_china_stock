@@ -16,7 +16,9 @@ The product surface is the user's agent. The deterministic valuation math comes 
 - A plain request such as "value COMPANY using stockvaluation.io" is the default full researched valuation flow, not a quick valuation and not a one-shot report request.
 - Do not infer a guided-refinement bypass from ordinary phrasing. Bypass guided refinement only when the user explicitly says quick, no questions, skip questions, one-shot report, automation, smoke-test, or equivalent.
 - In the default full researched valuation flow, the final report is blocked until guided refinement is either completed from user answers or explicitly bypassed by the user.
-- After the evidence-constrained base case, stop and ask 4-6 company-specific guided valuation-refinement questions in one message. Include a recommended bounded answer for each question as an educational modeling default, not as financial advice. Do not write the final report in that same response.
+- After the evidence-constrained base case, build a hidden guided question plan, then ask one question at a time. Do not ask a batch of 4-6 questions unless the user explicitly requests batch mode.
+- Each visible question must show "My analysis" or equivalent modeling-default language, why the default was selected, evidence used, business impact, model impact, and confidence. The default is educational modeling judgment, not financial advice.
+- Do not write the final report in that same response as an unanswered guided question.
 
 ## Context Discipline
 
@@ -37,8 +39,8 @@ The product surface is the user's agent. The deterministic valuation math comes 
 9. Apply the focused decision guides that match the company and evidence: growth/reinvestment, terminal value, model/lifecycle, R&D, risk/currency/country, accounting cleanup, options/leases/claims, segment quality, and special-company stop rules.
 10. Produce the strict `assumption_judgment` JSON block described in `{baseDir}/references/assumption-judgment.md`, using driver-specific evidence rather than generic source presence and incorporating baseline plausibility.
 11. Auto-recalculate once with `stockvaluation.recalculate` using `request_policy.mode = "autonomous_researched"` when the baseline valuation succeeded and the governed evidence-constrained payload is supported. Do not hand-compute valuation math.
-12. Unless the user explicitly requested quick valuation, no questions, skip questions, one-shot report, automation, or smoke-test, run guided refinement using `{baseDir}/references/guided-valuation-refinement.md`. Generate 4-6 bounded company-specific valuation questions by default, or at most 8 in deep mode, after baseline, segment review, evidence gathering, and baseline plausibility. Include a recommended bounded answer and rationale for each question. Ask the questions in one message and wait for the user's bounded answers. Do not treat a plain "value COMPANY using stockvaluation.io" request as a one-shot path.
-13. Map answered choices into a distinct `user_judgment` package. User answers are user judgment, not evidence. Recalculate the supported mapped assumptions with `stockvaluation.recalculate` using `request_policy.mode = "user_refined_scenario"` and attach `user_judgment` as metadata. Keep unsupported or report-only answers out of the service payload.
+12. Unless the user explicitly requested quick valuation, no questions, skip questions, one-shot report, automation, or smoke-test, run guided refinement using `{baseDir}/references/guided-valuation-refinement.md`. Build a hidden guided question plan of company-specific bounded questions after baseline, segment review, evidence gathering, and baseline plausibility. Ask one question at a time by default, or at most 8 in deep mode. Do not ask a batch of 4-6 questions unless the user explicitly requests batch mode. Do not treat a plain "value COMPANY using stockvaluation.io" request as a one-shot path.
+13. Accumulate answered choices into a distinct `user_judgment` package. User answers are user judgment, not evidence. Recalculate once, after guided refinement is complete, with `stockvaluation.recalculate` using `request_policy.mode = "user_refined_scenario"` and attach `user_judgment` as metadata. Keep unsupported or report-only answers out of the service payload.
 14. For explicitly requested quick/no-questions/one-shot/automation/smoke-test paths, bypass guided refinement and write the one-shot educational report after the evidence-constrained workflow.
 15. Write the final educational report using `{baseDir}/references/report-template.md` and `{baseDir}/references/narrative-report-style.md`, summarizing the judgment in prose and tables rather than printing raw JSON by default.
 16. Apply `{baseDir}/references/no-advice-policy.md` before finalizing.
@@ -67,11 +69,11 @@ The product surface is the user's agent. The deterministic valuation math comes 
 - Explain key drivers: growth, margins, reinvestment, cost of capital, terminal value, tax rate, and accounting adjustments.
 - Include data-quality notes and service/version metadata when returned.
 - Use clear uncertainty language when Yahoo Finance coverage or reference-data matching is weak.
-- Write the report in a story-and-numbers style: central tension, growth, margins, investment efficiency, risk, market-implied expectations, mechanical baseline vs evidence-constrained base vs market-implied diagnostics, sensitivity/break-even displays when returned, evidence/segment summary, effective assumptions, and key takeaways.
-- In guided refinement, separate mechanical baseline, evidence-constrained base, user-refined scenario, and market-implied diagnostics.
+- Write the report in a story-and-numbers style: valuation snapshot, central tension, growth, margins, investment efficiency, risk, market-implied expectations, assumptions used, data quality, and key takeaways.
+- In guided refinement, make the user-refined scenario the main scenario when it exists. Keep the mechanical baseline internal by default; expose mechanical baseline details only when the user explicitly asks for audit/debug detail.
 - Keep supported adjustments separate from supported explanations, explain-only topics, future-support gaps, unsupported-stop cases, and out-of-scope topics.
 - Do not count "10-K found", "earnings release found", or other generic source presence as evidence. Evidence must name a valuation driver and the relevant fact.
-- When the baseline is challenged, include a Mechanical Baseline vs Evidence-Constrained Base vs Market-Implied Diagnostics section and list unsupported blockers such as next-year margin path, WACC, terminal growth, and accounting adjustments.
+- When the baseline is challenged, mention baseline quality and unsupported blockers in the main narrative, but put mechanical baseline value/detail only in explicit audit/debug output.
 
 ## References
 

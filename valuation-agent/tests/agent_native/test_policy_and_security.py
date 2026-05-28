@@ -125,7 +125,9 @@ def test_stockvaluation_io_reference_triggers_guided_refinement_by_default():
     assert "not a quick valuation and not a one-shot report request" in lower
     assert "do not infer a guided-refinement bypass from ordinary phrasing" in lower
     assert "the final report is blocked until guided refinement" in lower
-    assert "include a recommended bounded answer for each question" in lower
+    assert "build a hidden guided question plan" in lower
+    assert "ask one question at a time" in lower
+    assert "my analysis" in lower
     assert "do not write the final report in that same response" in lower
 
 
