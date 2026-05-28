@@ -83,7 +83,7 @@ class ValuationWorkflowServiceImplTest {
 
                 stubHappyPath(companyData, template, initial, refined);
 
-                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides, false);
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides);
 
                 assertSame(refined, result);
                 assertEquals(CashflowType.FCFF, result.getPrimaryModel());
@@ -108,7 +108,7 @@ class ValuationWorkflowServiceImplTest {
 
                 ArgumentCaptor<FinancialDataInput> captor = ArgumentCaptor.forClass(FinancialDataInput.class);
                 verify(valuationOutputService, times(2))
-                                .getValuationOutput(eq("AAPL"), captor.capture(), eq(false), eq(template));
+                                .getValuationOutput(eq("AAPL"), captor.capture(), eq(template));
                 List<FinancialDataInput> requests = captor.getAllValues();
                 assertEquals(2, requests.size());
                 assertNotNull(requests.get(1).getSegments());
@@ -128,7 +128,7 @@ class ValuationWorkflowServiceImplTest {
 
                 stubHappyPath(companyData, template, valuationOutput(100.0, 100.0), valuationOutput(100.0, 100.0));
 
-                workflow.getValuation("AAPL", overrides, false);
+                workflow.getValuation("AAPL", overrides);
 
                 verify(commonService, never()).applySegmentWeightedParameters(any(FinancialDataInput.class),
                                 any(CompanyDataDTO.class), anyList());
@@ -148,7 +148,7 @@ class ValuationWorkflowServiceImplTest {
                 when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
                 when(valuationTemplateService.determineTemplate(nullable(FinancialDataInput.class), eq(companyData))).thenReturn(invalidTemplate);
 
-                assertThrows(IllegalStateException.class, () -> workflow.getValuation("AAPL", null, true));
+                assertThrows(IllegalStateException.class, () -> workflow.getValuation("AAPL", null));
                 assertNull(SegmentParameterContext.getParameters());
         }
 
@@ -172,7 +172,7 @@ class ValuationWorkflowServiceImplTest {
                 when(growthAnchorService.getAnchorByYahooIndustry(anyString(), anyString()))
                                 .thenReturn(Optional.of(anchor));
 
-                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput(), false);
+                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput());
 
                 assertNotNull(result.getGrowthSkillContext());
                 assertNotNull(result.getAssumptionTransparency());
@@ -187,10 +187,92 @@ class ValuationWorkflowServiceImplTest {
                 ValuationTemplate template = fcffTemplate();
                 stubHappyPath(companyData, template, valuationOutput(100.0, 100.0), valuationOutput(100.0, 100.0));
 
-                ValuationOutputDTO result = workflow.getValuation("AAPL", null, false);
+                ValuationOutputDTO result = workflow.getValuation("AAPL", null);
 
                 assertNotNull(result);
                 assertNotNull(result.getAssumptionTransparency());
+        }
+
+        @Test
+        void getValuation_withoutSegmentsDisclosesSingleIndustryFallbackBaselineQuality() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                ValuationTemplate template = fcffTemplate();
+                stubHappyPath(companyData, template, valuationOutput(100.0, 100.0), valuationOutput(100.0, 100.0));
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", null);
+
+                assertNotNull(result.getAssumptionTransparency());
+                assertEquals("single_industry_fallback", result.getAssumptionTransparency().getBaselineQuality());
+                assertEquals(0.0, result.getAssumptionTransparency().getSegmentCoveragePct(), 0.001);
+                assertFalse(result.getAssumptionTransparency().isSegmentAware());
+                assertTrue(result.getAssumptionTransparency().getMappedIndustries().isEmpty());
+                assertTrue(result.getAssumptionTransparency().getWeightedBaselineAssumptions().isEmpty());
+                assertEquals("mechanical_only", result.getAssumptionTransparency().getBaselineUseStatus());
+                assertEquals("single_industry_mechanical_fallback",
+                                result.getAssumptionTransparency().getTargetOperatingMarginStatus());
+                assertTrue(result.getAssumptionTransparency().getBaselineWarnings().stream()
+                                .anyMatch(warning -> warning.contains("not segment-weighted")));
+                assertTrue(result.getAssumptionTransparency().getUnsupportedBaselineDrivers().stream()
+                                .anyMatch(driver -> "target_operating_margin".equals(driver.getField())));
+        }
+
+        @Test
+        void getValuation_researchedBaselineModeWithoutSegmentsMarksBaselineChallenged() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                ValuationTemplate template = fcffTemplate();
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setResearchedBaselineMode(true);
+                stubHappyPath(companyData, template, valuationOutput(100.0, 100.0), valuationOutput(100.0, 100.0));
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides);
+
+                assertNotNull(result.getAssumptionTransparency());
+                assertEquals("single_industry_fallback", result.getAssumptionTransparency().getBaselineQuality());
+                assertEquals("segment_evidence_insufficient",
+                                result.getAssumptionTransparency().getBaselineUseStatus());
+                assertFalse(result.getAssumptionTransparency().isSegmentAware());
+                assertTrue(result.getAssumptionTransparency().getBaselineWarnings().stream()
+                                .anyMatch(warning -> warning.contains("researched baseline mode")));
+                assertTrue(result.getAssumptionTransparency().getUnsupportedBaselineDrivers().stream()
+                                .anyMatch(driver -> "segments".equals(driver.getField())));
+        }
+
+        @Test
+        void getValuation_disclosesSegmentMappingBlockedWhenSegmentCoverageIsInsufficient() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                ValuationTemplate template = fcffTemplate();
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setSegments(new SegmentResponseDTO(List.of(
+                                new SegmentResponseDTO.Segment("mapped-sector", "tech", List.of("A"), 0.9, 0.3, 0.2),
+                                new SegmentResponseDTO.Segment("missing-sector", "tech", List.of("B"), 0.4, 0.7,
+                                                0.2))));
+                stubHappyPath(companyData, template, valuationOutput(100.0, 100.0), valuationOutput(100.0, 100.0));
+                doAnswer(invocation -> {
+                        SegmentWeightedParameters blocked = new SegmentWeightedParameters();
+                        blocked.setBaselineQuality("segment_mapping_blocked");
+                        blocked.setSegmentCoveragePct(30.0);
+                        blocked.setSegmentWeighted(false);
+                        blocked.setSegmentCount(2);
+                        blocked.setSegmentWarnings(List.of("Segment mapped revenue coverage 30.00% is below the 80% threshold."));
+                        SegmentParameterContext.setParameters(blocked);
+                        return null;
+                }).when(commonService).applySegmentWeightedParameters(any(FinancialDataInput.class), eq(companyData),
+                                anyList());
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides);
+
+                assertEquals("segment_mapping_blocked", result.getAssumptionTransparency().getBaselineQuality());
+                assertEquals(30.0, result.getAssumptionTransparency().getSegmentCoveragePct(), 0.001);
+                assertFalse(result.getAssumptionTransparency().isSegmentAware());
+                assertTrue(result.getAssumptionTransparency().getWeightedBaselineAssumptions().isEmpty());
+                assertEquals("challenged_baseline", result.getAssumptionTransparency().getBaselineUseStatus());
+                assertTrue(result.getAssumptionTransparency().getBaselineWarnings().stream()
+                                .anyMatch(warning -> warning.contains("below the 80% threshold")));
+                assertTrue(result.getAssumptionTransparency().getUnsupportedBaselineDrivers().stream()
+                                .anyMatch(driver -> "segments".equals(driver.getField())));
         }
 
         @Test
@@ -203,7 +285,7 @@ class ValuationWorkflowServiceImplTest {
                 ValuationOutputDTO refined = valuationOutput(null, 95.0);
                 stubHappyPath(companyData, template, initial, refined);
 
-                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput(), false);
+                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput());
 
                 assertNotNull(result.getAssumptionTransparency());
                 assertNotNull(result.getAssumptionTransparency().getMarketImpliedExpectations());
@@ -220,7 +302,7 @@ class ValuationWorkflowServiceImplTest {
                 ValuationOutputDTO refined = valuationOutput(90.0, 88.8);
                 stubMonotonicImpliedPath(companyData, template, initial, refined);
 
-                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput(), false);
+                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput());
 
                 Map<String, Boolean> solvedByKey = result.getAssumptionTransparency()
                                 .getMarketImpliedExpectations()
@@ -245,7 +327,7 @@ class ValuationWorkflowServiceImplTest {
                 ValuationOutputDTO refined = valuationOutput(88.8, 88.8);
                 stubMonotonicImpliedPath(companyData, template, initial, refined);
 
-                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput(), false);
+                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput());
 
                 AssumptionTransparencyDTO.PricedInExpectations pricedIn = result.getAssumptionTransparency()
                                 .getPricedInExpectations();
@@ -275,7 +357,7 @@ class ValuationWorkflowServiceImplTest {
                 ValuationOutputDTO refined = valuationOutput(88.8, 88.8);
                 stubMonotonicImpliedPath(companyData, template, initial, refined);
 
-                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput(), false);
+                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput());
 
                 List<AssumptionTransparencyDTO.PricedInFrontierPoint> solved = result.getAssumptionTransparency()
                                 .getPricedInExpectations()
@@ -311,14 +393,14 @@ class ValuationWorkflowServiceImplTest {
                 when(valuationOutputService.calculateCurrentSalesToCapitalRatio(any(FinancialDataInput.class),
                                 any(RDResult.class), any()))
                                 .thenReturn(1.0);
-                when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class), eq(false),
+                when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class),
                                 eq(template)))
                                 .thenReturn(valuationOutput(100.0, 80.08), valuationOutput(100.0, 80.08));
                 when(commonService.calculateRDConverterValue(anyString(), anyDouble(), anyMap()))
                                 .thenReturn(new RDResult(0.0, 0.0, 0.0, 0.0));
                 when(commonService.calculateOperatingLeaseConverter())
                                 .thenReturn(new LeaseResultDTO(0.0, 0.0, 0.0, 0.0));
-                when(optionValueService.calculateOptionValue(anyString(), anyDouble(), anyDouble(), anyDouble(),
+                lenient().when(optionValueService.calculateOptionValue(anyString(), anyDouble(), anyDouble(), anyDouble(),
                                 anyDouble()))
                                 .thenReturn(new OptionValueResultDTO(0.0, 0.0));
                 when(valuationOutputService.calculateFinancialData(any(FinancialDataInput.class),
@@ -363,7 +445,7 @@ class ValuationWorkflowServiceImplTest {
                 }).when(commonService).applySegmentWeightedParameters(any(FinancialDataInput.class),
                                 eq(companyData), anyList());
 
-                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides, false);
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides);
 
                 AssumptionTransparencyDTO.MarketImpliedExpectations market = result.getAssumptionTransparency()
                                 .getMarketImpliedExpectations();
@@ -382,6 +464,18 @@ class ValuationWorkflowServiceImplTest {
                                 .filter(point -> Boolean.TRUE.equals(point.getSolved()))
                                 .collect(Collectors.toList());
                 assertFalse(solvedFrontier.isEmpty());
+                assertEquals("segment_weighted_baseline", result.getAssumptionTransparency().getBaselineQuality());
+                assertEquals(100.0, result.getAssumptionTransparency().getSegmentCoveragePct(), 0.001);
+                assertTrue(result.getAssumptionTransparency().isSegmentAware());
+                assertEquals("validated_segment_weighted",
+                                result.getAssumptionTransparency().getBaselineUseStatus());
+                assertEquals("segment_weighted",
+                                result.getAssumptionTransparency().getTargetOperatingMarginStatus());
+                assertTrue(result.getAssumptionTransparency().getMappedIndustries().contains("Software"));
+                assertEquals(8.0,
+                                ((Number) result.getAssumptionTransparency().getWeightedBaselineAssumptions()
+                                                .get("revenueGrowthRateYears2To5")).doubleValue(),
+                                0.001);
         }
 
         @Test
@@ -394,7 +488,7 @@ class ValuationWorkflowServiceImplTest {
                 ValuationOutputDTO refined = valuationOutput(10_000.0, 88.8);
                 stubMonotonicImpliedPath(companyData, template, initial, refined);
 
-                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput(), false);
+                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput());
 
                 List<Boolean> solvedFlags = result.getAssumptionTransparency()
                                 .getMarketImpliedExpectations()
@@ -438,7 +532,7 @@ class ValuationWorkflowServiceImplTest {
                 overrides.setCompoundAnnualGrowth2_5(40.0);
 
                 ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                                () -> workflow.getValuation("AAPL", overrides, false));
+                                () -> workflow.getValuation("AAPL", overrides));
                 assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, ex.getStatusCode());
         }
 
@@ -455,31 +549,9 @@ class ValuationWorkflowServiceImplTest {
 
                 stubHappyPath(companyData, template, initial, refined);
 
-                workflow.getValuation("AAPL", null, false);
+                workflow.getValuation("AAPL", null);
 
                 verify(growthAnchorService).getAnchorByYahooIndustry("technology", "Europe");
-        }
-
-        @Test
-        void getValuation_addStoryTrue_exercisesAddStoryBranch() {
-                // addStory=true exercises a different code branch in the workflow.
-                // When the downstream call succeeds (normal path), the flow is identical
-                // to addStory=false. This test ensures no UnstubbedMethodException is thrown.
-                ValuationWorkflowServiceImpl workflow = workflow();
-                CompanyDataDTO companyData = companyData();
-                ValuationTemplate template = fcffTemplate();
-
-                ValuationOutputDTO initial = valuationOutput(100.0, 100.0);
-                ValuationOutputDTO refined = valuationOutput(100.0, 100.0);
-
-                // Add stub for both false AND true variants
-                stubHappyPath(companyData, template, initial, refined);
-                lenient().when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class),
-                                eq(true), eq(template)))
-                                .thenReturn(refined);
-
-                // Should not throw any uncaught exception
-                assertDoesNotThrow(() -> workflow.getValuation("AAPL", new FinancialDataInput(), true));
         }
 
         @Test
@@ -525,7 +597,7 @@ class ValuationWorkflowServiceImplTest {
                 when(valuationOutputService.calculateCurrentSalesToCapitalRatio(any(FinancialDataInput.class),
                                 any(RDResult.class), any()))
                                 .thenReturn(1.0);
-                when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class), eq(false),
+                when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class),
                                 any(ValuationTemplate.class)))
                                 .thenReturn(
                                                 valuationOutput(200.0, 100.0),
@@ -535,7 +607,7 @@ class ValuationWorkflowServiceImplTest {
                                 .thenReturn(new RDResult(0.0, 0.0, 0.0, 0.0));
                 when(commonService.calculateOperatingLeaseConverter())
                                 .thenReturn(new LeaseResultDTO(0.0, 0.0, 0.0, 0.0));
-                when(optionValueService.calculateOptionValue(anyString(), anyDouble(), anyDouble(), anyDouble(),
+                lenient().when(optionValueService.calculateOptionValue(anyString(), anyDouble(), anyDouble(), anyDouble(),
                                 anyDouble()))
                                 .thenReturn(new OptionValueResultDTO(0.0, 0.0));
 
@@ -548,7 +620,7 @@ class ValuationWorkflowServiceImplTest {
                                 any(FinancialDataInput.class), any(OptionValueResultDTO.class), any()))
                                 .thenReturn(calibrationCompany);
 
-                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput(), false);
+                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput());
 
                 assertEquals(GrowthPattern.THREE_STAGE, result.getGrowthPattern());
                 assertEquals(15, result.getProjectionYears());
@@ -588,7 +660,7 @@ class ValuationWorkflowServiceImplTest {
                 when(valuationOutputService.calculateCurrentSalesToCapitalRatio(any(FinancialDataInput.class),
                                 any(RDResult.class), any()))
                                 .thenReturn(1.0);
-                when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class), eq(false),
+                when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class),
                                 any(ValuationTemplate.class)))
                                 .thenReturn(
                                                 valuationOutput(100.0, 100.0),
@@ -599,7 +671,7 @@ class ValuationWorkflowServiceImplTest {
                                 .thenReturn(new RDResult(0.0, 0.0, 0.0, 0.0));
                 when(commonService.calculateOperatingLeaseConverter())
                                 .thenReturn(new LeaseResultDTO(0.0, 0.0, 0.0, 0.0));
-                when(optionValueService.calculateOptionValue(anyString(), anyDouble(), anyDouble(), anyDouble(),
+                lenient().when(optionValueService.calculateOptionValue(anyString(), anyDouble(), anyDouble(), anyDouble(),
                                 anyDouble()))
                                 .thenReturn(new OptionValueResultDTO(0.0, 0.0));
 
@@ -612,7 +684,7 @@ class ValuationWorkflowServiceImplTest {
                                 any(FinancialDataInput.class), any(OptionValueResultDTO.class), any()))
                                 .thenReturn(calibrationCompany);
 
-                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides, false);
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides);
 
                 assertEquals(GrowthPattern.THREE_STAGE, result.getGrowthPattern());
                 assertEquals(15, result.getProjectionYears());
@@ -640,14 +712,14 @@ class ValuationWorkflowServiceImplTest {
                 when(valuationOutputService.calculateCurrentSalesToCapitalRatio(any(FinancialDataInput.class),
                                 any(RDResult.class), any()))
                                 .thenReturn(1.0);
-                when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class), eq(false),
+                when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class),
                                 eq(template)))
                                 .thenReturn(valuationOutput(200.0, 100.0), valuationOutput(200.0, 100.0));
                 when(commonService.calculateRDConverterValue(anyString(), anyDouble(), anyMap()))
                                 .thenReturn(new RDResult(0.0, 0.0, 0.0, 0.0));
                 when(commonService.calculateOperatingLeaseConverter())
                                 .thenReturn(new LeaseResultDTO(0.0, 0.0, 0.0, 0.0));
-                when(optionValueService.calculateOptionValue(anyString(), anyDouble(), anyDouble(), anyDouble(),
+                lenient().when(optionValueService.calculateOptionValue(anyString(), anyDouble(), anyDouble(), anyDouble(),
                                 anyDouble()))
                                 .thenReturn(new OptionValueResultDTO(0.0, 0.0));
 
@@ -660,9 +732,53 @@ class ValuationWorkflowServiceImplTest {
                                 any(FinancialDataInput.class), any(OptionValueResultDTO.class), any()))
                                 .thenReturn(calibrationCompany);
 
-                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides, false);
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides);
 
                 assertEquals(GrowthPattern.STABLE, result.getGrowthPattern());
+                verify(valuationTemplateService, never()).withGrowthPattern(any(ValuationTemplate.class), any(), anyString());
+        }
+
+        @Test
+        void getValuation_researchedBaselineModeDoesNotForceThreeStageFromPriceGap() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                ValuationTemplate template = fcffTemplate();
+                template.setGrowthPattern(GrowthPattern.STABLE);
+
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setResearchedBaselineMode(true);
+
+                when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
+                when(valuationTemplateService.determineTemplate(eq(overrides), eq(companyData))).thenReturn(template);
+                when(growthAnchorService.getAnchorByYahooIndustry(anyString(), anyString()))
+                                .thenReturn(Optional.empty());
+                when(valuationOutputService.calculateCurrentSalesToCapitalRatio(any(FinancialDataInput.class),
+                                any(RDResult.class), any()))
+                                .thenReturn(1.0);
+                when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class),
+                                eq(template)))
+                                .thenReturn(valuationOutput(200.0, 100.0), valuationOutput(200.0, 100.0));
+                when(commonService.calculateRDConverterValue(anyString(), anyDouble(), anyMap()))
+                                .thenReturn(new RDResult(0.0, 0.0, 0.0, 0.0));
+                when(commonService.calculateOperatingLeaseConverter())
+                                .thenReturn(new LeaseResultDTO(0.0, 0.0, 0.0, 0.0));
+                lenient().when(optionValueService.calculateOptionValue(anyString(), anyDouble(), anyDouble(), anyDouble(),
+                                anyDouble()))
+                                .thenReturn(new OptionValueResultDTO(0.0, 0.0));
+                CompanyDTO calibrationCompany = new CompanyDTO();
+                calibrationCompany.setEstimatedValuePerShare(100.0);
+                lenient().when(valuationOutputService.calculateFinancialData(any(FinancialDataInput.class),
+                                any(RDResult.class), any(), anyString(), isNull()))
+                                .thenReturn(new FinancialDTO());
+                lenient().when(valuationOutputService.calculateCompanyData(any(FinancialDTO.class),
+                                any(FinancialDataInput.class), any(OptionValueResultDTO.class), any()))
+                                .thenReturn(calibrationCompany);
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides);
+
+                assertEquals(GrowthPattern.STABLE, result.getGrowthPattern());
+                assertTrue(result.getAssumptionTransparency().getNotes().stream()
+                                .noneMatch(note -> note.contains("Projection was upgraded to THREE_STAGE")));
                 verify(valuationTemplateService, never()).withGrowthPattern(any(ValuationTemplate.class), any(), anyString());
         }
 
@@ -705,7 +821,7 @@ class ValuationWorkflowServiceImplTest {
                 ValuationOutputDTO refined = valuationOutput(0.0, 95.0); // Market price is 0.0
                 stubHappyPath(companyData, template, initial, refined);
 
-                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput(), false);
+                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput());
 
                 assertNotNull(result.getAssumptionTransparency());
                 assertNotNull(result.getAssumptionTransparency().getMarketImpliedExpectations());
@@ -725,7 +841,7 @@ class ValuationWorkflowServiceImplTest {
                 ValuationOutputDTO refined = valuationOutput(100.0, Double.NaN);
                 stubHappyPath(companyData, template, initial, refined);
 
-                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput(), false);
+                ValuationOutputDTO result = workflow.getValuation("AAPL", new FinancialDataInput());
 
                 // Pipeline should complete (not throw)
                 assertNotNull(result);
@@ -772,7 +888,7 @@ class ValuationWorkflowServiceImplTest {
                 FinancialDataInput overrides = new FinancialDataInput();
                 overrides.setCompoundAnnualGrowth2_5(40.0); // outside bounds but ignored due to low confidence
 
-                assertDoesNotThrow(() -> workflow.getValuation("AAPL", overrides, false));
+                assertDoesNotThrow(() -> workflow.getValuation("AAPL", overrides));
         }
 
         @Test
@@ -800,7 +916,7 @@ class ValuationWorkflowServiceImplTest {
                 // 10.0% -> 0.10 decimal -> within [p10=0.04, p90=0.18] -> should NOT throw
                 overrides.setCompoundAnnualGrowth2_5(10.0);
 
-                assertDoesNotThrow(() -> workflow.getValuation("AAPL", overrides, false));
+                assertDoesNotThrow(() -> workflow.getValuation("AAPL", overrides));
         }
 
         private ValuationWorkflowServiceImpl workflow() {
@@ -838,7 +954,7 @@ class ValuationWorkflowServiceImplTest {
                 when(valuationOutputService.calculateCurrentSalesToCapitalRatio(any(FinancialDataInput.class),
                                 any(RDResult.class), any()))
                                 .thenReturn(1.0);
-                when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class), eq(false),
+                when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class),
                                 eq(template)))
                                 .thenReturn(initial, refined, refined, refined);
 
@@ -846,7 +962,7 @@ class ValuationWorkflowServiceImplTest {
                                 .thenReturn(new RDResult(0.0, 0.0, 0.0, 0.0));
                 when(commonService.calculateOperatingLeaseConverter())
                                 .thenReturn(new io.stockvaluation.dto.LeaseResultDTO(0.0, 0.0, 0.0, 0.0));
-                when(optionValueService.calculateOptionValue(anyString(), anyDouble(), anyDouble(), anyDouble(),
+                lenient().when(optionValueService.calculateOptionValue(anyString(), anyDouble(), anyDouble(), anyDouble(),
                                 anyDouble()))
                                 .thenReturn(new OptionValueResultDTO(0.0, 0.0));
 
@@ -875,7 +991,7 @@ class ValuationWorkflowServiceImplTest {
                 when(valuationOutputService.calculateCurrentSalesToCapitalRatio(any(FinancialDataInput.class),
                                 any(RDResult.class), any()))
                                 .thenReturn(1.0);
-                when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class), eq(false),
+                when(valuationOutputService.getValuationOutput(eq("AAPL"), any(FinancialDataInput.class),
                                 eq(template)))
                                 .thenReturn(initial, refined, refined, refined);
 
@@ -883,7 +999,7 @@ class ValuationWorkflowServiceImplTest {
                                 .thenReturn(new RDResult(0.0, 0.0, 0.0, 0.0));
                 when(commonService.calculateOperatingLeaseConverter())
                                 .thenReturn(new io.stockvaluation.dto.LeaseResultDTO(0.0, 0.0, 0.0, 0.0));
-                when(optionValueService.calculateOptionValue(anyString(), anyDouble(), anyDouble(), anyDouble(),
+                lenient().when(optionValueService.calculateOptionValue(anyString(), anyDouble(), anyDouble(), anyDouble(),
                                 anyDouble()))
                                 .thenReturn(new OptionValueResultDTO(0.0, 0.0));
 
@@ -938,6 +1054,7 @@ class ValuationWorkflowServiceImplTest {
                 software.setSalesToCapitalYears6To10(2.5);
                 software.setInitialCostCapital(7.0);
                 software.setTerminalGrowthRate(0.04);
+                software.setIndustryAsPerExcel("Software");
 
                 SegmentWeightedParameters.SectorParameters hardware =
                                 new SegmentWeightedParameters.SectorParameters();
@@ -952,6 +1069,7 @@ class ValuationWorkflowServiceImplTest {
                 hardware.setSalesToCapitalYears6To10(1.25);
                 hardware.setInitialCostCapital(9.5);
                 hardware.setTerminalGrowthRate(0.04);
+                hardware.setIndustryAsPerExcel("Hardware");
 
                 params.setSectorParameters("software", software);
                 params.setSectorParameters("hardware", hardware);

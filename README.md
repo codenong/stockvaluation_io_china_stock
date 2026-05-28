@@ -1,87 +1,134 @@
 # StockValuation.io
 
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/stockvaluation-io/stockvaluation_io)
+StockValuation.io lets Codex or Claude value public companies with local tools. It installs a `stockvaluation.io` skill and MCP config, starts local Docker services, and gives the agent deterministic DCF math to use in an educational report.
 
-Open-source DCF valuation app that turns a stock ticker into transparent Damodaran-style assumptions, valuation output, bull/bear thesis, and a chat workspace for building your own narrative.
+> Educational use only. This is not financial advice.
 
-> **Warning: This project is for educational use and is not financial advice. Its your valuation and you agree by using this project.**
+## What it does
 
-StockValuation.io helps investors understand the story behind a valuation, not just the final number. Search a company, generate a DCF valuation, inspect the assumptions, challenge the bull and bear cases, then use chat to build and refine your own narrative as your view changes.
+- Installs the `stockvaluation.io` skill for Codex and Claude.
+- Installs MCP config so the agent can call local `stockvaluation.*` tools.
+- Runs local Docker services: `postgres`, `yfinance`, and `valuation-service`.
+- Uses `valuation-service` for deterministic DCF math.
+- Returns structured JSON for assumptions, baseline values, recalculated scenarios, growth anchors, reference-data status, and failures.
+- Leaves research, judgment, questions, and report writing to the user's agent.
 
-## What It Does
+MCP means Model Context Protocol. In this repo, it is the local bridge between Codex or Claude and the valuation tools.
 
-- Turns a stock ticker into a structured DCF valuation.
-- Shows the assumptions behind the valuation instead of hiding them in a black box.
-- Builds bull and bear thesis material around the company narrative.
-- Gives you a chat workspace to develop your own investment narrative and thesis.
-- Lets you test your own view by changing assumptions and recalculating value.
-- Runs locally so your keys, prompts, and analysis stay on your machine.
+## How the valuation flow works
 
-## Why It Exists
+The default flow is not a one-shot report.
 
-Most valuation tools either give you a spreadsheet or a black-box target price. StockValuation.io is built for transparent reasoning: the assumptions, narrative, and valuation logic are visible so you can decide what you believe.
+1. The agent checks local service health.
+2. The agent researches the company.
+3. Source-heavy research should use subagents when the client supports them. Each subagent should return a compact evidence summary, not long source dumps.
+4. The agent builds a mechanical baseline from local MCP output.
+5. The agent builds an evidence-constrained case. Any DCF math must come from `stockvaluation.recalculate`, not hand calculations.
+6. The agent stops and asks guided valuation questions before the final report.
+7. The guided questions include recommended bounded answers. These are modeling defaults, not investment advice.
+8. After the user answers, the agent maps those answers into a user-refined scenario, calls local MCP tools again, and writes the educational report.
 
-## Demo
+Use a quick or no-questions path only when the user explicitly asks for it.
 
-<a href="https://video.golpoai.com/share/34af4546-fb30-49cb-a956-0f59d985382a" target="_blank" rel="noopener noreferrer">Watch the product video</a>
+## Install
 
-![StockValuation.io Automated DCF Analysis](./assets/StockValuation-io-—-Automated-DCF-Analysis-03-05-2026_02_04_PM.png)
-
-## Quick Start
-
-Run the local app with the installer:
+From a local checkout:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/stockvaluation-io/stockvaluation_io/main/install.sh | bash
+./install.sh setup
 ```
 
-Then open:
+This installs or updates the skill and MCP config, creates `.env` from `.env.example` if needed, checks the local environment, starts the local Docker services, and prints service status. By default it targets both Codex and Claude.
+
+You can also run the installer directly from GitHub:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/stockvaluation-io/stockvaluation_io/main/install.sh | bash -s -- setup
+```
+
+The curl installer clones the repo to `~/.local/share/stockvaluation_io` by default, then runs setup from that checkout. Set `STOCKVALUATION_INSTALL_DIR=/path/to/dir` to use a different path.
+
+Docker Desktop or a compatible Docker Engine with Compose is required. No native Java/Postgres/yfinance runtime is installed or supported for v1.
+
+If `.env` already exists, setup does not overwrite it. Do not commit `.env`.
+
+The canonical local runtime is `docker-compose.local.yml`. It starts:
+
+- `postgres`
+- `yfinance`
+- `valuation-service`
+
+The valuation service is published on `http://localhost:8081`. In the main compose stack, `yfinance` is internal to Docker and is not published on `localhost:5000`.
+
+## Use it from Codex or Claude
+
+After setup, ask your agent for a valuation with the local workflow:
 
 ```text
-http://localhost:4200
+Value MSFT using stockvaluation.io.
+Value GOOGL using stockvaluation.io.
+Value META using stockvaluation.io.
 ```
 
-The installer checks prerequisites, downloads the project if needed, bootstraps local secrets, and prompts for API keys.
+For the default researched flow, expect the agent to research first, build a mechanical baseline, build an evidence-constrained case, then stop and ask guided valuation questions. The final report comes after those answers unless you explicitly ask for a quick or no-questions run.
 
-## API Keys
+## MCP tools
 
-For the full experience, add:
+- `stockvaluation.health`
+- `stockvaluation.value_ticker`
+- `stockvaluation.recalculate`
+- `stockvaluation.get_assumptions`
+- `stockvaluation.get_growth_anchor`
+- `stockvaluation.get_reference_data_status`
+- `stockvaluation.explain_failure`
 
-- One LLM key: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, or `OPENROUTER_API_KEY`.
-- `TAVILY_API_KEY` for live company research and recent news.
-- `CURRENCY_API_KEY` for exchange-rate handling when market price and statements use different currencies.
+MCP tools return structured JSON. Scenario math must come from `stockvaluation.recalculate`. Agents should not hand-compute valuation outputs.
 
-You can create free accounts at [tavily.com](https://tavily.com) and [currencybeacon.com](https://currencybeacon.com).
+## What is local
 
-## Current Limits
+Local:
 
-- The system depends on Yahoo Finance data. If Yahoo Finance does not provide the required company data, the valuation can fail.
-- Historical coverage is limited because Yahoo Finance typically provides only about 5 years of history.
-- Financial sector companies are not supported.
+- Skill files installed under the user's Codex or Claude skill directory.
+- MCP config for the local `stockvaluation` server.
+- Docker services from `docker-compose.local.yml`.
+- Postgres data in a local Docker volume.
+- DCF math in `valuation-service`.
 
-## Security
+Not fully local:
 
-- Local-first defaults are meant for development on your machine.
-- Do not deploy these defaults directly to internet-facing environments.
-- Never commit `.env` with real credentials.
+- Market and company data can come from Yahoo Finance.
+- Currency conversion uses the keyless Frankfurter provider by default.
+- The agent may use web research for filings, investor relations pages, news, and other public sources.
 
-## Star The Project
+## Limits
 
-If StockValuation.io helps you learn valuation or build better investment theses, star the repo. It is the clearest signal that the project is worth keeping up to date.
+- The service depends on Yahoo Finance data.
+- Valuation can fail when Yahoo Finance has missing, unsupported, or low-quality data.
+- Historical coverage is limited.
+- Financial-sector companies are not supported.
+- Unsupported companies should produce a clear failure, not a synthetic valuation.
+- Growth anchors and reference data are context for critique. They are not proof that a company will match an industry pattern.
 
-## Cite
-> Note: If this project is helpful to you, then please star. Otherwise, I would not know if I should keep this up-to-date. This project requires a consistent data update.
-```
+## Security and no-advice notes
+
+- Never commit `.env`, prompt dumps, or local runtime data.
+- Never paste real secrets into chat.
+- Local defaults are for one developer machine. Do not expose them to the internet.
+- Reports are educational only.
+- Do not use buy, sell, hold, target-price, or personalized recommendation language.
+- Guided-question defaults are modeling defaults. They are not advice about what to invest in.
+
+## Citation / acknowledgments
+
+```text
 @misc{stockvaluation_io,
   author = {Pradeep Singh},
-  title = {StockValuation.io: Local-first stock valuation workspace},
+  title = {StockValuation.io: Local stock valuation tools for Codex and Claude},
   year = {2026},
   publisher = {GitHub},
   url = {https://github.com/stockvaluation-io/stockvaluation_io}
 }
 ```
-
-## Acknowledgments
 
 Core methodology and reference data are based on Aswath Damodaran's resources:
 

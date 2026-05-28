@@ -1,8 +1,3 @@
-"""
-Package initialization for the stockvaluation.io application.
-"""
+"""Agent-native StockValuation.io package."""
 
-__version__ = "2.0.0"
-__author__ = "Stock Valuation Team"
-
-__all__ = []
+__version__ = "0.1.0"

@@ -28,6 +28,7 @@ import org.springframework.stereotype.Service;
 import java.text.DecimalFormat;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Random;
 
@@ -637,6 +638,7 @@ public class ValuationOutputService {
         // Priority 1: User-provided terminalGrowthRate override (from dcf_recalculator
         // tool)
         if (financialDataInput.getTerminalGrowthRate() != null) {
+            validateTerminalGrowthOverride(financialDataInput);
             terminalYear = financialDataInput.getTerminalGrowthRate();
             log.info("Using user-provided terminal growth rate override: {}%", terminalYear);
         } else if (financialDataInput.getOverrideAssumptionGrowthRate().getIsOverride()) {
@@ -672,10 +674,9 @@ public class ValuationOutputService {
         // DAMODARAN CONSTRAINT: Terminal growth must not exceed risk-free rate
         // This is a fundamental constraint in DCF valuation - no company can grow
         // faster than the economy indefinitely
-        // EXCEPTION: Skip cap if user explicitly provided terminalGrowthRate override
         if (financialDataInput.getTerminalGrowthRate() != null) {
-            growthRate[terminalIndex] = terminalYear; // Use override directly, no cap
-            log.info("Terminal growth rate override: {}% (Damodaran cap bypassed)", terminalYear);
+            growthRate[terminalIndex] = terminalYear;
+            log.info("Terminal growth rate override accepted within risk-free-rate cap: {}%", terminalYear);
         } else {
             Double riskFreeRateCap = riskFreeRate;
             if (financialDataInput.getSegments() != null &&
@@ -690,6 +691,28 @@ public class ValuationOutputService {
         }
 
         return growthRate;
+    }
+
+    private void validateTerminalGrowthOverride(FinancialDataInput financialDataInput) {
+        Double terminalGrowthRate = financialDataInput.getTerminalGrowthRate();
+        if (terminalGrowthRate == null) {
+            return;
+        }
+        double cap = terminalGrowthCapPercent(financialDataInput);
+        if (!Double.isFinite(terminalGrowthRate) || terminalGrowthRate < -5.0 || terminalGrowthRate > cap) {
+            throw new IllegalArgumentException(String.format(Locale.ROOT,
+                    "TERMINAL_GROWTH_UNSAFE: terminalGrowthRate must be finite and between -5.00%% and the risk-free-rate mature-economy cap %.2f%%; provided %.4f%%.",
+                    cap,
+                    terminalGrowthRate));
+        }
+    }
+
+    private double terminalGrowthCapPercent(FinancialDataInput financialDataInput) {
+        Double riskFreeRate = financialDataInput != null ? financialDataInput.getRiskFreeRate() : null;
+        if (riskFreeRate == null || !Double.isFinite(riskFreeRate)) {
+            return 0.0;
+        }
+        return Math.abs(riskFreeRate) <= 1.0 ? riskFreeRate * 100.0 : riskFreeRate;
     }
 
     public Double[] calculateRevenueGrowthRateMarkov(List<Double> historicalGrowthRates, int years, int numStates,
@@ -1171,12 +1194,11 @@ public class ValuationOutputService {
      * 
      * @param ticker            Stock ticker
      * @param valuationInputDTO Input parameters
-     * @param addStory          Whether to add narrative story
      * @param template          Valuation template (null defaults to 10-year model)
      * @return Complete valuation output
      */
     public ValuationOutputDTO getValuationOutput(String ticker, final FinancialDataInput valuationInputDTO,
-            boolean addStory, io.stockvaluation.dto.ValuationTemplate template) {
+            io.stockvaluation.dto.ValuationTemplate template) {
         ValuationOutputDTO valuationOutputDTO = new ValuationOutputDTO();
 
         // TODO: call here R ans D , Operating Lease , Option Value,
@@ -1216,21 +1238,15 @@ public class ValuationOutputService {
 
         valuationOutputDTO.setCurrency(valuationInputDTO.getBasicInfoDataDTO().getCurrency());
         valuationOutputDTO.setStockCurrency(valuationInputDTO.getBasicInfoDataDTO().getStockCurrency());
-        ValuationOutputDTO valuationOutputDTOWithStory = this.addStory(valuationOutputDTO);
 
-        return valuationOutputDTOWithStory;
+        return valuationOutputDTO;
     }
 
     /**
-     * Backward compatibility method - defaults to 10-year model
+     * Defaults to the standard template selection when no explicit template is passed.
      */
-    public ValuationOutputDTO getValuationOutput(String ticker, final FinancialDataInput valuationInputDTO,
-            boolean addStory) {
-        return getValuationOutput(ticker, valuationInputDTO, addStory, null);
-    }
-
-    public ValuationOutputDTO addStory(ValuationOutputDTO valuationOutputDTO) {
-        return valuationOutputDTO;
+    public ValuationOutputDTO getValuationOutput(String ticker, final FinancialDataInput valuationInputDTO) {
+        return getValuationOutput(ticker, valuationInputDTO, null);
     }
 
     // Helper methods for segment-based calculations
@@ -1331,6 +1347,7 @@ public class ValuationOutputService {
         Double terminalYear;
         boolean hasUserOverride = false;
         if (financialDataInput.getTerminalGrowthRate() != null) {
+            validateTerminalGrowthOverride(financialDataInput);
             terminalYear = financialDataInput.getTerminalGrowthRate();
             hasUserOverride = true;
             log.info("Sector {} using user-provided terminal growth rate override: {}%", sectorKey, terminalYear);
@@ -1360,10 +1377,10 @@ public class ValuationOutputService {
         }
 
         // DAMODARAN CONSTRAINT: Terminal growth must not exceed risk-free rate
-        // EXCEPTION: Skip cap if user explicitly provided terminalGrowthRate override
         if (hasUserOverride) {
-            growthRate[terminalIndex] = terminalYear; // Use override directly, no cap
-            log.info("Sector {} terminal growth rate override: {}% (Damodaran cap bypassed)", sectorKey, terminalYear);
+            growthRate[terminalIndex] = terminalYear;
+            log.info("Sector {} terminal growth rate override accepted within risk-free-rate cap: {}%", sectorKey,
+                    terminalYear);
         } else {
             Double riskFreeRateCap = financialDataInput.getRiskFreeRate(); // Already in percentage format
             growthRate[terminalIndex] = Math.min(terminalYear, riskFreeRateCap);

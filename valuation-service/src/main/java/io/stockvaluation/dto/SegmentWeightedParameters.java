@@ -5,7 +5,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -44,6 +46,11 @@ public class SegmentWeightedParameters {
     
     // Number of segments used in calculation
     private int segmentCount = 0;
+
+    // Baseline construction disclosure
+    private String baselineQuality = "single_industry_fallback";
+    private Double segmentCoveragePct = 0.0;
+    private List<String> segmentWarnings = new ArrayList<>();
     
     // Sector-specific parameters - each sector has its own set of parameters
     private Map<String, SectorParameters> sectorParameters = new HashMap<>();
@@ -106,6 +113,9 @@ public class SegmentWeightedParameters {
         copy.industry = this.industry;
         copy.isSegmentWeighted = this.isSegmentWeighted;
         copy.segmentCount = this.segmentCount;
+        copy.baselineQuality = this.baselineQuality;
+        copy.segmentCoveragePct = this.segmentCoveragePct;
+        copy.segmentWarnings = new ArrayList<>(this.segmentWarnings);
         
         // Deep copy sector parameters
         copy.sectorParameters = new HashMap<>();

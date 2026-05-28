@@ -15,7 +15,7 @@ usage() {
 Usage: ./scripts/local_release_check.sh [options]
 
 Release gate checks:
-  1) Local smoke check (unless --skip-smoke)
+  1) Local smoke check (agent-native by default, unless --skip-smoke)
   2) Valuation drift regression compare against golden baseline
 
 Options:
@@ -84,7 +84,7 @@ fi
 
 if [[ "$RUN_SMOKE" -eq 1 ]]; then
   echo "[release-check] running local smoke..."
-  ./scripts/local_smoke.sh
+  ./scripts/local_smoke.sh --agent-native --ticker MSFT
 fi
 
 PYTHON_BIN=""

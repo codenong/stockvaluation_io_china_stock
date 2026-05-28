@@ -24,7 +24,7 @@ public class StockValuationBackendApplication {
         // chunked encoding)
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(300000); // 30 seconds
-        requestFactory.setReadTimeout(3000000); // 300 seconds (5 minutes for LLM animation generation)
+        requestFactory.setReadTimeout(3000000); // 300 seconds for long-running provider calls
 
         // BufferingClientHttpRequestFactory buffers the request body to calculate
         // Content-Length

@@ -47,7 +47,9 @@ public class FinancialDataInput {
                 + ", salesToCapitalYears1To5=" + salesToCapitalYears1To5 + ", salesToCapitalYears6To10="
                 + salesToCapitalYears6To10
                 + ", riskFreeRate=" + riskFreeRate + ", initialCostCapital=" + initialCostCapital + ", industry="
-                + industry + ", growthPatternOverride=" + growthPatternOverride + ", segments=" + segments
+                + industry + ", growthPatternOverride=" + growthPatternOverride
+                + ", researchedBaselineMode=" + researchedBaselineMode + ", requestPolicyMode=" + requestPolicyMode
+                + ", segments=" + segments
                 + ", sectorOverrides=" + sectorOverrides + "]";
     }
 
@@ -86,6 +88,8 @@ public class FinancialDataInput {
     private Double terminalGrowthRate; // User override for terminal growth rate (%)
     private String industry;
     private GrowthPattern growthPatternOverride;
+    private Boolean researchedBaselineMode = false;
+    private String requestPolicyMode;
     private SegmentResponseDTO segments;
     private List<SectorParameterOverride> sectorOverrides;
 
@@ -124,6 +128,8 @@ public class FinancialDataInput {
             this.terminalGrowthRate = financialDataInput.terminalGrowthRate;
             this.industry = financialDataInput.industry;
             this.growthPatternOverride = financialDataInput.growthPatternOverride;
+            this.researchedBaselineMode = financialDataInput.researchedBaselineMode;
+            this.requestPolicyMode = financialDataInput.requestPolicyMode;
             this.segments = financialDataInput.segments;
             this.sectorOverrides = financialDataInput.sectorOverrides != null
                     ? new ArrayList<>(financialDataInput.sectorOverrides)

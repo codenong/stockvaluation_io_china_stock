@@ -7,42 +7,13 @@ import os
 from typing import Any, Callable, Dict
 from flask import Flask, Response, abort, jsonify, request
 from flask_caching import Cache
-from flask_cors import CORS
 
 from config import APIConfig, CacheConfig
 from service import YFinanceService
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
 
-DEFAULT_CORS_ORIGINS = [
-    "http://localhost:4200",
-    "http://127.0.0.1:4200",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
-
-
-def _parse_cors_origins(raw: str) -> list[str]:
-    cleaned = (raw or "").strip()
-    if not cleaned:
-        return list(DEFAULT_CORS_ORIGINS)
-    if cleaned == "*":
-        allow_all = os.getenv("CORS_ALLOW_ALL", "false").lower() == "true"
-        if allow_all:
-            return ["*"]
-        logger.warning("CORS_ORIGINS='*' ignored unless CORS_ALLOW_ALL=true; using localhost defaults")
-        return list(DEFAULT_CORS_ORIGINS)
-    origins = [origin.strip() for origin in cleaned.split(",") if origin.strip()]
-    return origins or list(DEFAULT_CORS_ORIGINS)
-
-
-def _resolve_secret_key() -> str:
-    configured = os.getenv("SECRET_KEY", "").strip()
-    if not configured:
-        raise RuntimeError("SECRET_KEY environment variable is required for yfinance")
-    return configured
 
 def make_cache_key() -> str:
     """Generate cache key for API endpoints."""
@@ -57,17 +28,6 @@ class YFinanceApp:
         self.app = Flask(__name__)
         self.setup_config()
         self.cache = Cache(self.app)
-
-        # Setup CORS with explicit allowlist.
-        cors_origins = _parse_cors_origins(os.getenv("CORS_ORIGINS", ""))
-        CORS(
-            self.app,
-            resources={r"/*": {"origins": cors_origins}},
-            supports_credentials=False,
-            allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
-            methods=["GET", "POST", "OPTIONS"],
-        )
-        
         self.yfinance_service = YFinanceService()
         self.setup_routes()
     
@@ -77,7 +37,6 @@ class YFinanceApp:
             'CACHE_TYPE': CacheConfig.TYPE,
             'CACHE_DEFAULT_TIMEOUT': CacheConfig.DEFAULT_TIMEOUT,
             'CACHE_THRESHOLD': CacheConfig.THRESHOLD,
-            'SECRET_KEY': _resolve_secret_key(),
         })
     
     def setup_routes(self):

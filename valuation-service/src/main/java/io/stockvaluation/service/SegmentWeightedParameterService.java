@@ -196,8 +196,8 @@ public class SegmentWeightedParameterService {
     }
 
     /**
-     * Applies operating margin override to sector parameters
-     * Handles both target margin and next year margin
+     * Applies operating margin override to target sector margin only.
+     * Next-year margin is a separate unsupported path in autonomous researched mode.
      */
     private void applyOperatingMarginOverride(
             SectorParameterOverride override,
@@ -214,18 +214,6 @@ public class SegmentWeightedParameterService {
                 override.getAdjustmentType());
 
         sectorParams.setTargetPreTaxOperatingMargin(newTargetMargin);
-
-        // Also apply to next year margin to maintain consistency
-        Double currentNextMargin = sectorParams.getOperatingMarginNextYear();
-        Double newNextMargin = override.applyOverride(currentNextMargin);
-
-        log.info("Operating Margin Override (Next Year) for {}: {} → {} ({})",
-                sectorParams.getSectorName(),
-                String.format("%.2f%%", currentNextMargin),
-                String.format("%.2f%%", newNextMargin),
-                override.getAdjustmentType());
-
-        sectorParams.setOperatingMarginNextYear(newNextMargin);
     }
 
     /**
@@ -302,9 +290,14 @@ public class SegmentWeightedParameterService {
         // First pass: identify segments with missing sector mappings and redistribute
         // their revenue share
         double missingMappingRevenueShare = 0.0;
+        double totalRevenueShare = 0.0;
         int validSegmentCount = 0;
 
         for (SegmentResponseDTO.Segment segment : segments) {
+            Double share = segment.getRevenueShare();
+            if (share != null && share > 0) {
+                totalRevenueShare += share;
+            }
             SectorMapping sectorMapping = sectorMappingRepository.findByIndustryName(segment.getSector());
             if (sectorMapping == null) {
                 log.warn("Sector mapping not found for {}, will redistribute its revenue share of {}",
@@ -313,6 +306,25 @@ public class SegmentWeightedParameterService {
             } else {
                 validSegmentCount++;
             }
+        }
+
+        double mappedCoverage = totalRevenueShare > 0.0
+                ? (totalRevenueShare - missingMappingRevenueShare) / totalRevenueShare
+                : 0.0;
+        if (totalRevenueShare <= 0.0 || mappedCoverage < 0.80) {
+            SegmentWeightedParameters blocked = new SegmentWeightedParameters();
+            blocked.setSegmentWeighted(false);
+            blocked.setSegmentCount(segments.size());
+            blocked.setBaselineQuality(totalRevenueShare <= 0.0
+                    ? "segment_evidence_insufficient"
+                    : "segment_mapping_blocked");
+            blocked.setSegmentCoveragePct(round2(mappedCoverage * 100.0));
+            blocked.setSegmentWarnings(List.of(
+                    String.format("Segment mapped revenue coverage %.2f%% is below the 80%% threshold.",
+                            mappedCoverage * 100.0)));
+            SegmentParameterContext.setParameters(blocked);
+            log.warn("Segment weighting blocked: mapped coverage {} is below threshold", mappedCoverage);
+            return;
         }
 
         // Calculate redistribution amount per valid segment
@@ -339,8 +351,7 @@ public class SegmentWeightedParameterService {
 
         // IMPORTANT:
         // Use FinancialDataInput as the source of truth so caller overrides
-        // (valuation-agent
-        // or UI) remain effective even in segment-aware runs.
+        // remain effective even in segment-aware runs.
         // CompanyDataDTO is used only as fallback.
         Double revenueGrowthNextPct = coalesce(
                 financialDataInput.getRevenueNextYear(),
@@ -545,6 +556,8 @@ public class SegmentWeightedParameterService {
         segmentParams.setIndustry(companyDataDTO.getBasicInfoDataDTO().getIndustryUs());
         segmentParams.setSegmentWeighted(true);
         segmentParams.setSegmentCount(segments.size());
+        segmentParams.setBaselineQuality("segment_weighted_baseline");
+        segmentParams.setSegmentCoveragePct(round2(mappedCoverage * 100.0));
 
         // Calculate and store sector-specific parameters
         for (SegmentResponseDTO.Segment segment : segments) {
@@ -749,6 +762,10 @@ public class SegmentWeightedParameterService {
             return 0.0;
         }
         return Math.abs(value) <= 1.0 ? value * 100.0 : value;
+    }
+
+    private static double round2(double value) {
+        return Math.round(value * 100.0) / 100.0;
     }
 
     private double reAdjustSalesToCapitalFirstPhases(Double salesToCapitalFirstPhase, Double salesToCapital) {

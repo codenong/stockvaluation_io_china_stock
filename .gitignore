@@ -11,6 +11,14 @@ Thumbs.db
 *.swp
 *.swo
 .history/
+*.log
+*.pid
+
+# --- Local Agent / MCP Config ---
+.mcp.json
+.codex/
+.claude/
+AGENTS.local.md
 
 # --- Python ---
 **/__pycache__/
@@ -40,8 +48,6 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-/shared/prompt_dump_from_container/
-clawhub-skills/
 
 # --- Java / Maven ---
 target/
@@ -79,6 +85,7 @@ pg-data/
 # --- Project Specific ---
 .omx/
 .etl/
+.qa_agent_native/
 internal_doc/
 */prompt_dump_from_container/
 prompt_dump/
@@ -95,4 +102,3 @@ prompt_dump/
 **/.angular/
 **/__pycache__/
 *.pyc
-frontend/.angular/

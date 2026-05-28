@@ -19,7 +19,6 @@ COPY . /app/
 # Set environment variables
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
-ENV FLASK_ENV=production
 
 # Expose ports
 EXPOSE 5000

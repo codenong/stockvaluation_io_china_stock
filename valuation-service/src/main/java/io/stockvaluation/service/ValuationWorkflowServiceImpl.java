@@ -32,6 +32,13 @@ import static io.stockvaluation.service.GrowthCalculatorService.*;
 public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
         private static final double FORCE_THREE_STAGE_PREMIUM_THRESHOLD = 150.0;
         private static final double FORCE_THREE_STAGE_DISCOUNT_THRESHOLD = 67.0;
+        private static final double MIN_MARGIN_CONVERGENCE_YEAR = 1.0;
+        private static final double MAX_MARGIN_CONVERGENCE_YEAR = 10.0;
+        private static final double MIN_SALES_TO_CAPITAL = 0.05;
+        private static final double MAX_SALES_TO_CAPITAL = 20.0;
+        private static final String POLICY_AUTONOMOUS_RESEARCHED = "autonomous_researched";
+        private static final String POLICY_USER_REFINED_SCENARIO = "user_refined_scenario";
+        private static final String POLICY_EXPLICIT_SCENARIO = "explicit_scenario";
 
         private final CommonService commonService;
         private final OptionValueService optionValueService;
@@ -41,24 +48,19 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
         private final GrowthAnchorService growthAnchorService;
 
         @Override
-        public ValuationOutputDTO getValuation(String ticker, FinancialDataInput financialDataInputOverrides,
-                        boolean addStory) {
+        public ValuationOutputDTO getValuation(String ticker, FinancialDataInput financialDataInputOverrides) {
                 try {
-                        if (addStory) {
-                                log.info("GET /{}/valuation (UI ENDPOINT - WITH STORY)", ticker);
-                        } else {
-                                log.info("POST /{}/valuation (MINIMAL OVERRIDE PATTERN)", ticker);
-                                log.info("   Received {} override parameter(s)",
-                                                countNonNullFields(financialDataInputOverrides));
-                        }
+                        log.info("POST /{}/valuation (MINIMAL OVERRIDE PATTERN)", ticker);
+                        log.info("   Received {} override parameter(s)",
+                                        countNonNullFields(financialDataInputOverrides));
 
                         boolean enableDCFAnalysis = false;
 
                         return calculateValuation(
-                                        ticker, financialDataInputOverrides, addStory, enableDCFAnalysis);
+                                        ticker, financialDataInputOverrides, enableDCFAnalysis);
 
                 } catch (RuntimeException e) {
-                        log.error("Error in valuation output for ticker {} (addStory={})", ticker, addStory, e);
+                        log.error("Error in valuation output for ticker {}", ticker, e);
                         throw e;
                 } finally {
                         SegmentParameterContext.clear();
@@ -66,8 +68,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
         }
 
         /**
-         * Core valuation calculation logic shared between POST and GET endpoints.
-         * Ensures consistent step ordering and data processing for both endpoints.
+         * Core valuation calculation logic for the deterministic POST endpoint.
          * 
          * Step Order (aligned for consistency):
          * 1. Fetch company data from Yahoo Finance
@@ -78,20 +79,18 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
          * 6. Run initial valuation check
          * 7. Apply calibration and ML adjustments (includes segment analysis)
          * 8. Single calibration to market price
-         * 9. Process scenario valuation
-         * 10. Copy selected model metadata to output
-         * 11. Add story (if requested)
+         * 9. Copy selected model metadata to output
+         * 10. Add assumption transparency
+         * 11. Add growth anchor diagnostics
          * 
          * @param ticker            Stock ticker symbol
-         * @param overrides         Optional user overrides (null for GET endpoint)
-         * @param addStory          Whether to generate narrative story
+         * @param overrides         Optional user overrides
          * @param enableDCFAnalysis Whether ML-based DCF analysis is enabled
          * @return ValuationOutputDTO with consistent results
          */
         private ValuationOutputDTO calculateValuation(
                         String ticker,
                         FinancialDataInput overrides,
-                        boolean addStory,
                         boolean enableDCFAnalysis) {
 
                 // Step 1: Fetch company baseline data from Yahoo Finance
@@ -146,14 +145,14 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 }
 
                 // Step 5: Adjust sales-to-capital ratio to be at least current ratio
-                adjustSalesToCapitalRatio(financialDataInput);
+                adjustSalesToCapitalRatio(financialDataInput, adjustedParameters);
 
                 // Step 5.5: Start intrinsic pricing fetch in parallel (if requested)
                 // This runs concurrently with Steps 6-10, saving significant time
 
                 // Step 6: Run initial valuation check
                 ValuationOutputDTO valuationOutputDTOCheck = valuationOutputService.getValuationOutput(
-                                ticker, financialDataInput, false, template);
+                                ticker, financialDataInput, template);
 
                 if (shouldForceThreeStageTemplate(template, overrides, valuationOutputDTOCheck)) {
                         Double priceToValuePct = calculatePriceToValuePct(valuationOutputDTOCheck);
@@ -170,9 +169,9 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         if (overrides != null) {
                                 adjustedParameters = applyUserOverrides(financialDataInput, overrides);
                         }
-                        adjustSalesToCapitalRatio(financialDataInput);
+                        adjustSalesToCapitalRatio(financialDataInput, adjustedParameters);
                         valuationOutputDTOCheck = valuationOutputService.getValuationOutput(
-                                        ticker, financialDataInput, false, template);
+                                        ticker, financialDataInput, template);
                 }
 
                 // Step 7: Apply calibration fallback if needed
@@ -180,7 +179,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 // after any calibration adjustments, ensuring consistent parameter processing
                 ValuationOutputDTO valuationOutputDTO = applyCalibrationAndMLAdjustments(
                                 ticker, financialDataInput, companyDataDTO, valuationOutputDTOCheck, enableDCFAnalysis,
-                                addStory, template, true, adjustedParameters);
+                                template, true, adjustedParameters);
 
                 if (shouldForceThreeStageTemplate(template, overrides, valuationOutputDTO)) {
                         Double priceToValuePct = calculatePriceToValuePct(valuationOutputDTO);
@@ -197,12 +196,12 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         if (overrides != null) {
                                 adjustedParameters = applyUserOverrides(financialDataInput, overrides);
                         }
-                        adjustSalesToCapitalRatio(financialDataInput);
+                        adjustSalesToCapitalRatio(financialDataInput, adjustedParameters);
                         valuationOutputDTOCheck = valuationOutputService.getValuationOutput(
-                                        ticker, financialDataInput, false, template);
+                                        ticker, financialDataInput, template);
                         valuationOutputDTO = applyCalibrationAndMLAdjustments(
                                         ticker, financialDataInput, companyDataDTO, valuationOutputDTOCheck,
-                                        enableDCFAnalysis, addStory, template, true, adjustedParameters);
+                                        enableDCFAnalysis, template, true, adjustedParameters);
                 }
 
                 // Step 8: Single calibration to market price
@@ -218,11 +217,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                         ticker, currentMarketPrice);
                 }
 
-                // Step 9: Process scenario valuation
-                processScenarioValuation(valuationOutputDTO, new FinancialDataInput(financialDataInput),
-                                new CompanyDataDTO(companyDataDTO), template);
-
-                // Step 10: Set model metadata from the model resolved in Step 2.
+                // Step 9: Set model metadata from the model resolved in Step 2.
                 assignModelSelectionMetadata(valuationOutputDTO, ticker, modelDecision);
                 assignTemplateMetadata(valuationOutputDTO, template, templateSelectionReason);
                 if (companyDataDTO.getBasicInfoDataDTO() != null) {
@@ -230,20 +225,16 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         valuationOutputDTO.setIndustryGlobal(companyDataDTO.getBasicInfoDataDTO().getIndustryGlobal());
                 }
 
-                // Step 11: Add assumption transparency (including market-implied expectations)
+                // Step 10: Add assumption transparency (including market-implied expectations)
                 valuationOutputDTO.setAssumptionTransparency(buildAssumptionTransparency(
                                 ticker,
                                 financialDataInput,
                                 valuationOutputDTO,
                                 template,
-                                templateSelectionReason));
+                                templateSelectionReason,
+                                adjustedParameters));
 
-                // Step 12: Add story (if requested)
-                if (addStory) {
-                        valuationOutputDTO = valuationOutputService.addStory(valuationOutputDTO);
-                }
-
-                // Step 13: Add Growth Anchor Diagnostics
+                // Step 11: Add Growth Anchor Diagnostics
                 Optional<io.stockvaluation.dto.GrowthAnchorDTO> anchorDtoOpt = growthAnchorService
                                 .getAnchorByYahooIndustry(
                                                 companyDataDTO.getBasicInfoDataDTO().getIndustryGlobal(),
@@ -305,7 +296,8 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         FinancialDataInput financialDataInput,
                         ValuationOutputDTO valuationOutputDTO,
                         ValuationTemplate template,
-                        String templateSelectionReason) {
+                        String templateSelectionReason,
+                        List<String> adjustedParameters) {
                 AssumptionTransparencyDTO dto = new AssumptionTransparencyDTO();
                 dto.setValuationModel(valuationOutputDTO.getPrimaryModel() != null
                                 ? valuationOutputDTO.getPrimaryModel().name()
@@ -316,6 +308,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 dto.setGrowthPattern(template != null && template.getGrowthPattern() != null
                                 ? template.getGrowthPattern().name()
                                 : null);
+                dto.setRequestPolicyMode(resolveRequestPolicyMode(financialDataInput));
                 dto.setProjectionYears(template != null ? template.getProjectionYears() : null);
                 dto.setTemplateSelectionReason(templateSelectionReason);
                 dto.setSegmentCount(financialDataInput.getSegments() != null
@@ -323,6 +316,10 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                                 ? financialDataInput.getSegments().getSegments().size()
                                                 : 0);
                 dto.setSegmentAware(dto.getSegmentCount() != null && dto.getSegmentCount() > 1);
+                dto.setBaselineQuality("single_industry_fallback");
+                dto.setSegmentCoveragePct(0.0);
+                dto.setMappedIndustries(new ArrayList<>());
+                dto.setWeightedBaselineAssumptions(new LinkedHashMap<>());
 
                 FinancialDTO financialDTO = valuationOutputDTO.getFinancialDTO();
                 Double riskFreeRate = normalizePercent(financialDataInput.getRiskFreeRate());
@@ -377,6 +374,16 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 SegmentWeightedParameters::getWeightedSalesToCapitalYears6To10,
                                 financialDataInput.getSalesToCapitalYears6To10());
 
+                applyBaselineConstructionTransparency(
+                                dto,
+                                effectiveRevenueGrowth,
+                                effectiveOperatingMarginNextYear,
+                                effectiveTargetOperatingMargin,
+                                effectiveSalesToCapitalYears1To5,
+                                effectiveSalesToCapitalYears6To10,
+                                initialCostOfCapital);
+                applyBaselineUseTransparency(dto, financialDataInput, adjustedParameters);
+
                 dto.setOperatingAssumptions(new AssumptionTransparencyDTO.OperatingAssumptions(
                                 normalizePercent(effectiveRevenueGrowth),
                                 normalizePercent(effectiveOperatingMarginNextYear),
@@ -384,9 +391,13 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 round2(effectiveConvergenceYear),
                                 normalizeMultiple(effectiveSalesToCapitalYears1To5),
                                 normalizeMultiple(effectiveSalesToCapitalYears6To10),
-                                "Valuation input baseline/override",
-                                "Valuation input baseline/override",
-                                "Valuation input baseline/override",
+                                dto.isSegmentAware() ? "Segment-weighted mechanical baseline"
+                                                : "Valuation input baseline/override",
+                                dto.getTargetOperatingMarginSource() != null
+                                                ? dto.getTargetOperatingMarginSource()
+                                                : "Valuation input baseline/override",
+                                dto.isSegmentAware() ? "Segment-weighted mechanical baseline"
+                                                : "Valuation input baseline/override",
                                 null,
                                 null,
                                 null));
@@ -397,6 +408,9 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 notes.add("Single-lever market expectation checks solve one variable at a time while others stay fixed.");
                 if (isForcedThreeStageReason(templateSelectionReason)) {
                         notes.add("Projection was upgraded to THREE_STAGE because market price and intrinsic value diverged materially in the first-pass baseline.");
+                }
+                if (adjustedParameters != null && adjustedParameters.contains("negativeValueCalibrationSkipped")) {
+                        notes.add("Negative-value calibration was skipped because request_policy.mode preserves explicit user scenario assumptions.");
                 }
                 dto.setNotes(notes);
 
@@ -411,6 +425,192 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 valuationOutputDTO,
                                 template));
                 return dto;
+        }
+
+        private void applyBaselineConstructionTransparency(
+                        AssumptionTransparencyDTO dto,
+                        Double revenueGrowth,
+                        Double operatingMarginNextYear,
+                        Double targetOperatingMargin,
+                        Double salesToCapitalYears1To5,
+                        Double salesToCapitalYears6To10,
+                        Double initialCostOfCapital) {
+                SegmentWeightedParameters segmentParams = SegmentParameterContext.getParameters();
+                if (segmentParams == null) {
+                        return;
+                }
+                if (!segmentParams.hasValidParameters()) {
+                        if (segmentParams.getBaselineQuality() != null
+                                        && segmentParams.getBaselineQuality().startsWith("segment_")) {
+                                dto.setBaselineQuality(segmentParams.getBaselineQuality());
+                                dto.setSegmentAware(false);
+                                dto.setSegmentCount(segmentParams.getSegmentCount());
+                                dto.setSegmentCoveragePct(segmentParams.getSegmentCoveragePct());
+                        }
+                        return;
+                }
+
+                dto.setBaselineQuality("segment_weighted_baseline");
+                dto.setSegmentAware(true);
+                dto.setSegmentCount(segmentParams.getSegmentCount());
+                dto.setSegmentCoveragePct(segmentCoveragePct(segmentParams));
+                dto.setMappedIndustries(mappedIndustries(segmentParams));
+
+                Map<String, Object> weighted = new LinkedHashMap<>();
+                weighted.put("revenueGrowthRateYears2To5", round2(normalizePercent(revenueGrowth)));
+                weighted.put("operatingMarginNextYear", round2(normalizePercent(operatingMarginNextYear)));
+                weighted.put("targetOperatingMargin", round2(normalizePercent(targetOperatingMargin)));
+                weighted.put("salesToCapitalYears1To5", round2(normalizeMultiple(salesToCapitalYears1To5)));
+                weighted.put("salesToCapitalYears6To10", round2(normalizeMultiple(salesToCapitalYears6To10)));
+                weighted.put("initialCostOfCapital", round2(normalizePercent(initialCostOfCapital)));
+                dto.setWeightedBaselineAssumptions(weighted);
+        }
+
+        private void applyBaselineUseTransparency(
+                        AssumptionTransparencyDTO dto,
+                        FinancialDataInput financialDataInput,
+                        List<String> adjustedParameters) {
+                Set<String> adjustedParameterSet = adjustedParameters == null
+                                ? Set.of()
+                                : adjustedParameters.stream()
+                                                .filter(Objects::nonNull)
+                                                .collect(Collectors.toCollection(LinkedHashSet::new));
+                boolean researchedBaselineMode = financialDataInput != null
+                                && Boolean.TRUE.equals(financialDataInput.getResearchedBaselineMode());
+                boolean segmentWeighted = "segment_weighted_baseline".equals(dto.getBaselineQuality())
+                                && dto.isSegmentAware();
+                boolean targetMarginOverride = adjustedParameterSet.contains("targetPreTaxOperatingMargin");
+
+                List<String> warnings = new ArrayList<>();
+                List<AssumptionTransparencyDTO.BaselineIssue> unsupportedBaselineDrivers = new ArrayList<>();
+                SegmentWeightedParameters segmentParams = SegmentParameterContext.getParameters();
+                if (segmentParams != null && segmentParams.getSegmentWarnings() != null) {
+                        warnings.addAll(segmentParams.getSegmentWarnings());
+                }
+
+                if (segmentWeighted) {
+                        dto.setBaselineUseStatus("validated_segment_weighted");
+                        dto.setTargetOperatingMarginSource("Segment-weighted mechanical baseline");
+                        dto.setTargetOperatingMarginStatus("segment_weighted");
+                } else {
+                        dto.setTargetOperatingMarginSource("Single-industry mechanical fallback");
+                        dto.setTargetOperatingMarginStatus(targetMarginOverride
+                                        ? "governed_or_user_override"
+                                        : "single_industry_mechanical_fallback");
+                        warnings.add("Single-industry mechanical fallback was used; target operating margin is not segment-weighted or researched evidence-supported.");
+                        if (!targetMarginOverride) {
+                                unsupportedBaselineDrivers.add(baselineIssue(
+                                                "target_operating_margin",
+                                                "mechanical_fallback",
+                                                "Target operating margin came from the company-level industry fallback, not validated segment weighting or governed evidence."));
+                        }
+                }
+
+                String baselineQuality = dto.getBaselineQuality();
+                if (segmentWeighted) {
+                        dto.setBaselineUseStatus("validated_segment_weighted");
+                } else if (researchedBaselineMode) {
+                        dto.setBaselineUseStatus("segment_evidence_insufficient");
+                        warnings.add("researched baseline mode requires validated segment weighting or governed driver evidence; no valid segment package was used, so the baseline remains mechanical and challenged.");
+                        unsupportedBaselineDrivers.add(baselineIssue(
+                                        "segments",
+                                        "segment_evidence_insufficient",
+                                        "Researched baseline mode did not receive a validated segment package."));
+                } else if (baselineQuality != null && baselineQuality.startsWith("segment_")) {
+                        dto.setBaselineUseStatus("challenged_baseline");
+                        unsupportedBaselineDrivers.add(baselineIssue(
+                                        "segments",
+                                        baselineQuality,
+                                        "Segment package was present but did not pass baseline-use validation."));
+                } else {
+                        dto.setBaselineUseStatus("mechanical_only");
+                }
+
+                dto.setBaselineWarnings(dedupeStrings(warnings));
+                dto.setUnsupportedBaselineDrivers(dedupeIssues(unsupportedBaselineDrivers));
+                dto.setUnsupportedAdjustmentFields(defaultUnsupportedAdjustmentFields());
+        }
+
+        private List<AssumptionTransparencyDTO.BaselineIssue> defaultUnsupportedAdjustmentFields() {
+                return List.of(
+                                baselineIssue("operating_margin_next_year",
+                                                "scenario_only_in_autonomous_researched_mode",
+                                                "Next-year operating margin can be used for explicit user scenarios, but autonomous researched baselines must not change it."),
+                                baselineIssue("wacc", "scenario_only_in_autonomous_researched_mode",
+                                                "WACC can be used for explicit scenarios, but autonomous researched baselines must not change it without a governed tested path."),
+                                baselineIssue("terminal_growth", "scenario_only_in_autonomous_researched_mode",
+                                                "Terminal growth can be used for explicit scenarios, but autonomous researched baselines must not change it without a governed tested path."),
+                                baselineIssue("tax_rate", "scenario_only_in_autonomous_researched_mode",
+                                                "Tax-rate changes are report-only or explicit-scenario fields in autonomous researched mode."),
+                                baselineIssue("rd_capitalization", "blocked_report_only",
+                                                "R&D capitalization is explain/flag only unless a governed service contract applies it."),
+                                baselineIssue("leases", "blocked_report_only",
+                                                "Lease adjustments are explain/flag only unless a governed service contract applies them."),
+                                baselineIssue("options", "blocked_report_only",
+                                                "Options and warrants are explain/flag only unless a governed service contract applies them."),
+                                baselineIssue("nols", "blocked_report_only",
+                                                "NOL adjustments are explain/flag only unless a governed service contract applies them."),
+                                baselineIssue("cash", "blocked_report_only",
+                                                "Cash adjustments are report-only for autonomous researched baselines."),
+                                baselineIssue("debt", "blocked_report_only",
+                                                "Debt adjustments are report-only for autonomous researched baselines."),
+                                baselineIssue("share_count", "blocked_report_only",
+                                                "Share-count adjustments are report-only for autonomous researched baselines."),
+                                baselineIssue("accounting_adjustments", "blocked_report_only",
+                                                "Accounting cleanup fields are report-only unless an explicit governed service input is supported."));
+        }
+
+        private AssumptionTransparencyDTO.BaselineIssue baselineIssue(String field, String status, String reason) {
+                return new AssumptionTransparencyDTO.BaselineIssue(field, status, reason);
+        }
+
+        private List<String> dedupeStrings(List<String> values) {
+                return values.stream()
+                                .filter(Objects::nonNull)
+                                .filter(value -> !value.isBlank())
+                                .distinct()
+                                .collect(Collectors.toList());
+        }
+
+        private List<AssumptionTransparencyDTO.BaselineIssue> dedupeIssues(
+                        List<AssumptionTransparencyDTO.BaselineIssue> issues) {
+                Map<String, AssumptionTransparencyDTO.BaselineIssue> byField = new LinkedHashMap<>();
+                for (AssumptionTransparencyDTO.BaselineIssue issue : issues) {
+                        if (issue != null && issue.getField() != null && !issue.getField().isBlank()) {
+                                byField.putIfAbsent(issue.getField(), issue);
+                        }
+                }
+                return new ArrayList<>(byField.values());
+        }
+
+        private Double segmentCoveragePct(SegmentWeightedParameters segmentParams) {
+                if (segmentParams == null || !segmentParams.hasSectorParameters()) {
+                        return 0.0;
+                }
+                double coverage = segmentParams.getSectorParameters().values().stream()
+                                .filter(Objects::nonNull)
+                                .map(SegmentWeightedParameters.SectorParameters::getRevenueShare)
+                                .filter(Objects::nonNull)
+                                .mapToDouble(Double::doubleValue)
+                                .sum();
+                if (coverage <= 1.5) {
+                        coverage *= 100.0;
+                }
+                return round2(coverage);
+        }
+
+        private List<String> mappedIndustries(SegmentWeightedParameters segmentParams) {
+                if (segmentParams == null || !segmentParams.hasSectorParameters()) {
+                        return new ArrayList<>();
+                }
+                return segmentParams.getSectorParameters().values().stream()
+                                .filter(Objects::nonNull)
+                                .map(sector -> sector.getIndustryAsPerExcel() != null
+                                                ? sector.getIndustryAsPerExcel()
+                                                : sector.getSectorName())
+                                .filter(Objects::nonNull)
+                                .distinct()
+                                .collect(Collectors.toList());
         }
 
         private AssumptionTransparencyDTO.MarketImpliedExpectations buildMarketImpliedExpectations(
@@ -1282,6 +1482,12 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 if (overrides != null && overrides.getGrowthPatternOverride() != null) {
                         return false;
                 }
+                if (overrides != null && Boolean.TRUE.equals(overrides.getResearchedBaselineMode())) {
+                        return false;
+                }
+                if (isUserScenarioPolicy(overrides)) {
+                        return false;
+                }
                 if (template.getGrowthPattern() != GrowthPattern.STABLE
                                 && template.getGrowthPattern() != GrowthPattern.TWO_STAGE) {
                         return false;
@@ -1396,158 +1602,6 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 percentiles[2], // 50th
                                 percentiles[4] // 95th
                 );
-        }
-
-        private Map<String, Double> processScenarioValuation(ValuationOutputDTO valuationOutputDTO,
-                        FinancialDataInput financialDataInput, CompanyDataDTO companyDataDto,
-                        ValuationTemplate template) {
-
-                Map<String, Double> scenarioValuations = new HashMap<>();
-
-                RDResult rdResult = commonService.calculateRDConverterValue(
-                                financialDataInput.getIndustry(),
-                                financialDataInput.getFinancialDataDTO().getMarginalTaxRate(),
-                                financialDataInput.getFinancialDataDTO().getResearchAndDevelopmentMap());
-                OptionValueResultDTO optionValueResultDTO = optionValueService.calculateOptionValue(
-                                companyDataDto.getBasicInfoDataDTO().getTicker(),
-                                financialDataInput.getAverageStrikePrice(),
-                                financialDataInput.getAverageMaturity(),
-                                financialDataInput.getNumberOfOptions(),
-                                financialDataInput.getStockPriceStdDev());
-                LeaseResultDTO leaseResultDTO = commonService.calculateOperatingLeaseConverter();
-
-                // Extract scenario analysis safely
-                NarrativeDTO.ScenarioAnalysis scenarioAnalysis = valuationOutputDTO != null
-                                && valuationOutputDTO.getNarrativeDTO() != null
-                                                ? valuationOutputDTO.getNarrativeDTO().getScenarioAnalysis()
-                                                : null;
-                if (scenarioAnalysis != null && valuationOutputDTO != null) {
-                        // Process all scenarios
-                        processScenario("optimistic", scenarioAnalysis.getOptimistic(), scenarioValuations,
-                                        financialDataInput, companyDataDto, rdResult, optionValueResultDTO,
-                                        leaseResultDTO, template);
-
-                        processScenario("base_case", scenarioAnalysis.getBase_case(), scenarioValuations,
-                                        financialDataInput, companyDataDto, rdResult, optionValueResultDTO,
-                                        leaseResultDTO, template);
-
-                        processScenario("pessimistic", scenarioAnalysis.getPessimistic(), scenarioValuations,
-                                        financialDataInput, companyDataDto, rdResult, optionValueResultDTO,
-                                        leaseResultDTO, template);
-
-                        scenarioAnalysis.getBase_case().setIntrinsicValue(
-                                        valuationOutputDTO.getCompanyDTO().getEstimatedValuePerShare());
-
-                        // Generate heat map
-                        /*
-                         * Map<String, Object> heatMapData = generateSensitivityHeatMap(
-                         * companyDataDto.getBasicInfoDataDTO().getTicker(),
-                         * financialDataInput,
-                         * companyDataDto,
-                         * rdResult,
-                         * optionValueResultDTO,
-                         * leaseResultDTO
-                         * );
-                         * 
-                         * // Store heat map in ValuationOutputDTO
-                         * valuationOutputDTO.setHeatMapData(heatMapData);
-                         */
-                }
-
-                return scenarioValuations;
-        }
-
-        private void processScenario(
-                        String scenarioName,
-                        NarrativeDTO.ScenarioAnalysis.Scenario scenario,
-                        Map<String, Double> scenarioValuations,
-                        FinancialDataInput baseFinancialDataInput,
-                        CompanyDataDTO companyDataDto,
-                        RDResult rdResult,
-                        OptionValueResultDTO optionValueResultDTO,
-                        LeaseResultDTO leaseResultDTO,
-                        ValuationTemplate template) {
-
-                if (scenario == null || scenario.getAdjustments() == null) {
-                        log.warn("Scenario {} has null adjustments, skipping", scenarioName);
-                        return;
-                }
-
-                // Clone FinancialDataInput to avoid mutating base input for other scenarios
-                FinancialDataInput financialDataInput = new FinancialDataInput(baseFinancialDataInput);
-
-                NarrativeDTO.ScenarioAnalysis.Scenario.Adjustments adjustments = scenario.getAdjustments();
-
-                log.info("[SCENARIO] Processing scenario: {}", scenarioName);
-                log.info("  Base values: growth={}, margin={}, stc={}, discount={}",
-                                baseFinancialDataInput.getCompoundAnnualGrowth2_5(),
-                                baseFinancialDataInput.getTargetPreTaxOperatingMargin(),
-                                baseFinancialDataInput.getSalesToCapitalYears1To5(),
-                                baseFinancialDataInput.getInitialCostCapital());
-
-                // Set compoundAnnualGrowth2_5 → revenueGrowthRate(1)
-                if (adjustments.getRevenueGrowthRate() != null
-                                && adjustments.getRevenueGrowthRate().size() > 1
-                                && adjustments.getRevenueGrowthRate().get(1) != null) {
-                        double growth = adjustments.getRevenueGrowthRate().stream()
-                                        .mapToDouble(Double::doubleValue)
-                                        .average()
-                                        .orElse(0.0) * 100;
-                        financialDataInput.setCompoundAnnualGrowth2_5(growth);
-                }
-
-                // Set targetPreTaxOperatingMargin → operatingMargin(1)
-                // NOTE: LLM returns decimals (0.30 = 30%), must convert to percentage for
-                // FinancialDataInput
-                if (adjustments.getOperatingMargin() != null
-                                && adjustments.getOperatingMargin().size() > 1
-                                && adjustments.getOperatingMargin().get(1) != null) {
-                        double margin = adjustments.getOperatingMargin().stream().mapToDouble(Double::doubleValue)
-                                        .average().orElse(0.0) * 100;
-                        financialDataInput.setTargetPreTaxOperatingMargin(margin);
-                }
-
-                // Set SalesToCapitalYears1To5 → salesToCapitalRatio(1)
-                // NOTE: Sales-to-capital is a ratio (not percentage), no conversion needed
-                if (adjustments.getSalesToCapitalRatio() != null
-                                && adjustments.getSalesToCapitalRatio().size() > 1
-                                && adjustments.getSalesToCapitalRatio().get(1) != null) {
-                        double stc = adjustments.getSalesToCapitalRatio().stream().mapToDouble(Double::doubleValue)
-                                        .average().orElse(0.0);
-                        financialDataInput.setSalesToCapitalYears1To5(stc);
-                }
-
-                // Set InitialCostCapital → discountRate(1)
-                // NOTE: LLM returns decimals (0.085 = 8.5%), must convert to percentage for
-                // FinancialDataInput
-                if (adjustments.getDiscountRate() != null
-                                && adjustments.getDiscountRate().size() > 1
-                                && adjustments.getDiscountRate().get(1) != null) {
-                        double discount = adjustments.getDiscountRate().stream().mapToDouble(Double::doubleValue)
-                                        .average().orElse(0.0) * 100;
-                        financialDataInput.setInitialCostCapital(discount);
-                }
-
-                // Run valuation
-                FinancialDTO financialDTO = valuationOutputService.calculateFinancialData(
-                                financialDataInput,
-                                rdResult,
-                                leaseResultDTO,
-                                companyDataDto.getBasicInfoDataDTO().getTicker(),
-                                template);
-
-                CompanyDTO companyDTO = valuationOutputService.calculateCompanyData(
-                                financialDTO,
-                                financialDataInput,
-                                optionValueResultDTO,
-                                leaseResultDTO);
-
-                Double intrinsicValue = companyDTO.getEstimatedValuePerShare();
-                scenarioValuations.put(scenarioName, intrinsicValue);
-                scenario.setIntrinsicValue(intrinsicValue);
-
-                log.info("  [RESULT] {} scenario result: ${} per share", scenarioName,
-                                String.format("%.2f", intrinsicValue));
         }
 
         private Double runSingleSimulation(String ticker, FinancialDataInput financialDataInput,
@@ -1794,7 +1848,11 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 companyDataDTO.getCompanyDriveDataDTO().getTargetPreTaxOperatingMargin())
                                                 ? companyDataDTO.getCompanyDriveDataDTO()
                                                                 .getTargetPreTaxOperatingMargin() * 100
-                                                : operatingMarginNextYear;
+                                                : firstNonNull(
+                                                                template != null
+                                                                                ? template.getNormalizedOperatingMargin()
+                                                                                : null,
+                                                                0.0);
 
                 // Apply template adjustments if provided
                 if (template != null && template.getNormalizedOperatingMargin() != null) {
@@ -1838,6 +1896,160 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 return value != null && Double.isFinite(value) && value > 0;
         }
 
+        private String resolveRequestPolicyMode(FinancialDataInput financialDataInput) {
+                if (financialDataInput == null) {
+                        return null;
+                }
+                if (financialDataInput.getRequestPolicyMode() != null
+                                && !financialDataInput.getRequestPolicyMode().isBlank()) {
+                        return normalizeRequestPolicyMode(financialDataInput.getRequestPolicyMode());
+                }
+                if (Boolean.TRUE.equals(financialDataInput.getResearchedBaselineMode())) {
+                        return POLICY_AUTONOMOUS_RESEARCHED;
+                }
+                return null;
+        }
+
+        private String normalizeRequestPolicyMode(String requestPolicyMode) {
+                if (requestPolicyMode == null) {
+                        return null;
+                }
+                String normalized = requestPolicyMode.trim().toLowerCase(Locale.ROOT).replace('-', '_');
+                if ("researched_baseline".equals(normalized) || "researched_autonomous".equals(normalized)) {
+                        return POLICY_AUTONOMOUS_RESEARCHED;
+                }
+                return normalized;
+        }
+
+        private boolean isUserScenarioPolicy(FinancialDataInput financialDataInput) {
+                String mode = resolveRequestPolicyMode(financialDataInput);
+                return POLICY_USER_REFINED_SCENARIO.equals(mode) || POLICY_EXPLICIT_SCENARIO.equals(mode);
+        }
+
+        private boolean isUserRefinedScenarioPolicy(FinancialDataInput financialDataInput) {
+                return POLICY_USER_REFINED_SCENARIO.equals(resolveRequestPolicyMode(financialDataInput));
+        }
+
+        private void rejectExplicitOnlyUserRefinedScenarioOverrides(
+                        FinancialDataInput baseline,
+                        FinancialDataInput overrides) {
+                if (!isUserRefinedScenarioPolicy(baseline) || overrides == null) {
+                        return;
+                }
+                List<String> unsupported = new ArrayList<>();
+                if (overrides.getGrowthPatternOverride() != null) {
+                        unsupported.add("growthPatternOverride");
+                }
+                if (overrides.getRiskFreeRate() != null) {
+                        unsupported.add("riskFreeRate");
+                }
+                if (overrides.getInitialCostCapital() != null) {
+                        unsupported.add("initialCostCapital");
+                }
+                if (overrides.getTerminalGrowthRate() != null) {
+                        unsupported.add("terminalGrowthRate");
+                }
+                if (!unsupported.isEmpty()) {
+                        String unsupportedJson = unsupported.stream()
+                                        .map(field -> "\"" + field + "\"")
+                                        .collect(Collectors.joining(",", "[", "]"));
+                        String msg = String.format(Locale.ROOT,
+                                        "{\"error\":\"USER_REFINED_SCENARIO_EXPLICIT_ONLY_FIELDS\",\"message\":\"user_refined_scenario may only carry bounded guided-refinement fields; use explicit_scenario for %s.\",\"unsupported\":%s}",
+                                        String.join(", ", unsupported),
+                                        unsupportedJson);
+                        throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, msg);
+                }
+        }
+
+        private boolean shouldPreserveExplicitSalesToCapitalInputs(
+                        FinancialDataInput financialDataInput,
+                        List<String> adjustedParameters) {
+                if (!isUserScenarioPolicy(financialDataInput)) {
+                        return false;
+                }
+                Set<String> adjusted = adjustedParameterSet(adjustedParameters);
+                return adjusted.contains("salesToCapitalYears1To5")
+                                || adjusted.contains("salesToCapitalYears6To10")
+                                || adjusted.contains("sectorOverrides");
+        }
+
+        private boolean shouldPreserveExplicitScenarioAssumptions(
+                        FinancialDataInput financialDataInput,
+                        List<String> adjustedParameters) {
+                if (!isUserScenarioPolicy(financialDataInput)) {
+                        return false;
+                }
+                Set<String> adjusted = adjustedParameterSet(adjustedParameters);
+                return adjusted.contains("compoundAnnualGrowth2_5")
+                                || adjusted.contains("operatingMarginNextYear")
+                                || adjusted.contains("targetPreTaxOperatingMargin")
+                                || adjusted.contains("convergenceYearMargin")
+                                || adjusted.contains("salesToCapitalYears1To5")
+                                || adjusted.contains("salesToCapitalYears6To10")
+                                || adjusted.contains("sectorOverrides");
+        }
+
+        private Set<String> adjustedParameterSet(List<String> adjustedParameters) {
+                if (adjustedParameters == null) {
+                        return Set.of();
+                }
+                return adjustedParameters.stream()
+                                .filter(Objects::nonNull)
+                                .collect(Collectors.toCollection(LinkedHashSet::new));
+        }
+
+        private void validateTerminalGrowthOverride(
+                        FinancialDataInput baseline,
+                        Double terminalGrowthRate) {
+                if (terminalGrowthRate == null) {
+                        return;
+                }
+                double cap = terminalGrowthCapPercent(baseline);
+                if (!Double.isFinite(terminalGrowthRate) || terminalGrowthRate < -5.0 || terminalGrowthRate > cap) {
+                        String msg = String.format(Locale.ROOT,
+                                        "{\"error\":\"TERMINAL_GROWTH_UNSAFE\",\"message\":\"terminalGrowthRate must be finite and between -5.00%% and the risk-free-rate mature-economy cap %.2f%%.\",\"provided\":%.4f,\"riskFreeRateCap\":%.4f}",
+                                        cap,
+                                        terminalGrowthRate,
+                                        cap);
+                        throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, msg);
+                }
+        }
+
+        private void validateBoundedScenarioInput(
+                        String field,
+                        Double value,
+                        double minimum,
+                        double maximum,
+                        String unit) {
+                if (value == null) {
+                        return;
+                }
+                if (!Double.isFinite(value) || value < minimum || value > maximum) {
+                        String provided = Double.isFinite(value)
+                                        ? String.format(Locale.ROOT, "%.4f", value)
+                                        : String.format(Locale.ROOT, "\"%s\"", value);
+                        String msg = String.format(Locale.ROOT,
+                                        "{\"error\":\"SCENARIO_INPUT_OUT_OF_BOUNDS\",\"message\":\"%s must be between %.2f and %.2f %s.\",\"field\":\"%s\",\"provided\":%s,\"minimum\":%.4f,\"maximum\":%.4f}",
+                                        field,
+                                        minimum,
+                                        maximum,
+                                        unit,
+                                        field,
+                                        provided,
+                                        minimum,
+                                        maximum);
+                        throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, msg);
+                }
+        }
+
+        private double terminalGrowthCapPercent(FinancialDataInput financialDataInput) {
+                Double riskFreeRate = financialDataInput != null ? financialDataInput.getRiskFreeRate() : null;
+                if (riskFreeRate == null || !Double.isFinite(riskFreeRate)) {
+                        return 0.0;
+                }
+                return Math.abs(riskFreeRate) <= 1.0 ? riskFreeRate * 100.0 : riskFreeRate;
+        }
+
         /**
          * Processes multi-segment analysis by fetching segment data and applying
          * weighted parameters.
@@ -1878,13 +2090,21 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         CompanyDataDTO companyDataDTO,
                         ValuationOutputDTO valuationOutputDTOCheck,
                         boolean enableDCFAnalysis,
-                        boolean addStory,
                         ValuationTemplate template,
                         boolean enableSegments,
                         List<String> adjustedParameters) {
 
                 // If intrinsic value is negative, apply calibration
                 if (valuationOutputDTOCheck.getCompanyDTO().getEstimatedValuePerShare() < 0) {
+                        if (shouldPreserveExplicitScenarioAssumptions(financialDataInput, adjustedParameters)) {
+                                log.warn("Negative intrinsic value detected for {}, preserving explicit scenario assumptions instead of applying calibration",
+                                                ticker);
+                                adjustedParameters.add("negativeValueCalibrationSkipped");
+                                processSegmentAnalysis(financialDataInput, companyDataDTO, ticker, enableSegments,
+                                                adjustedParameters);
+                                return valuationOutputService.getValuationOutput(ticker,
+                                                financialDataInput, template);
+                        }
                         log.info("Negative intrinsic value detected for {}, applying calibration", ticker);
 
                         CalibrationResultDTO calibrationResultDTO = calibrateToMarketPrice(
@@ -1901,13 +2121,13 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                         adjustedParameters);
 
                         return valuationOutputService.getValuationOutput(ticker,
-                                        financialDataInput, addStory, template);
+                                        financialDataInput, template);
                 } else {
                         processSegmentAnalysis(financialDataInput, companyDataDTO, ticker, enableSegments,
                                         adjustedParameters);
 
                         return valuationOutputService.getValuationOutput(ticker,
-                                        financialDataInput, addStory, template);
+                                        financialDataInput, template);
                 }
         }
 
@@ -1924,7 +2144,20 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
          * Formula: salesToCapital = max(inputValue, calculatedCurrentRatio)
          */
         private void adjustSalesToCapitalRatio(FinancialDataInput financialDataInput) {
+                adjustSalesToCapitalRatio(financialDataInput, new ArrayList<>());
+        }
+
+        private void adjustSalesToCapitalRatio(
+                        FinancialDataInput financialDataInput,
+                        List<String> adjustedParameters) {
                 try {
+                        if (shouldPreserveExplicitSalesToCapitalInputs(financialDataInput, adjustedParameters)) {
+                                log.info("Sales-to-capital mechanical guard skipped for explicit scenario policy on {}",
+                                                financialDataInput.getBasicInfoDataDTO() != null
+                                                                ? financialDataInput.getBasicInfoDataDTO().getTicker()
+                                                                : "unknown ticker");
+                                return;
+                        }
                         // Calculate current sales-to-capital ratio using R&D and operating lease
                         // adjustments
                         double currentSalesToCapital = valuationOutputService.calculateCurrentSalesToCapitalRatio(
@@ -1956,8 +2189,6 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
         /**
          * Apply ONLY user overrides from the minimal payload to the baseline
          * financialDataInput.
-         * This method implements the "minimal override pattern" similar to
-         * getValuationOutputWithStory.
          * 
          * @param baseline  The baseline FinancialDataInput populated from Yahoo Finance
          * @param overrides The minimal FinancialDataInput containing ONLY user
@@ -1967,6 +2198,13 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 log.info("Applying user overrides to baseline parameters...");
                 int overrideCount = 0;
                 Set<String> adjustedParameters = new LinkedHashSet<>();
+
+                if (overrides.getRequestPolicyMode() != null && !overrides.getRequestPolicyMode().isBlank()) {
+                        baseline.setRequestPolicyMode(normalizeRequestPolicyMode(overrides.getRequestPolicyMode()));
+                        log.info("   Override: requestPolicyMode = {}", baseline.getRequestPolicyMode());
+                        overrideCount++;
+                }
+                rejectExplicitOnlyUserRefinedScenarioOverrides(baseline, overrides);
 
                 // Apply each override if present (non-null)
                 if (overrides.getRevenueNextYear() != null) {
@@ -1979,12 +2217,6 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 if (overrides.getOperatingMarginNextYear() != null) {
                         baseline.setOperatingMarginNextYear(overrides.getOperatingMarginNextYear());
                         log.info("   Override: operatingMarginNextYear = {}", overrides.getOperatingMarginNextYear());
-                        if (overrides.getTargetPreTaxOperatingMargin() == null) {
-                                baseline.setTargetPreTaxOperatingMargin(overrides.getOperatingMarginNextYear());
-                                log.info("   Derived override: targetPreTaxOperatingMargin = {} (from operatingMarginNextYear)",
-                                                overrides.getOperatingMarginNextYear());
-                                adjustedParameters.add("targetPreTaxOperatingMargin");
-                        }
                         overrideCount++;
                         adjustedParameters.add("operatingMarginNextYear");
                 }
@@ -2005,9 +2237,16 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 }
 
                 if (overrides.getConvergenceYearMargin() != null) {
+                        validateBoundedScenarioInput(
+                                        "convergenceYearMargin",
+                                        overrides.getConvergenceYearMargin(),
+                                        MIN_MARGIN_CONVERGENCE_YEAR,
+                                        MAX_MARGIN_CONVERGENCE_YEAR,
+                                        "projection year");
                         baseline.setConvergenceYearMargin(overrides.getConvergenceYearMargin());
                         log.info("   Override: convergenceYearMargin = {}", overrides.getConvergenceYearMargin());
                         overrideCount++;
+                        adjustedParameters.add("convergenceYearMargin");
                 }
 
                 if (overrides.getGrowthPatternOverride() != null) {
@@ -2016,7 +2255,20 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         overrideCount++;
                 }
 
+                if (Boolean.TRUE.equals(overrides.getResearchedBaselineMode())) {
+                        baseline.setResearchedBaselineMode(true);
+                        baseline.setRequestPolicyMode(POLICY_AUTONOMOUS_RESEARCHED);
+                        log.info("   Override: researchedBaselineMode = true");
+                        overrideCount++;
+                }
+
                 if (overrides.getSalesToCapitalYears1To5() != null) {
+                        validateBoundedScenarioInput(
+                                        "salesToCapitalYears1To5",
+                                        overrides.getSalesToCapitalYears1To5(),
+                                        MIN_SALES_TO_CAPITAL,
+                                        MAX_SALES_TO_CAPITAL,
+                                        "sales-to-capital multiple");
                         baseline.setSalesToCapitalYears1To5(overrides.getSalesToCapitalYears1To5());
                         log.info("   Override: salesToCapitalYears1To5 = {}", overrides.getSalesToCapitalYears1To5());
                         overrideCount++;
@@ -2024,6 +2276,12 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 }
 
                 if (overrides.getSalesToCapitalYears6To10() != null) {
+                        validateBoundedScenarioInput(
+                                        "salesToCapitalYears6To10",
+                                        overrides.getSalesToCapitalYears6To10(),
+                                        MIN_SALES_TO_CAPITAL,
+                                        MAX_SALES_TO_CAPITAL,
+                                        "sales-to-capital multiple");
                         baseline.setSalesToCapitalYears6To10(overrides.getSalesToCapitalYears6To10());
                         log.info("   Override: salesToCapitalYears6To10 = {}", overrides.getSalesToCapitalYears6To10());
                         overrideCount++;
@@ -2046,13 +2304,14 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
 
                 // Terminal growth rate override (for dcf_recalculator tool)
                 if (overrides.getTerminalGrowthRate() != null) {
+                        validateTerminalGrowthOverride(baseline, overrides.getTerminalGrowthRate());
                         baseline.setTerminalGrowthRate(overrides.getTerminalGrowthRate());
                         log.info("   Override: terminalGrowthRate = {}%", overrides.getTerminalGrowthRate());
                         overrideCount++;
+                        adjustedParameters.add("terminalGrowthRate");
                 }
 
-                // Copy segments provided by caller (valuation-agent) for multi-segment DCF
-                // breakdown and weighting.
+                // Copy caller-provided segments for multi-segment DCF breakdown and weighting.
                 if (overrides.getSegments() != null
                                 && overrides.getSegments().getSegments() != null
                                 && !overrides.getSegments().getSegments().isEmpty()) {
@@ -2105,6 +2364,8 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 if (input.getTerminalGrowthRate() != null)
                         count++;
                 if (input.getGrowthPatternOverride() != null)
+                        count++;
+                if (Boolean.TRUE.equals(input.getResearchedBaselineMode()))
                         count++;
                 if (input.getSectorOverrides() != null && !input.getSectorOverrides().isEmpty())
                         count++;

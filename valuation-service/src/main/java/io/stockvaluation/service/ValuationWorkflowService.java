@@ -6,7 +6,7 @@ import io.stockvaluation.form.FinancialDataInput;
 
 public interface ValuationWorkflowService {
 
-    ValuationOutputDTO getValuation(String ticker, FinancialDataInput financialDataInputOverrides, boolean addStory);
+    ValuationOutputDTO getValuation(String ticker, FinancialDataInput financialDataInputOverrides);
 
     CalibrationResultDTO calibrateToMarketPrice(String ticker, FinancialDataInput financialDataInput,
             Double currentPrice);

@@ -1,0 +1,205 @@
+{
+  "purpose": "workflow_acceptance_not_valuation_baselines",
+  "companies": [
+    {
+      "ticker": "MSFT",
+      "company": "Microsoft Corporation",
+      "primary_listing_country": "United States",
+      "listing_currency": "USD",
+      "sector": "Technology",
+      "segment_discovery": "expected",
+      "coverage_categories": ["us_large_cap_technology"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    },
+    {
+      "ticker": "AMZN",
+      "company": "Amazon.com, Inc.",
+      "primary_listing_country": "United States",
+      "listing_currency": "USD",
+      "sector": "Consumer Cyclical",
+      "segment_discovery": "expected",
+      "coverage_categories": ["us_consumer_or_retail"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    },
+    {
+      "ticker": "WMT",
+      "company": "Walmart Inc.",
+      "primary_listing_country": "United States",
+      "listing_currency": "USD",
+      "sector": "Consumer Defensive",
+      "segment_discovery": "expected",
+      "coverage_categories": ["us_consumer_or_retail"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    },
+    {
+      "ticker": "JNJ",
+      "company": "Johnson & Johnson",
+      "primary_listing_country": "United States",
+      "listing_currency": "USD",
+      "sector": "Healthcare",
+      "segment_discovery": "expected",
+      "coverage_categories": ["us_industrial_or_healthcare_non_financial"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    },
+    {
+      "ticker": "CAT",
+      "company": "Caterpillar Inc.",
+      "primary_listing_country": "United States",
+      "listing_currency": "USD",
+      "sector": "Industrials",
+      "segment_discovery": "expected",
+      "coverage_categories": ["us_industrial_or_healthcare_non_financial"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    },
+    {
+      "ticker": "SAP.DE",
+      "company": "SAP SE",
+      "primary_listing_country": "Germany",
+      "listing_currency": "EUR",
+      "sector": "Technology",
+      "segment_discovery": "simple_or_mostly_single_segment",
+      "coverage_categories": ["europe_technology_luxury_or_healthcare_non_financial"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    },
+    {
+      "ticker": "ASML.AS",
+      "company": "ASML Holding N.V.",
+      "primary_listing_country": "Netherlands",
+      "listing_currency": "EUR",
+      "sector": "Technology",
+      "segment_discovery": "simple_or_mostly_single_segment",
+      "coverage_categories": ["europe_technology_luxury_or_healthcare_non_financial"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    },
+    {
+      "ticker": "MC.PA",
+      "company": "LVMH Moet Hennessy Louis Vuitton SE",
+      "primary_listing_country": "France",
+      "listing_currency": "EUR",
+      "sector": "Consumer Cyclical",
+      "segment_discovery": "expected",
+      "coverage_categories": ["europe_large_cap_industrial_or_consumer", "europe_technology_luxury_or_healthcare_non_financial"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    },
+    {
+      "ticker": "AIR.PA",
+      "company": "Airbus SE",
+      "primary_listing_country": "France",
+      "listing_currency": "EUR",
+      "sector": "Industrials",
+      "segment_discovery": "expected",
+      "coverage_categories": ["europe_large_cap_industrial_or_consumer"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    },
+    {
+      "ticker": "ULVR.L",
+      "company": "Unilever PLC",
+      "primary_listing_country": "United Kingdom",
+      "listing_currency": "GBP",
+      "sector": "Consumer Defensive",
+      "segment_discovery": "expected",
+      "coverage_categories": ["united_kingdom_non_financial", "europe_large_cap_industrial_or_consumer"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    },
+    {
+      "ticker": "AZN.L",
+      "company": "AstraZeneca PLC",
+      "primary_listing_country": "United Kingdom",
+      "listing_currency": "GBP",
+      "sector": "Healthcare",
+      "segment_discovery": "simple_or_mostly_single_segment",
+      "coverage_categories": ["united_kingdom_non_financial", "europe_technology_luxury_or_healthcare_non_financial"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    },
+    {
+      "ticker": "7203.T",
+      "company": "Toyota Motor Corporation",
+      "primary_listing_country": "Japan",
+      "listing_currency": "JPY",
+      "sector": "Consumer Cyclical",
+      "segment_discovery": "expected",
+      "coverage_categories": ["japan_technology_industrial_or_consumer_non_financial"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    },
+    {
+      "ticker": "6758.T",
+      "company": "Sony Group Corporation",
+      "primary_listing_country": "Japan",
+      "listing_currency": "JPY",
+      "sector": "Technology",
+      "segment_discovery": "expected",
+      "coverage_categories": ["japan_technology_industrial_or_consumer_non_financial"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    },
+    {
+      "ticker": "RELIANCE.NS",
+      "company": "Reliance Industries Limited",
+      "primary_listing_country": "India",
+      "listing_currency": "INR",
+      "sector": "Energy",
+      "segment_discovery": "expected",
+      "coverage_categories": ["india_non_financial"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    },
+    {
+      "ticker": "INFY.NS",
+      "company": "Infosys Limited",
+      "primary_listing_country": "India",
+      "listing_currency": "INR",
+      "sector": "Technology",
+      "segment_discovery": "simple_or_mostly_single_segment",
+      "coverage_categories": ["india_non_financial"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    },
+    {
+      "ticker": "2330.TW",
+      "company": "Taiwan Semiconductor Manufacturing Company Limited",
+      "primary_listing_country": "Taiwan",
+      "listing_currency": "TWD",
+      "sector": "Technology",
+      "segment_discovery": "simple_or_mostly_single_segment",
+      "coverage_categories": ["taiwan_or_korea_non_financial"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    },
+    {
+      "ticker": "005930.KS",
+      "company": "Samsung Electronics Co., Ltd.",
+      "primary_listing_country": "South Korea",
+      "listing_currency": "KRW",
+      "sector": "Technology",
+      "segment_discovery": "expected",
+      "coverage_categories": ["taiwan_or_korea_non_financial"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    },
+    {
+      "ticker": "SHOP.TO",
+      "company": "Shopify Inc.",
+      "primary_listing_country": "Canada",
+      "listing_currency": "CAD",
+      "sector": "Technology",
+      "segment_discovery": "simple_or_mostly_single_segment",
+      "coverage_categories": ["canada_australia_brazil_or_other_non_us_region"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    },
+    {
+      "ticker": "BHP.AX",
+      "company": "BHP Group Limited",
+      "primary_listing_country": "Australia",
+      "listing_currency": "AUD",
+      "sector": "Basic Materials",
+      "segment_discovery": "expected",
+      "coverage_categories": ["canada_australia_brazil_or_other_non_us_region"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    },
+    {
+      "ticker": "NESN.SW",
+      "company": "Nestle S.A.",
+      "primary_listing_country": "Switzerland",
+      "listing_currency": "CHF",
+      "sector": "Consumer Defensive",
+      "segment_discovery": "simple_or_mostly_single_segment",
+      "coverage_categories": ["canada_australia_brazil_or_other_non_us_region", "europe_large_cap_industrial_or_consumer"],
+      "workflow_expectations": ["health_check", "baseline_dcf_or_classified_failure", "segment_discovery", "evidence_packet", "assumption_judgment", "auto_recalculate_once_when_supported", "final_educational_report"]
+    }
+  ]
+}

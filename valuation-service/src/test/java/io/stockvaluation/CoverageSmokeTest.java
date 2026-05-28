@@ -1,6 +1,6 @@
 package io.stockvaluation;
 
-import io.stockvaluation.config.CurrencyApiProperties;
+import io.stockvaluation.config.CurrencyProviderProperties;
 import io.stockvaluation.config.SyntheticRatingProperties;
 import io.stockvaluation.config.ValuationTemplateProperties;
 import io.stockvaluation.config.YFinanceProviderProperties;
@@ -10,6 +10,7 @@ import io.stockvaluation.dto.DividendDataDTO;
 import io.stockvaluation.dto.FinancialDataDTO;
 import io.stockvaluation.dto.FieldErrorDTO;
 import io.stockvaluation.dto.InfoDTO;
+import io.stockvaluation.dto.OverrideAssumption;
 import io.stockvaluation.dto.ResponseDTO;
 import io.stockvaluation.dto.SyntheticResultDTO;
 import io.stockvaluation.dto.ValuationOutputDTO;
@@ -19,22 +20,31 @@ import io.stockvaluation.enums.CashflowType;
 import io.stockvaluation.enums.EarningsLevel;
 import io.stockvaluation.enums.GrowthPattern;
 import io.stockvaluation.enums.ModelType;
+import io.stockvaluation.form.FinancialDataInput;
 import io.stockvaluation.provider.BalanceSheetSnapshot;
 import io.stockvaluation.provider.DataProviderException;
 import io.stockvaluation.provider.IncomeStatementSnapshot;
 import io.stockvaluation.service.SpecialCompanies;
+import io.stockvaluation.service.ValuationOutputService;
+import io.stockvaluation.service.ValuationWorkflowServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.client.RestTemplate;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class CoverageSmokeTest {
 
@@ -190,11 +200,9 @@ class CoverageSmokeTest {
         syntheticRatingProperties.setDefaultCountry("Sweden");
         assertEquals("Sweden", syntheticRatingProperties.getDefaultCountry());
 
-        CurrencyApiProperties currencyApiProperties = new CurrencyApiProperties();
-        currencyApiProperties.setBaseUrl("https://example.com");
-        currencyApiProperties.setKey("secret");
-        assertEquals("https://example.com", currencyApiProperties.getBaseUrl());
-        assertEquals("secret", currencyApiProperties.getKey());
+        CurrencyProviderProperties currencyProviderProperties = new CurrencyProviderProperties();
+        currencyProviderProperties.setBaseUrl("https://example.com");
+        assertEquals("https://example.com", currencyProviderProperties.getBaseUrl());
 
         YFinanceProviderProperties providerProperties = new YFinanceProviderProperties();
         providerProperties.setBaseUrl("https://yfinance.example.com");
@@ -215,5 +223,233 @@ class CoverageSmokeTest {
         input.setBasicInfoDataDTO(special);
         assertEquals(20.0, SpecialCompanies.reAdjustROIC(input, 10.0), 1e-9);
         assertEquals(5.0, SpecialCompanies.reAdjustSalesToCapitalFirstPhases(special, 10.0, 5.0), 1e-9);
+    }
+
+    @Test
+    void userRefinedScenarioKeepsNearTermAndTargetMarginsIndependent() throws Exception {
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
+                "applyUserOverrides",
+                FinancialDataInput.class,
+                FinancialDataInput.class);
+        applyUserOverrides.setAccessible(true);
+
+        FinancialDataInput baseline = new FinancialDataInput();
+        baseline.setRiskFreeRate(4.0);
+        baseline.setOperatingMarginNextYear(20.0);
+        baseline.setTargetPreTaxOperatingMargin(35.0);
+
+        FinancialDataInput overrides = new FinancialDataInput();
+        overrides.setRequestPolicyMode("user_refined_scenario");
+        overrides.setOperatingMarginNextYear(27.5);
+        overrides.setConvergenceYearMargin(7.0);
+
+        @SuppressWarnings("unchecked")
+        java.util.List<String> adjusted = (java.util.List<String>) applyUserOverrides.invoke(workflow, baseline,
+                overrides);
+
+        assertEquals("user_refined_scenario", baseline.getRequestPolicyMode());
+        assertEquals(27.5, baseline.getOperatingMarginNextYear());
+        assertEquals(35.0, baseline.getTargetPreTaxOperatingMargin());
+        assertEquals(7.0, baseline.getConvergenceYearMargin());
+        assertTrue(adjusted.contains("operatingMarginNextYear"));
+        assertTrue(adjusted.contains("convergenceYearMargin"));
+        assertFalse(adjusted.contains("targetPreTaxOperatingMargin"));
+    }
+
+    @Test
+    void invalidTerminalGrowthOverrideIsRejectedWithAgentReadableError() throws Exception {
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
+                "applyUserOverrides",
+                FinancialDataInput.class,
+                FinancialDataInput.class);
+        applyUserOverrides.setAccessible(true);
+
+        FinancialDataInput baseline = new FinancialDataInput();
+        baseline.setRiskFreeRate(4.0);
+
+        FinancialDataInput overrides = new FinancialDataInput();
+        overrides.setRequestPolicyMode("explicit_scenario");
+        overrides.setTerminalGrowthRate(5.0);
+
+        InvocationTargetException exception = assertThrows(
+                InvocationTargetException.class,
+                () -> applyUserOverrides.invoke(workflow, baseline, overrides));
+        assertTrue(exception.getCause() instanceof ResponseStatusException);
+        assertTrue(exception.getCause().getMessage().contains("TERMINAL_GROWTH_UNSAFE"));
+    }
+
+    @Test
+    void userRefinedScenarioRejectsExplicitScenarioOnlyServiceFields() throws Exception {
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
+                "applyUserOverrides",
+                FinancialDataInput.class,
+                FinancialDataInput.class);
+        applyUserOverrides.setAccessible(true);
+
+        FinancialDataInput baseline = new FinancialDataInput();
+        baseline.setRiskFreeRate(4.0);
+
+        FinancialDataInput overrides = new FinancialDataInput();
+        overrides.setRequestPolicyMode("user_refined_scenario");
+        overrides.setGrowthPatternOverride(GrowthPattern.THREE_STAGE);
+        overrides.setInitialCostCapital(8.5);
+        overrides.setTerminalGrowthRate(3.0);
+
+        InvocationTargetException exception = assertThrows(
+                InvocationTargetException.class,
+                () -> applyUserOverrides.invoke(workflow, baseline, overrides));
+        assertTrue(exception.getCause() instanceof ResponseStatusException);
+        assertTrue(exception.getCause().getMessage().contains("USER_REFINED_SCENARIO_EXPLICIT_ONLY_FIELDS"));
+        assertTrue(exception.getCause().getMessage().contains("growthPatternOverride"));
+        assertTrue(exception.getCause().getMessage().contains("initialCostCapital"));
+        assertTrue(exception.getCause().getMessage().contains("terminalGrowthRate"));
+    }
+
+    @Test
+    void userRefinedSalesToCapitalInputsBypassMechanicalGuard() throws Exception {
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        Method adjustSalesToCapital = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
+                "adjustSalesToCapitalRatio",
+                FinancialDataInput.class,
+                java.util.List.class);
+        adjustSalesToCapital.setAccessible(true);
+
+        FinancialDataInput input = new FinancialDataInput();
+        input.setRequestPolicyMode("user_refined_scenario");
+        input.setSalesToCapitalYears1To5(0.75);
+        input.setSalesToCapitalYears6To10(1.10);
+
+        adjustSalesToCapital.invoke(workflow, input,
+                java.util.List.of("salesToCapitalYears1To5", "salesToCapitalYears6To10"));
+
+        assertEquals(0.75, input.getSalesToCapitalYears1To5());
+        assertEquals(1.10, input.getSalesToCapitalYears6To10());
+    }
+
+    @Test
+    void userRefinedScenarioRejectsOutOfBoundsDirectInputs() throws Exception {
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
+                "applyUserOverrides",
+                FinancialDataInput.class,
+                FinancialDataInput.class);
+        applyUserOverrides.setAccessible(true);
+
+        FinancialDataInput baseline = new FinancialDataInput();
+        baseline.setRiskFreeRate(4.0);
+
+        FinancialDataInput convergenceOverride = new FinancialDataInput();
+        convergenceOverride.setRequestPolicyMode("user_refined_scenario");
+        convergenceOverride.setConvergenceYearMargin(11.0);
+
+        InvocationTargetException convergenceException = assertThrows(
+                InvocationTargetException.class,
+                () -> applyUserOverrides.invoke(workflow, baseline, convergenceOverride));
+        assertTrue(convergenceException.getCause() instanceof ResponseStatusException);
+        assertTrue(convergenceException.getCause().getMessage().contains("SCENARIO_INPUT_OUT_OF_BOUNDS"));
+        assertTrue(convergenceException.getCause().getMessage().contains("convergenceYearMargin"));
+
+        FinancialDataInput salesToCapitalOverride = new FinancialDataInput();
+        salesToCapitalOverride.setRequestPolicyMode("user_refined_scenario");
+        salesToCapitalOverride.setSalesToCapitalYears1To5(-2.0);
+
+        InvocationTargetException salesToCapitalException = assertThrows(
+                InvocationTargetException.class,
+                () -> applyUserOverrides.invoke(workflow, new FinancialDataInput(), salesToCapitalOverride));
+        assertTrue(salesToCapitalException.getCause() instanceof ResponseStatusException);
+        assertTrue(salesToCapitalException.getCause().getMessage().contains("SCENARIO_INPUT_OUT_OF_BOUNDS"));
+        assertTrue(salesToCapitalException.getCause().getMessage().contains("salesToCapitalYears1To5"));
+    }
+
+    @Test
+    void userRefinedScenarioDoesNotForceThreeStageFromPriceValueGap() throws Exception {
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        Method shouldForce = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
+                "shouldForceThreeStageTemplate",
+                ValuationTemplate.class,
+                FinancialDataInput.class,
+                ValuationOutputDTO.class);
+        shouldForce.setAccessible(true);
+
+        ValuationTemplate template = new ValuationTemplate();
+        template.setGrowthPattern(GrowthPattern.STABLE);
+        ValuationOutputDTO output = new ValuationOutputDTO();
+        CompanyDTO company = new CompanyDTO();
+        company.setPrice(300.0);
+        company.setEstimatedValuePerShare(100.0);
+        output.setCompanyDTO(company);
+
+        FinancialDataInput overrides = new FinancialDataInput();
+        overrides.setRequestPolicyMode("user_refined_scenario");
+
+        assertFalse((Boolean) shouldForce.invoke(workflow, template, overrides, output));
+    }
+
+    @Test
+    void negativeValueCalibrationDoesNotOverwriteExplicitUserRefinedAssumptions() throws Exception {
+        ValuationOutputService outputService = mock(ValuationOutputService.class);
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, outputService, null, null,
+                null);
+        Method applyCalibration = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
+                "applyCalibrationAndMLAdjustments",
+                String.class,
+                FinancialDataInput.class,
+                CompanyDataDTO.class,
+                ValuationOutputDTO.class,
+                boolean.class,
+                ValuationTemplate.class,
+                boolean.class,
+                java.util.List.class);
+        applyCalibration.setAccessible(true);
+
+        FinancialDataInput input = new FinancialDataInput();
+        input.setRequestPolicyMode("user_refined_scenario");
+        input.setCompoundAnnualGrowth2_5(12.0);
+        input.setTargetPreTaxOperatingMargin(33.0);
+
+        ValuationOutputDTO negativeCheck = new ValuationOutputDTO();
+        CompanyDTO negativeCompany = new CompanyDTO();
+        negativeCompany.setEstimatedValuePerShare(-1.0);
+        negativeCompany.setPrice(10.0);
+        negativeCheck.setCompanyDTO(negativeCompany);
+
+        ValuationOutputDTO preservedOutput = new ValuationOutputDTO();
+        when(outputService.getValuationOutput("TST", input, null)).thenReturn(preservedOutput);
+
+        Object result = applyCalibration.invoke(
+                workflow,
+                "TST",
+                input,
+                new CompanyDataDTO(),
+                negativeCheck,
+                false,
+                null,
+                false,
+                new java.util.ArrayList<>(
+                        java.util.List.of("compoundAnnualGrowth2_5", "targetPreTaxOperatingMargin")));
+
+        assertSame(preservedOutput, result);
+        assertEquals(12.0, input.getCompoundAnnualGrowth2_5());
+        assertEquals(33.0, input.getTargetPreTaxOperatingMargin());
+    }
+
+    @Test
+    void terminalGrowthOverrideCannotBypassRiskFreeRateCapInOutputService() {
+        ValuationOutputService outputService = new ValuationOutputService(null, null, null, null, null, null, null);
+        FinancialDataInput input = new FinancialDataInput();
+        input.setRevenueNextYear(5.0);
+        input.setCompoundAnnualGrowth2_5(8.0);
+        input.setRiskFreeRate(4.0);
+        input.setTerminalGrowthRate(4.5);
+        input.setOverrideAssumptionGrowthRate(new OverrideAssumption(0D, false, 0D, null));
+        input.setOverrideAssumptionRiskFreeRate(new OverrideAssumption(0D, false, 0D, null));
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> outputService.calculateRevenueGrowthRate(input, 12));
+        assertTrue(exception.getMessage().contains("TERMINAL_GROWTH_UNSAFE"));
     }
 }

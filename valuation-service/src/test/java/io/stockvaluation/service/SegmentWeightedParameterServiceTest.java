@@ -112,7 +112,7 @@ class SegmentWeightedParameterServiceTest {
     }
 
     @Test
-    void applySegmentWeightedParameters_missingSectorMapping_redistributesToMappedSegments() {
+    void applySegmentWeightedParameters_missingSectorMappingBelowCoverageThresholdBlocksSegmentBaseline() {
         FinancialDataInput input = baselineInput();
         input.setSegments(new SegmentResponseDTO(List.of(
                 new SegmentResponseDTO.Segment("missing-sector", "tech", List.of("A"), 0.9, 0.7, 0.2),
@@ -127,13 +127,13 @@ class SegmentWeightedParameterServiceTest {
 
         SegmentWeightedParameters context = SegmentParameterContext.getParameters();
         assertNotNull(context);
-        assertTrue(context.hasSectorParameters());
-        assertNotNull(context.getSectorParameters("mapped-sector"));
-        assertNull(context.getSectorParameters("missing-sector"));
-
-        // With 70% missing-share redistributed to the only mapped segment,
-        // weighted revenue next-year should reflect full 100% mapped weight.
+        assertFalse(context.hasValidParameters());
+        assertEquals("segment_mapping_blocked", context.getBaselineQuality());
+        assertEquals(30.0, context.getSegmentCoveragePct(), 0.0001);
+        assertTrue(context.getSegmentWarnings().stream()
+                .anyMatch(warning -> warning.contains("mapped revenue coverage")));
         assertEquals(3.0, input.getRevenueNextYear(), 0.0001);
+        assertEquals(18.0, input.getTargetPreTaxOperatingMargin(), 0.0001);
     }
 
     @Test
@@ -271,7 +271,7 @@ class SegmentWeightedParameterServiceTest {
         ReflectionTestUtils.invokeMethod(service, "applySectorOverrides", validated, sectorParams, "software");
         assertEquals(15.0, sectorParams.getRevenueNextYear());
         assertEquals(15.0, sectorParams.getCompoundAnnualGrowth2_5());
-        assertEquals(23.0, sectorParams.getOperatingMarginNextYear());
+        assertEquals(20.0, sectorParams.getOperatingMarginNextYear());
         assertEquals(25.0, sectorParams.getTargetPreTaxOperatingMargin());
     }
 

@@ -18,8 +18,6 @@ public class ValuationOutputDTO {
     public ValuationOutputDTO(ValuationOutputDTO other) {
         if (other != null) {
             this.companyName = other.companyName;
-            this.profitabilityStory = other.profitabilityStory;
-            this.riskStory = other.riskStory;
             this.currency = other.currency;
             this.stockCurrency = other.stockCurrency;
             this.industryUs = other.industryUs;
@@ -29,10 +27,8 @@ public class ValuationOutputDTO {
             this.companyDTO = other.companyDTO;
             this.terminalValueDTO = other.terminalValueDTO;
             this.baseYearComparison = other.baseYearComparison;
-            this.story = other.story;
             this.simulationResultsDto = other.simulationResultsDto;
             this.calibrationResultDTO = other.calibrationResultDTO;
-            this.narrativeDTO = other.narrativeDTO;
             this.assumptionTransparency = other.assumptionTransparency;
 
             this.primaryModel = other.primaryModel;
@@ -49,8 +45,6 @@ public class ValuationOutputDTO {
 
     private String companyName;
 
-    private String profitabilityStory;
-    private String riskStory;
     private String currency;
     private String stockCurrency;
     private String industryUs;
@@ -59,7 +53,7 @@ public class ValuationOutputDTO {
     /**
      * UUID of the valuation record in Supabase.
      * Set by yfinance after saving to valuations table.
-     * Used by frontend to pass to chat/notebook for context loading.
+     * Returned for downstream agent or persistence context.
      */
     @JsonProperty("valuation_id")
     private String valuationId;
@@ -75,10 +69,8 @@ public class ValuationOutputDTO {
     private CompanyDTO companyDTO;
     private TerminalValueDTO terminalValueDTO;
     private BaseYearComparisonDTO baseYearComparison;
-    private Story story;
     private SimulationResultsDTO simulationResultsDto;
     private CalibrationResultDTO calibrationResultDTO;
-    private NarrativeDTO narrativeDTO;
     private AssumptionTransparencyDTO assumptionTransparency;
 
     /**

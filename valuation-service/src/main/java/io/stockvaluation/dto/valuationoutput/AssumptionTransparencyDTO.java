@@ -6,7 +6,9 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @NoArgsConstructor
 @AllArgsConstructor
@@ -20,6 +22,17 @@ public class AssumptionTransparencyDTO {
     private String currency;
     private Integer segmentCount;
     private boolean segmentAware;
+    private String baselineQuality;
+    private String baselineUseStatus;
+    private Double segmentCoveragePct;
+    private List<String> mappedIndustries = new ArrayList<>();
+    private Map<String, Object> weightedBaselineAssumptions = new LinkedHashMap<>();
+    private List<String> baselineWarnings = new ArrayList<>();
+    private List<BaselineIssue> unsupportedBaselineDrivers = new ArrayList<>();
+    private List<BaselineIssue> unsupportedAdjustmentFields = new ArrayList<>();
+    private String targetOperatingMarginSource;
+    private String targetOperatingMarginStatus;
+    private String requestPolicyMode;
     private String growthPattern;
     private Integer projectionYears;
     private String templateSelectionReason;
@@ -29,6 +42,16 @@ public class AssumptionTransparencyDTO {
     private GrowthAnchor growthAnchor;
     private MarketImpliedExpectations marketImpliedExpectations;
     private PricedInExpectations pricedInExpectations;
+
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Getter
+    @Setter
+    public static class BaselineIssue {
+        private String field;
+        private String status;
+        private String reason;
+    }
 
     @NoArgsConstructor
     @AllArgsConstructor

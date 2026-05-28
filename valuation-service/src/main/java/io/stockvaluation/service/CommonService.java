@@ -1,14 +1,12 @@
 package io.stockvaluation.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 
 import io.stockvaluation.config.ValuationAssumptionProperties;
 import io.stockvaluation.constant.RDResult;
 import io.stockvaluation.constant.YearlyCalculation;
 import io.stockvaluation.domain.*;
 import io.stockvaluation.dto.*;
-import io.stockvaluation.dto.valuationoutput.Story;
 import io.stockvaluation.enums.InputDetails;
 import io.stockvaluation.exception.BadRequestException;
 import io.stockvaluation.form.FinancialDataInput;
@@ -19,15 +17,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
-import jakarta.servlet.http.HttpServletRequest;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -56,8 +47,6 @@ public class CommonService {
     private final CountryEquityRepository countryEquityRepository;
 
     private final SectorMappingRepository sectorMappingRepository;
-
-    private final RestTemplate restTemplate;
 
     private final DataProvider dataProvider;
 
@@ -1138,66 +1127,6 @@ public class CommonService {
         return result;
     }
 
-    /**
-     * Extract Authorization header from current HTTP request context
-     */
-    private String getAuthTokenFromRequest() {
-        try {
-            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder
-                    .getRequestAttributes();
-            if (attributes != null) {
-                HttpServletRequest request = attributes.getRequest();
-                String authHeader = request.getHeader("Authorization");
-                if (authHeader != null && !authHeader.isEmpty()) {
-                    return authHeader;
-                }
-            }
-        } catch (Exception e) {
-            log.debug("Could not extract Authorization header from request context: {}", e.getMessage());
-        }
-        return null;
-    }
-
-    private Map<String, Object> story(String url, Object json) {
-        // Try to extract auth token from current request context
-        String authToken = getAuthTokenFromRequest();
-        return story(url, json, authToken);
-    }
-
-    private Map<String, Object> story(String url, Object json, String authToken) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-
-        // Forward Authorization header if provided (required for credit-gated
-        // endpoints)
-        if (authToken != null && !authToken.isEmpty()) {
-            headers.set("Authorization", authToken);
-            log.debug("Forwarding Authorization header to Python backend for story generation");
-        } else {
-            log.warn("No Authorization header found - Python backend may reject request for credit-gated endpoint");
-        }
-
-        try {
-            // Manually serialize with JavaTimeModule to handle LocalDate fields
-            ObjectMapper objectMapper = new ObjectMapper();
-            objectMapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
-            objectMapper.disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-            objectMapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
-
-            String jsonString = objectMapper.writeValueAsString(json);
-            HttpEntity<String> entity = new HttpEntity<>(jsonString, headers);
-
-            return restTemplate.postForObject(url, entity, Map.class);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            log.error("Failed to serialize request body for story endpoint: {}", e.getMessage());
-            throw new RuntimeException("Failed to serialize request", e);
-        } catch (org.springframework.web.client.HttpClientErrorException e) {
-            log.error("Python backend returned error for story endpoint: {} - {}", e.getStatusCode(),
-                    e.getResponseBodyAsString());
-            throw e;
-        }
-    }
-
     @Transactional
     public void saveInputData(List<InputRequestDTO> inputRequestDTOList) {
         List<Input> inputs = inputRequestDTOList.stream().map(inputDTO -> {
@@ -1279,18 +1208,6 @@ public class CommonService {
         }
         return result;
     }
-
-    /**
-     * Calculate causal scenarios with dependency chain reasoning and heat map data.
-     * 
-     * Implements simple causal chains:
-     * Revenue → Margin → ROIC → Value
-     * 
-     * @param ticker                 Stock ticker symbol
-     * @param request                Causal scenario request with variances
-     * @param valuationOutputService Service for calculating valuations
-     * @return CausalScenarioResponse with 3 scenarios and heat map
-     */
 
     /**
      * Fetch dividend data from Yahoo Finance API for DDM calculations.

@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "valuation-agent"
+version = "0.1.0"
+description = "Agent-native StockValuation.io skills, MCP server, and local service CLI."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+sv = "valuation_agent.cli:main"
+
+[tool.setuptools]
+packages = ["valuation_agent"]
+package-dir = { valuation_agent = "valuation-agent" }
+
+[tool.setuptools.package-data]
+valuation_agent = ["skills/stockvaluation-io/**"]
+
+[tool.pytest.ini_options]
+testpaths = ["valuation-agent/tests"]
+pythonpath = ["valuation-agent"]

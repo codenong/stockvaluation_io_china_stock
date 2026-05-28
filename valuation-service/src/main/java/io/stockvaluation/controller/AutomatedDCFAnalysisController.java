@@ -24,8 +24,7 @@ public class AutomatedDCFAnalysisController {
         try {
             ValuationOutputDTO valuationOutputDTO = valuationWorkflowService.getValuation(
                     ticker,
-                    financialDataInputOverrides,
-                    false
+                    financialDataInputOverrides
             );
             return ResponseGenerator.generateSuccessResponse(valuationOutputDTO);
         } catch (InsufficientFinancialDataException e) {
@@ -33,24 +32,6 @@ public class AutomatedDCFAnalysisController {
             return ResponseGenerator.generateUnprocessableEntityResponse(e.getMessage());
         } catch (RuntimeException e) {
             log.error("Error in POST /{}/valuation", ticker, e);
-            return ResponseGenerator.generateExceptionResponseDTO(e);
-        }
-    }
-
-    @GetMapping("/{ticker}/valuation")
-    public ResponseEntity<?> getValuationOutputWithStory(@PathVariable String ticker) {
-        try {
-            ValuationOutputDTO valuationOutputDTO = valuationWorkflowService.getValuation(
-                    ticker,
-                    null,
-                    true
-            );
-            return ResponseGenerator.generateSuccessResponse(valuationOutputDTO);
-        } catch (InsufficientFinancialDataException e) {
-            log.warn("Unprocessable valuation input in GET /{}/valuation: {}", ticker, e.getMessage());
-            return ResponseGenerator.generateUnprocessableEntityResponse(e.getMessage());
-        } catch (RuntimeException e) {
-            log.error("Error in GET /{}/valuation", ticker, e);
             return ResponseGenerator.generateExceptionResponseDTO(e);
         }
     }
