@@ -6,6 +6,12 @@ StockValuation.io grew out of my own practice with Damodaran-style valuation. I 
 
 > Educational use only. This is not financial advice.
 
+## Demo video
+
+[![GOOGL Codex Valuation Demo](docs/media/googl-codex-valuation-demo-preview.gif)](docs/media/googl-codex-valuation-demo.mp4)
+
+Real Codex CLI run valuing GOOGL with the local StockValuation.io workflow and guided default answers.
+
 In practice, this repo installs a `stockvaluation.io` skill for Codex and Claude, exposes local MCP tools, and runs a local valuation service stack. The agent researches, explains, critiques, and asks questions. The local tools calculate. The user owns the final judgment.
 
 ## Why I built this
@@ -182,12 +188,6 @@ Value NVDA using stockvaluation.io.
 ```
 
 For the default researched flow, expect the agent to research first, build a mechanical baseline, build an evidence-constrained case, then stop and ask guided valuation questions. The final report comes after those answers unless you explicitly ask for a quick or no-questions run.
-
-## Demo video
-
-Watch a real Codex CLI run valuing GOOGL with the local StockValuation.io workflow and guided default answers:
-
-[GOOGL Codex Valuation Demo](docs/assets/googl-codex-valuation-demo.mp4)
 
 ## MCP tools
 
