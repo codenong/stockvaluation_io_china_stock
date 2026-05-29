@@ -5,6 +5,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import io.stockvaluation.provider.SourceProvenance;
+
 import java.util.Map;
 
 @AllArgsConstructor
@@ -25,7 +27,7 @@ public class FinancialDataDTO {
                 + ", stockPrice=" + stockPrice + ", lowestStockPrice=" + lowestStockPrice + ", highestStockPrice="
                 + highestStockPrice + ", previousDayStockPrice=" + previousDayStockPrice + ", effectiveTaxRate="
                 + effectiveTaxRate + ", marginalTaxRate=" + marginalTaxRate + ", researchAndDevelopmentMap="
-                + researchAndDevelopmentMap + "]";
+                + researchAndDevelopmentMap + ", sourceProvenance=" + sourceProvenance + "]";
     }
     private Double revenueTTM;
 
@@ -74,5 +76,7 @@ public class FinancialDataDTO {
     private Double marginalTaxRate;
 
     private Map<String, Double> researchAndDevelopmentMap;
+
+    private SourceProvenance sourceProvenance;
 
 }

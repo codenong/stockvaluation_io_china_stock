@@ -5,7 +5,17 @@ public record BalanceSheetSnapshot(
         Double totalDebt,
         Double cashAndShortTermInvestments,
         Double sharesOutstanding,
-        Double minorityInterest) {
+        Double minorityInterest,
+        SourceProvenance sourceProvenance) {
+
+    public BalanceSheetSnapshot(
+            Double bookValueEquity,
+            Double totalDebt,
+            Double cashAndShortTermInvestments,
+            Double sharesOutstanding,
+            Double minorityInterest) {
+        this(bookValueEquity, totalDebt, cashAndShortTermInvestments, sharesOutstanding, minorityInterest, null);
+    }
 
     public static BalanceSheetSnapshot empty() {
         return new BalanceSheetSnapshot(null, null, null, null, null);

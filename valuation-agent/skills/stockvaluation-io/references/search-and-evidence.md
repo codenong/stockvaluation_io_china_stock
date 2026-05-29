@@ -50,6 +50,23 @@ Use company-domain-first search before broad web search:
 
 ## Evidence Packet Fields
 
+Before assumption judgment or autonomous `stockvaluation.recalculate`, keep the researched artifact in this compact EvidencePacket shape:
+
+```json
+{
+  "ticker": "string",
+  "company": "string",
+  "run_mode": "full_researched",
+  "source_families": [],
+  "sources_checked": [],
+  "evidence_items": [],
+  "conflicts_or_uncertainties": [],
+  "data_gaps": []
+}
+```
+
+The agent-native validator returns `ok`, `status`, `sanitized_packet`, `governed_evidence`, `report_only_evidence`, `rejected_evidence`, `source_family_status`, `validation_warnings`, and `unsupported_blockers`. Use that result as the boundary between research and model-change judgment.
+
 For each item used in assumption judgment, preserve:
 
 - `claim`: concise factual claim.

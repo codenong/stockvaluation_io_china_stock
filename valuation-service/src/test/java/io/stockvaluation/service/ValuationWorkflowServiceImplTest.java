@@ -25,6 +25,7 @@ import io.stockvaluation.enums.GrowthPattern;
 import io.stockvaluation.enums.ModelType;
 import io.stockvaluation.form.FinancialDataInput;
 import io.stockvaluation.form.SectorParameterOverride;
+import io.stockvaluation.provider.SourceProvenance;
 import io.stockvaluation.utils.SegmentParameterContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -237,6 +238,52 @@ class ValuationWorkflowServiceImplTest {
                                 .anyMatch(warning -> warning.contains("researched baseline mode")));
                 assertTrue(result.getAssumptionTransparency().getUnsupportedBaselineDrivers().stream()
                                 .anyMatch(driver -> "segments".equals(driver.getField())));
+        }
+
+        @Test
+        void getValuation_usResearchedModeAddsMissingPrimarySourceProvenanceWarning() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                companyData.getFinancialDataDTO()
+                                .setSourceProvenance(SourceProvenance.yahooNormalized("yfinance-http", "2025-06-30"));
+                ValuationTemplate template = fcffTemplate();
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setResearchedBaselineMode(true);
+                overrides.setRequestPolicyMode("autonomous_researched");
+                stubHappyPath(companyData, template, valuationOutput(100.0, 100.0), valuationOutput(100.0, 100.0));
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides);
+
+                assertNotNull(result.getAssumptionTransparency().getSourceProvenance());
+                assertEquals("yahoo_normalized",
+                                result.getAssumptionTransparency().getSourceProvenance().getSourceClass());
+                assertEquals("primary_source_missing_fallback",
+                                result.getAssumptionTransparency().getSourceProvenance().getSourcePolicyStatus());
+                assertTrue(result.getAssumptionTransparency().getSourceProvenance().getWarnings().stream()
+                                .anyMatch(warning -> warning.contains("US researched valuation")));
+        }
+
+        @Test
+        void getValuation_nonUsResearchedModeAllowsYahooNormalizedWithCrossCheckStatus() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                companyData.getBasicInfoDataDTO().setCountryOfIncorporation("Germany");
+                companyData.getFinancialDataDTO()
+                                .setSourceProvenance(SourceProvenance.yahooNormalized("yfinance-http", "2025-12-31"));
+                ValuationTemplate template = fcffTemplate();
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setResearchedBaselineMode(true);
+                overrides.setRequestPolicyMode("autonomous_researched");
+                stubHappyPath(companyData, template, valuationOutput(100.0, 100.0), valuationOutput(100.0, 100.0));
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides);
+
+                assertEquals("yahoo_normalized",
+                                result.getAssumptionTransparency().getSourceProvenance().getSourceClass());
+                assertEquals("yahoo_normalized_with_cross_check_status",
+                                result.getAssumptionTransparency().getSourceProvenance().getSourcePolicyStatus());
+                assertEquals("not_checked_by_service",
+                                result.getAssumptionTransparency().getSourceProvenance().getCrossCheckStatus());
         }
 
         @Test

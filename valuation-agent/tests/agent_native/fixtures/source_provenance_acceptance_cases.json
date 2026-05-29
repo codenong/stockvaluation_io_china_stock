@@ -1,0 +1,75 @@
+{
+  "purpose": "phase_3_source_provenance_acceptance_not_valuation_baselines",
+  "cases": [
+    {
+      "name": "us_missing_primary_fallback",
+      "packet": {
+        "ticker": "MSFT",
+        "company": "Microsoft Corporation",
+        "country": "United States",
+        "run_mode": "full_researched",
+        "as_of_date": "2026-05-29",
+        "core_financials": {
+          "source_class": "yahoo_normalized",
+          "provider": "Yahoo Finance via local yfinance service",
+          "source_date": "2025-06-30",
+          "period_end": "2025-06-30",
+          "retrieval_status": "retrieved",
+          "primary_source_expected": true,
+          "primary_source_available": false,
+          "cross_check_status": "not_checked"
+        }
+      }
+    },
+    {
+      "name": "non_us_yahoo_with_cross_check_status",
+      "packet": {
+        "ticker": "SAP.DE",
+        "company": "SAP SE",
+        "country": "Germany",
+        "run_mode": "full_researched",
+        "as_of_date": "2026-05-29",
+        "core_financials": {
+          "source_class": "yahoo_normalized",
+          "provider": "Yahoo Finance via local yfinance service",
+          "source_date": "2025-12-31",
+          "period_end": "2025-12-31",
+          "retrieval_status": "retrieved",
+          "primary_source_expected": false,
+          "primary_source_available": false,
+          "cross_check_status": "company_report_check_pending"
+        }
+      }
+    },
+    {
+      "name": "material_reconciliation_mismatch",
+      "packet": {
+        "ticker": "SAP.DE",
+        "company": "SAP SE",
+        "country": "Germany",
+        "run_mode": "full_researched",
+        "as_of_date": "2026-05-29",
+        "core_financials": {
+          "source_class": "yahoo_normalized",
+          "provider": "Yahoo Finance via local yfinance service",
+          "source_date": "2025-12-31",
+          "period_end": "2025-12-31",
+          "retrieval_status": "retrieved",
+          "primary_source_expected": false,
+          "primary_source_available": false,
+          "cross_check_status": "company_report_cross_checked"
+        },
+        "material_cross_checks": [
+          {
+            "field": "revenue",
+            "normalized_value": 100.0,
+            "filing_value": 112.0,
+            "source_class": "company_ir",
+            "source_date": "2025-12-31",
+            "threshold_pct": 0.05
+          }
+        ]
+      }
+    }
+  ]
+}

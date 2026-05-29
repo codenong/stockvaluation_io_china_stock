@@ -10,6 +10,7 @@ import io.stockvaluation.dto.BasicInfoDataDTO;
 import io.stockvaluation.dto.CompanyDataDTO;
 import io.stockvaluation.dto.FinancialDataDTO;
 import io.stockvaluation.provider.DataProvider;
+import io.stockvaluation.provider.SourceProvenance;
 import io.stockvaluation.repository.CostOfCapitalRepository;
 import io.stockvaluation.repository.CountryEquityRepository;
 import io.stockvaluation.repository.IndustryAveragesGlobalRepository;
@@ -157,7 +158,12 @@ class CompanyDataAssemblyServiceTest {
         List<Double> historicalMargins = List.of(0.28, 0.27, 0.26);
 
         CompanyFinancialIngestionService.FinancialIngestionData ingestionData = new CompanyFinancialIngestionService.FinancialIngestionData(
-                financialDataDTO, historicalRevenue, historicalMargins, 15000.0, 100000.0);
+                financialDataDTO,
+                historicalRevenue,
+                historicalMargins,
+                15000.0,
+                100000.0,
+                SourceProvenance.yahooNormalized("yfinance-http", "2025-06-30"));
         when(companyFinancialIngestionService.ingest(ticker, basicInfoMap)).thenReturn(ingestionData);
 
         when(countryEquityRepository.findCorporateTaxRateByCountry("United States")).thenReturn(Optional.of(21.0));
@@ -204,6 +210,8 @@ class CompanyDataAssemblyServiceTest {
         assertEquals(0.05, result.getCompanyDriveDataDTO().getRevenueNextYear());
         assertEquals(2.0, result.getCompanyDriveDataDTO().getSalesToCapitalYears1To5(), 0.01);
         assertEquals(1.5, result.getCompanyDriveDataDTO().getSalesToCapitalYears6To10(), 0.01);
+        assertEquals("yahoo_normalized", result.getFinancialDataDTO().getSourceProvenance().getSourceClass());
+        assertEquals("2025-06-30", result.getFinancialDataDTO().getSourceProvenance().getSourceDate());
     }
 
     @Test

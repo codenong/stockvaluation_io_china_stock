@@ -5,6 +5,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import io.stockvaluation.provider.SourceProvenance;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -36,6 +38,7 @@ public class AssumptionTransparencyDTO {
     private String growthPattern;
     private Integer projectionYears;
     private String templateSelectionReason;
+    private SourceProvenance sourceProvenance;
     private DiscountRate discountRate;
     private OperatingAssumptions operatingAssumptions;
     private List<String> notes = new ArrayList<>();

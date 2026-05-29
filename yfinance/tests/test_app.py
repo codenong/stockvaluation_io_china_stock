@@ -49,6 +49,19 @@ def test_api_endpoint_decodes_json_string_service_result(monkeypatch):
     assert response.get_json() == {"ticker": "MSFT", "freq": "yearly", "rows": []}
 
 
+def test_default_api_response_shape_remains_unwrapped_for_existing_callers(monkeypatch):
+    monkeypatch.setattr(app_module, "YFinanceService", FakeYFinanceService)
+    client = app_module.YFinanceApp().app.test_client()
+
+    response = client.get("/api-s/info?ticker=SAP.DE")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload == {"ticker": "SAP.DE", "freq": "yearly", "source": "fake"}
+    assert "data" not in payload
+    assert "sourceProvenance" not in payload
+
+
 def test_api_endpoint_rejects_missing_ticker(monkeypatch):
     monkeypatch.setattr(app_module, "YFinanceService", FakeYFinanceService)
     client = app_module.YFinanceApp().app.test_client()

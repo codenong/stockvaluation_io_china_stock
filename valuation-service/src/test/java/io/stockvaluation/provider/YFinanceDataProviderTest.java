@@ -74,6 +74,24 @@ class YFinanceDataProviderTest {
     }
 
     @Test
+    void getIncomeStatementSnapshotsCarryYahooNormalizedProvenance() {
+        when(properties.getBaseUrl()).thenReturn("http://localhost:5000");
+        when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), eq(null), any(ParameterizedTypeReference.class)))
+                .thenReturn(ResponseEntity.ok(Map.of(
+                        "1704067200000", Map.of("totalRevenue", 100.0))));
+
+        IncomeStatementSnapshot snapshot = provider.getIncomeStatementSnapshots("AAPL", "yearly")
+                .get("1704067200000");
+
+        assertEquals(100.0, snapshot.totalRevenue());
+        assertEquals("yahoo_normalized", snapshot.sourceProvenance().getSourceClass());
+        assertEquals("yfinance-http", snapshot.sourceProvenance().getProvider());
+        assertEquals("2024-01-01", snapshot.sourceProvenance().getPeriodEnd());
+        assertEquals("retrieved", snapshot.sourceProvenance().getRetrievalStatus());
+        assertEquals("not_checked_by_service", snapshot.sourceProvenance().getCrossCheckStatus());
+    }
+
+    @Test
     void getDividendHistoryFlattensNestedHistoryMap() {
         when(properties.getBaseUrl()).thenReturn("http://localhost:5000");
         when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), eq(null), any(ParameterizedTypeReference.class)))

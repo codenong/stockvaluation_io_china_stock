@@ -11,6 +11,7 @@ import io.stockvaluation.dto.valuationoutput.SimulationResultsDTO;
 import io.stockvaluation.enums.CashflowType;
 import io.stockvaluation.enums.GrowthPattern;
 import io.stockvaluation.form.FinancialDataInput;
+import io.stockvaluation.provider.SourceProvenance;
 import io.stockvaluation.utils.MarketRegionResolver;
 import io.stockvaluation.utils.SegmentParameterContext;
 
@@ -311,6 +312,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 dto.setRequestPolicyMode(resolveRequestPolicyMode(financialDataInput));
                 dto.setProjectionYears(template != null ? template.getProjectionYears() : null);
                 dto.setTemplateSelectionReason(templateSelectionReason);
+                dto.setSourceProvenance(buildSourceProvenance(financialDataInput));
                 dto.setSegmentCount(financialDataInput.getSegments() != null
                                 && financialDataInput.getSegments().getSegments() != null
                                                 ? financialDataInput.getSegments().getSegments().size()
@@ -464,6 +466,47 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 weighted.put("salesToCapitalYears6To10", round2(normalizeMultiple(salesToCapitalYears6To10)));
                 weighted.put("initialCostOfCapital", round2(normalizePercent(initialCostOfCapital)));
                 dto.setWeightedBaselineAssumptions(weighted);
+        }
+
+        private SourceProvenance buildSourceProvenance(FinancialDataInput financialDataInput) {
+                if (financialDataInput == null
+                                || financialDataInput.getFinancialDataDTO() == null
+                                || financialDataInput.getFinancialDataDTO().getSourceProvenance() == null) {
+                        return null;
+                }
+                SourceProvenance source = financialDataInput.getFinancialDataDTO().getSourceProvenance();
+                SourceProvenance provenance = new SourceProvenance(
+                                source.getSourceClass(),
+                                source.getProvider(),
+                                source.getSourceDate(),
+                                source.getPeriodEnd(),
+                                source.getRetrievalStatus(),
+                                source.getCrossCheckStatus(),
+                                source.getSourcePolicyStatus(),
+                                source.getWarnings() == null ? new ArrayList<>() : new ArrayList<>(source.getWarnings()));
+                List<String> warnings = provenance.getWarnings() == null
+                                ? new ArrayList<>()
+                                : new ArrayList<>(provenance.getWarnings());
+
+                boolean yahooNormalized = SourceProvenance.YAHOO_NORMALIZED.equals(provenance.getSourceClass());
+                boolean researchedMode = Boolean.TRUE.equals(financialDataInput.getResearchedBaselineMode())
+                                || POLICY_AUTONOMOUS_RESEARCHED.equals(resolveRequestPolicyMode(financialDataInput));
+                String country = Optional.ofNullable(financialDataInput.getBasicInfoDataDTO())
+                                .map(BasicInfoDataDTO::getCountryOfIncorporation)
+                                .orElse("");
+                boolean usCompany = "United States".equalsIgnoreCase(country);
+
+                if (yahooNormalized && researchedMode && usCompany) {
+                        provenance.setSourcePolicyStatus("primary_source_missing_fallback");
+                        warnings.add("US researched valuation is using Yahoo-normalized financials because primary filing data is missing or unavailable.");
+                } else if (yahooNormalized && researchedMode) {
+                        provenance.setSourcePolicyStatus("yahoo_normalized_with_cross_check_status");
+                        warnings.add("Non-US researched valuation may use Yahoo-normalized financials when company-report cross-check status is explicit.");
+                } else if (provenance.getSourcePolicyStatus() == null || provenance.getSourcePolicyStatus().isBlank()) {
+                        provenance.setSourcePolicyStatus("source_provenance_returned");
+                }
+                provenance.setWarnings(dedupeStrings(warnings));
+                return provenance;
         }
 
         private void applyBaselineUseTransparency(

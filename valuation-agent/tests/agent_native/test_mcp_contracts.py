@@ -82,6 +82,48 @@ class FakeClient:
         return self.payload
 
 
+def _valid_evidence_packet(**item_overrides):
+    evidence_item = {
+        "driver": "revenue_growth",
+        "source_title": "FY annual report",
+        "source_url": "https://example.com/msft-annual-report",
+        "source_date": "2026-06-30",
+        "evidence_summary": "Commercial cloud revenue increased 21% year over year.",
+        "direction": "supports higher assumption",
+        "confidence": "high",
+        "assumption_implication": "Supports a modestly higher revenue CAGR than the mechanical baseline.",
+        "allowed_to_affect_autonomous_recalculation": True,
+        "model_action": "governed assumption change",
+    }
+    evidence_item.update(item_overrides)
+    return {
+        "ticker": "MSFT",
+        "company": "Microsoft Corporation",
+        "run_mode": "full_researched",
+        "source_families": [
+            {
+                "family": "annual_report",
+                "status": "checked",
+                "source_title": "FY annual report",
+                "source_url": "https://example.com/msft-annual-report",
+                "source_date": "2026-06-30",
+            }
+        ],
+        "sources_checked": [
+            {
+                "source_title": "FY annual report",
+                "source_url": "https://example.com/msft-annual-report",
+                "source_date": "2026-06-30",
+                "source_type": "annual_report",
+                "used": True,
+            }
+        ],
+        "evidence_items": [evidence_item],
+        "conflicts_or_uncertainties": [],
+        "data_gaps": [],
+    }
+
+
 def test_mcp_tools_list_has_required_stockvaluation_contracts():
     registry = MCPToolRegistry(FakeClient())
 
@@ -210,6 +252,78 @@ def test_value_ticker_exposes_honest_single_industry_baseline_contract():
     assert baseline["targetOperatingMargin"] == 55.76
     assert baseline["targetOperatingMarginStatus"] == "single_industry_mechanical_fallback"
     assert any("not segment-weighted" in warning for warning in baseline["baselineWarnings"])
+
+
+def test_value_ticker_exposes_compact_source_provenance_metadata():
+    payload = _valuation_payload()
+    payload["assumptionTransparency"]["sourceProvenance"] = {
+        "sourceClass": "yahoo_normalized",
+        "provider": "yfinance-http",
+        "sourceDate": "2025-06-30",
+        "periodEnd": "2025-06-30",
+        "retrievalStatus": "retrieved",
+        "crossCheckStatus": "not_checked_by_service",
+        "sourcePolicyStatus": "primary_source_missing_fallback",
+        "warnings": [
+            "US researched valuation is using Yahoo-normalized financials because primary filing data is missing or unavailable."
+        ],
+    }
+    result = MCPToolRegistry(FakeClient(payload)).call("stockvaluation.value_ticker", {"ticker": "MSFT"})
+
+    provenance = result["structuredContent"]["provenance"]
+    assert provenance == {
+        "sourceClass": "yahoo_normalized",
+        "provider": "yfinance-http",
+        "sourceDate": "2025-06-30",
+        "periodEnd": "2025-06-30",
+        "retrievalStatus": "retrieved",
+        "crossCheckStatus": "not_checked_by_service",
+        "sourcePolicyStatus": "primary_source_missing_fallback",
+        "warnings": [
+            "US researched valuation is using Yahoo-normalized financials because primary filing data is missing or unavailable."
+        ],
+    }
+    visible_text = result["content"][0]["text"]
+    assert "primary_source_missing_fallback" in visible_text
+    assert len(visible_text) < 600
+
+
+def test_recalculate_preserves_compact_source_provenance_metadata():
+    payload = _valuation_payload()
+    payload["assumptionTransparency"]["sourceProvenance"] = {
+        "sourceClass": "yahoo_normalized",
+        "provider": "yfinance-http",
+        "sourceDate": "2025-06-30",
+        "periodEnd": "2025-06-30",
+        "retrievalStatus": "retrieved",
+        "crossCheckStatus": "company_report_checked",
+        "sourcePolicyStatus": "yahoo_normalized_with_cross_check_status",
+        "warnings": ["Company report cross-check status is explicit for Yahoo-normalized data."],
+    }
+
+    result = MCPToolRegistry(FakeClient(payload)).call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "SAP.DE",
+            "overrides": {"revenue_growth": 0.06},
+        },
+    )
+
+    assert result["isError"] is False
+    assert result["structuredContent"]["tool"] == "stockvaluation.recalculate"
+    assert result["structuredContent"]["provenance"] == {
+        "sourceClass": "yahoo_normalized",
+        "provider": "yfinance-http",
+        "sourceDate": "2025-06-30",
+        "periodEnd": "2025-06-30",
+        "retrievalStatus": "retrieved",
+        "crossCheckStatus": "company_report_checked",
+        "sourcePolicyStatus": "yahoo_normalized_with_cross_check_status",
+        "warnings": ["Company report cross-check status is explicit for Yahoo-normalized data."],
+    }
+    visible_text = result["content"][0]["text"]
+    assert "yahoo_normalized_with_cross_check_status" in visible_text
+    assert len(visible_text) < 600
 
 
 def test_invalid_ticker_returns_agent_readable_error_without_service_call():
@@ -417,6 +531,7 @@ def test_recalculate_rejects_scenario_only_fields_in_autonomous_researched_mode(
             "overrides": {
                 "request_policy": {"mode": "autonomous_researched"},
                 "revenue_growth": 0.08,
+                "evidence_packet": _valid_evidence_packet(),
                 "wacc": 0.085,
                 "terminal_growth": 0.03,
                 "tax_rate": 0.21,
@@ -449,6 +564,7 @@ def test_recalculate_maps_researched_baseline_policy_to_service_flag():
             "overrides": {
                 "request_policy": {"mode": "researched_baseline"},
                 "revenue_growth": 0.08,
+                "evidence_packet": _valid_evidence_packet(),
             },
         },
     )
@@ -472,6 +588,7 @@ def test_recalculate_researched_baseline_without_segments_flags_baseline_state()
             "overrides": {
                 "request_policy": {"mode": "researched_baseline"},
                 "revenue_growth": 0.08,
+                "evidence_packet": _valid_evidence_packet(),
             },
         },
     )
@@ -703,6 +820,156 @@ def test_recalculate_preserves_rationale_and_evidence_metadata_without_sending_t
     assert "evidence_used" not in client.calls[0][1]
 
 
+def test_recalculate_preserves_valid_evidence_packet_metadata_without_sending_to_service():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "MSFT",
+            "overrides": {
+                "request_policy": {"mode": "autonomous_researched"},
+                "revenue_growth": 0.09,
+                "evidence_packet": _valid_evidence_packet(),
+            },
+        },
+    )
+
+    assert result["isError"] is False
+    assumptions = result["structuredContent"]["assumptions"]
+    assert assumptions["mapped"]["compoundAnnualGrowth2_5"] == 9.0
+    assert assumptions["metadata"]["evidence_packet"]["status"] == "valid_governed_evidence"
+    assert assumptions["metadata"]["evidence_packet"]["governed_evidence"][0]["driver"] == "revenue_growth"
+    assert "evidence_packet" not in client.calls[0][1]
+
+
+def test_recalculate_blocks_autonomous_changes_without_evidence_packet():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "MSFT",
+            "overrides": {
+                "request_policy": {"mode": "autonomous_researched"},
+                "revenue_growth": 0.09,
+            },
+        },
+    )
+
+    assert result["isError"] is True
+    assumptions = result["structuredContent"]["assumptions"]
+    assert assumptions["unsupported"]["evidence_packet"]["status"] == "missing_evidence_packet_for_requested_changes"
+    assert client.calls == []
+
+
+def test_recalculate_blocks_autonomous_changes_not_supported_by_matching_evidence_driver():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "MSFT",
+            "overrides": {
+                "request_policy": {"mode": "autonomous_researched"},
+                "operating_margin": 0.44,
+                "evidence_packet": _valid_evidence_packet(driver="revenue_growth"),
+            },
+        },
+    )
+
+    assert result["isError"] is True
+    assumptions = result["structuredContent"]["assumptions"]
+    assert assumptions["unsupported"]["evidence_packet"]["status"] == "evidence_driver_mismatch"
+    assert assumptions["unsupported"]["evidence_packet"]["missing_drivers"] == ["operating_margin"]
+    assert client.calls == []
+
+
+def test_recalculate_blocks_unsupported_governed_evidence_packet_before_service_call():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "MSFT",
+            "overrides": {
+                "request_policy": {"mode": "autonomous_researched"},
+                "revenue_growth": 0.09,
+                "evidence_packet": _valid_evidence_packet(
+                    driver="risk_wacc",
+                    evidence_summary="The filing describes regulatory risk.",
+                ),
+            },
+        },
+    )
+
+    assert result["isError"] is True
+    assumptions = result["structuredContent"]["assumptions"]
+    assert assumptions["unsupported"]["evidence_packet"]["status"] == "blocked_by_unsupported_fields"
+    assert assumptions["metadata"]["evidence_packet"]["unsupported_blockers"] == [
+        {
+            "field": "risk_wacc",
+            "status": "unsupported_governed_driver",
+            "reason": "risk_wacc is report-only in autonomous researched evidence validation.",
+        }
+    ]
+    assert client.calls == []
+
+
+def test_recalculate_blocks_autonomous_changes_when_evidence_packet_has_no_governed_evidence():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "MSFT",
+            "overrides": {
+                "request_policy": {"mode": "autonomous_researched"},
+                "revenue_growth": 0.09,
+                "evidence_packet": _valid_evidence_packet(confidence="low"),
+            },
+        },
+    )
+
+    assert result["isError"] is True
+    assumptions = result["structuredContent"]["assumptions"]
+    assert assumptions["unsupported"]["evidence_packet"]["status"] == "no_governed_evidence_for_requested_changes"
+    assert assumptions["metadata"]["evidence_packet"]["status"] == "valid_no_governed_change"
+    assert assumptions["metadata"]["evidence_packet"]["rejected_evidence"][0]["status"] == "low_confidence_governed_change"
+    assert client.calls == []
+
+
+def test_recalculate_allows_no_change_evidence_packet_as_metadata_only():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "MSFT",
+            "overrides": {
+                "request_policy": {"mode": "autonomous_researched"},
+                "evidence_packet": _valid_evidence_packet(confidence="low"),
+            },
+        },
+    )
+
+    assert result["isError"] is False
+    assumptions = result["structuredContent"]["assumptions"]
+    assert assumptions["metadata"]["evidence_packet"]["status"] == "valid_no_governed_change"
+    assert assumptions["mapped"]["researchedBaselineMode"] is True
+    assert "compoundAnnualGrowth2_5" not in assumptions["mapped"]
+    assert client.calls[0][1] == {
+        "researchedBaselineMode": True,
+        "requestPolicyMode": "autonomous_researched",
+    }
+
+
 def test_recalculate_rejects_unsupported_override_fields():
     client = FakeClient()
     registry = MCPToolRegistry(client)
@@ -778,6 +1045,24 @@ def test_report_template_requires_baseline_use_status_before_assumptions():
 
     assert "Baseline use status" in template[snapshot:assumption_summary]
     assert "target operating margin source/status" in template[snapshot:assumption_summary].lower()
+
+
+def test_report_template_requires_source_quality_summary():
+    template = (
+        Path(__file__).parents[2]
+        / "skills"
+        / "stockvaluation-io"
+        / "references"
+        / "report-template.md"
+    ).read_text()
+    lower = template.lower()
+
+    assert "## Source Quality Summary" in template
+    assert "source class" in lower
+    assert "source policy status" in lower
+    assert "cross-check status" in lower
+    assert "primary_source_missing_fallback" in lower
+    assert "yahoo_normalized_with_cross_check_status" in lower
 
 
 def test_missing_service_and_non_json_failures_have_stable_shapes():

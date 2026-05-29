@@ -63,6 +63,7 @@ public class CompanyDataAssemblyService {
                 companyFinancialIngestionService.ingest(ticker, basicInfoMap);
 
         FinancialDataDTO financialDataDTO = ingestionData.financialDataDTO();
+        financialDataDTO.setSourceProvenance(ingestionData.sourceProvenance());
         List<Double> historicalRevenue = ingestionData.historicalRevenue();
         List<Double> historicalMargins = ingestionData.historicalMargins();
         Double taxProvision = ingestionData.taxProvision();

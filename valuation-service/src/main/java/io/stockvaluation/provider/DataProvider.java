@@ -6,7 +6,9 @@ import io.stockvaluation.dto.FinancialDataDTO;
 
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 
 /**
  * DataProvider interface — the abstraction boundary between the Java DCF
@@ -90,7 +92,7 @@ public interface DataProvider {
      * Get provider-neutral income statement snapshots keyed by epoch milliseconds.
      */
     default Map<String, IncomeStatementSnapshot> getIncomeStatementSnapshots(String ticker, String freq) {
-        return mapSnapshots(getIncomeStatement(ticker, freq), DataProvider::toIncomeStatementSnapshot);
+        return mapSnapshots(getIncomeStatement(ticker, freq), getProviderName(), DataProvider::toIncomeStatementSnapshot);
     }
 
     /**
@@ -124,7 +126,7 @@ public interface DataProvider {
      * Get provider-neutral balance sheet snapshots keyed by epoch milliseconds.
      */
     default Map<String, BalanceSheetSnapshot> getBalanceSheetSnapshots(String ticker, String freq) {
-        return mapSnapshots(getBalanceSheet(ticker, freq), DataProvider::toBalanceSheetSnapshot);
+        return mapSnapshots(getBalanceSheet(ticker, freq), getProviderName(), DataProvider::toBalanceSheetSnapshot);
     }
 
     /**
@@ -185,31 +187,34 @@ public interface DataProvider {
      * Implementations can override if their payload schema differs.
      */
     default Double extractBookValueEquity(Map<String, Object> balanceSheetData) {
-        return toBalanceSheetSnapshot(balanceSheetData).bookValueEquity();
+        return toBalanceSheetSnapshot(null, balanceSheetData, getProviderName()).bookValueEquity();
     }
 
     /**
      * Provider-agnostic extraction for total debt.
      */
     default Double extractTotalDebt(Map<String, Object> balanceSheetData) {
-        return toBalanceSheetSnapshot(balanceSheetData).totalDebt();
+        return toBalanceSheetSnapshot(null, balanceSheetData, getProviderName()).totalDebt();
     }
 
     /**
      * Provider-agnostic extraction for cash + short-term investments.
      */
     default Double extractCashAndShortTermInvestments(Map<String, Object> balanceSheetData) {
-        return toBalanceSheetSnapshot(balanceSheetData).cashAndShortTermInvestments();
+        return toBalanceSheetSnapshot(null, balanceSheetData, getProviderName()).cashAndShortTermInvestments();
     }
 
     /**
      * Provider-agnostic extraction for shares outstanding.
      */
     default Double extractSharesOutstanding(Map<String, Object> balanceSheetData) {
-        return toBalanceSheetSnapshot(balanceSheetData).sharesOutstanding();
+        return toBalanceSheetSnapshot(null, balanceSheetData, getProviderName()).sharesOutstanding();
     }
 
-    private static IncomeStatementSnapshot toIncomeStatementSnapshot(Map<String, Object> payload) {
+    private static IncomeStatementSnapshot toIncomeStatementSnapshot(
+            String periodKey,
+            Map<String, Object> payload,
+            String providerName) {
         return new IncomeStatementSnapshot(
                 firstNumeric(payload, List.of(
                         "totalRevenue",
@@ -235,10 +240,14 @@ public interface DataProvider {
                 firstNumeric(payload, List.of(
                         "researchAndDevelopment",
                         "ResearchAndDevelopment",
-                        "ResearchAndDevelopmentExpense")));
+                        "ResearchAndDevelopmentExpense")),
+                SourceProvenance.yahooNormalized(providerName, periodEndFromEpochMillis(periodKey)));
     }
 
-    private static BalanceSheetSnapshot toBalanceSheetSnapshot(Map<String, Object> payload) {
+    private static BalanceSheetSnapshot toBalanceSheetSnapshot(
+            String periodKey,
+            Map<String, Object> payload,
+            String providerName) {
         return new BalanceSheetSnapshot(
                 firstNumeric(payload, List.of(
                         "bookValueEquity",
@@ -260,20 +269,38 @@ public interface DataProvider {
                 firstNumeric(payload, List.of(
                         "minorityInterest",
                         "MinorityInterest",
-                        "MinorityInterests")));
+                        "MinorityInterests")),
+                SourceProvenance.yahooNormalized(providerName, periodEndFromEpochMillis(periodKey)));
     }
 
     private static <T> Map<String, T> mapSnapshots(
             Map<String, Map<String, Object>> payload,
-            Function<Map<String, Object>, T> mapper) {
+            String providerName,
+            SnapshotMapper<T> mapper) {
         Map<String, T> snapshots = new java.util.HashMap<>();
         if (payload == null || payload.isEmpty()) {
             return snapshots;
         }
         for (Map.Entry<String, Map<String, Object>> entry : payload.entrySet()) {
-            snapshots.put(entry.getKey(), mapper.apply(entry.getValue()));
+            snapshots.put(entry.getKey(), mapper.apply(entry.getKey(), entry.getValue(), providerName));
         }
         return snapshots;
+    }
+
+    private static String periodEndFromEpochMillis(String timestampMillis) {
+        try {
+            long timestamp = Long.parseLong(timestampMillis);
+            LocalDate date = Instant.ofEpochMilli(timestamp)
+                    .atZone(ZoneOffset.UTC)
+                    .toLocalDate();
+            return date.toString();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    interface SnapshotMapper<T> {
+        T apply(String periodKey, Map<String, Object> payload, String providerName);
     }
 
     private static Double firstNumeric(Map<String, Object> payload, List<String> keys) {

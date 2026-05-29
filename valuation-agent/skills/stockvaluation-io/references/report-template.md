@@ -35,6 +35,26 @@ Lead with the scenario the user actually selected. Include compact values only w
 
 Separate market price, model intrinsic value, assumptions, and evidence. Describe the gap as a model result, not as a recommendation. The mechanical baseline value is omitted from the default snapshot unless the user asks for audit/debug detail.
 
+## Source Quality Summary
+
+Use `structuredContent.provenance` and `valuation.assumptionTransparency.sourceProvenance` when returned. Keep this section compact and visible in the default report.
+
+| Field | Value |
+| --- | --- |
+| Core financial source class | `primary_filing`, `yahoo_normalized`, `company_ir`, or `agent_researched` |
+| Provider |  |
+| Source date / period end |  |
+| Retrieval status |  |
+| Source policy status | `valid_source_provenance`, `primary_source_missing_fallback`, `yahoo_normalized_with_cross_check_status`, `stale_source_date`, or `missing_source_date` |
+| Cross-check status | `company_report_cross_checked`, `company_report_check_pending`, `not_checked_by_service`, `not_applicable`, or other returned status |
+| Material warnings |  |
+
+For US researched valuations, prefer SEC/XBRL, company facts, or filing-derived primary financial data when returned. If the output shows `primary_source_missing_fallback`, say the run used Yahoo-normalized financials as a classified fallback and do not imply the core financials are primary-source backed.
+
+For non-US researched valuations, Yahoo-normalized financials may be the main normalized source when the report labels the source class and gives the company-report or filing cross-check status. If cross-checks are pending, say so plainly and treat material accounting or segment claims as limitations until checked.
+
+If Yahoo-normalized data and filing/company-report data differ materially, include the returned data-quality warning and treat it as a limitation, not as an automatic assumption override.
+
 ## Central Narrative Tension
 
 Write a short prose setup before the driver sections. If `marketImpliedExpectations` or `pricedInExpectations` are returned, use them as the central tension:

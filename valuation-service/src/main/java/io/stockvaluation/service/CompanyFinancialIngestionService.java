@@ -4,6 +4,7 @@ import io.stockvaluation.dto.FinancialDataDTO;
 import io.stockvaluation.provider.BalanceSheetSnapshot;
 import io.stockvaluation.provider.DataProvider;
 import io.stockvaluation.provider.IncomeStatementSnapshot;
+import io.stockvaluation.provider.SourceProvenance;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -138,7 +139,12 @@ public class CompanyFinancialIngestionService {
                 historicalRevenue,
                 historicalMargins,
                 taxProvision,
-                preTaxIncome);
+                preTaxIncome,
+                selectLatestProvenance(
+                        quarterlyIncomeSnapshots,
+                        yearlyIncomeSnapshots,
+                        quarterlyBalanceSnapshots,
+                        yearlyBalanceSnapshots));
     }
 
     private static int[] targetYears(int... offsets) {
@@ -243,11 +249,69 @@ public class CompanyFinancialIngestionService {
         return null;
     }
 
+    private static SourceProvenance selectLatestProvenance(
+            Map<String, IncomeStatementSnapshot> quarterlyIncomeSnapshots,
+            Map<String, IncomeStatementSnapshot> yearlyIncomeSnapshots,
+            Map<String, BalanceSheetSnapshot> quarterlyBalanceSnapshots,
+            Map<String, BalanceSheetSnapshot> yearlyBalanceSnapshots) {
+        SourceProvenance latest = latestIncomeProvenance(quarterlyIncomeSnapshots);
+        if (latest != null) {
+            return latest;
+        }
+        latest = latestBalanceProvenance(quarterlyBalanceSnapshots);
+        if (latest != null) {
+            return latest;
+        }
+        latest = latestIncomeProvenance(yearlyIncomeSnapshots);
+        if (latest != null) {
+            return latest;
+        }
+        return latestBalanceProvenance(yearlyBalanceSnapshots);
+    }
+
+    private static SourceProvenance latestIncomeProvenance(Map<String, IncomeStatementSnapshot> snapshots) {
+        if (snapshots == null || snapshots.isEmpty()) {
+            return null;
+        }
+        return snapshots.entrySet().stream()
+                .sorted(Map.Entry.<String, IncomeStatementSnapshot>comparingByKey().reversed())
+                .map(Map.Entry::getValue)
+                .filter(Objects::nonNull)
+                .map(IncomeStatementSnapshot::sourceProvenance)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static SourceProvenance latestBalanceProvenance(Map<String, BalanceSheetSnapshot> snapshots) {
+        if (snapshots == null || snapshots.isEmpty()) {
+            return null;
+        }
+        return snapshots.entrySet().stream()
+                .sorted(Map.Entry.<String, BalanceSheetSnapshot>comparingByKey().reversed())
+                .map(Map.Entry::getValue)
+                .filter(Objects::nonNull)
+                .map(BalanceSheetSnapshot::sourceProvenance)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+    }
+
     public record FinancialIngestionData(
             FinancialDataDTO financialDataDTO,
             List<Double> historicalRevenue,
             List<Double> historicalMargins,
             Double taxProvision,
-            Double preTaxIncome) {
+            Double preTaxIncome,
+            SourceProvenance sourceProvenance) {
+
+        public FinancialIngestionData(
+                FinancialDataDTO financialDataDTO,
+                List<Double> historicalRevenue,
+                List<Double> historicalMargins,
+                Double taxProvision,
+                Double preTaxIncome) {
+            this(financialDataDTO, historicalRevenue, historicalMargins, taxProvision, preTaxIncome, null);
+        }
     }
 }

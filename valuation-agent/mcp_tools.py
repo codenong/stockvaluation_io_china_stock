@@ -8,6 +8,7 @@ import re
 from typing import Any, Callable
 
 from . import __version__
+from .evidence_packet import validate_evidence_packet
 from .security import sanitize_for_agent
 from .segment_discovery import parse_revenue_weight, sanitize_segment_package
 from .service_client import (
@@ -53,7 +54,7 @@ REQUEST_POLICY_MODES = {
     "researched_baseline",
 }
 
-RECALCULATE_METADATA_FIELDS = {"rationale", "evidence_used", "request_policy", "user_judgment"}
+RECALCULATE_METADATA_FIELDS = {"rationale", "evidence_used", "evidence_packet", "request_policy", "user_judgment"}
 AUTONOMOUS_RESEARCHED_FIELDS = {"revenue_growth", "operating_margin", "sales_to_capital", "segments", "sector_overrides"}
 USER_REFINED_SCENARIO_FIELDS = {
     "revenue_growth",
@@ -190,7 +191,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                     **ticker_property,
                     "overrides": {
                         "type": "object",
-                        "description": "Supported keys: revenue_growth, operating_margin_next_year, operating_margin/target_operating_margin, margin_convergence_year, sales_to_capital, sales_to_capital_years_1_to_5, sales_to_capital_years_6_to_10, segments, sector_overrides, wacc, terminal_growth, tax_rate, growth_pattern_override, request_policy, rationale, evidence_used, user_judgment.",
+                        "description": "Supported keys: revenue_growth, operating_margin_next_year, operating_margin/target_operating_margin, margin_convergence_year, sales_to_capital, sales_to_capital_years_1_to_5, sales_to_capital_years_6_to_10, segments, sector_overrides, wacc, terminal_growth, tax_rate, growth_pattern_override, request_policy, rationale, evidence_used, evidence_packet, user_judgment.",
                         "additionalProperties": True,
                     },
                 },
@@ -426,12 +427,20 @@ def map_recalculate_overrides(requested: dict[str, Any]) -> tuple[dict[str, Any]
     mapped: dict[str, Any] = {}
     unsupported: dict[str, Any] = {}
     metadata: dict[str, Any] = {}
+    evidence_validation: dict[str, Any] | None = None
     request_policy_mode, request_policy_error = normalize_request_policy_mode(requested.get("request_policy"))
     if request_policy_error is not None:
         unsupported["request_policy"] = request_policy_error
     autonomous_researched = request_policy_mode == "autonomous_researched"
     user_refined_scenario = request_policy_mode == "user_refined_scenario"
     for key, value in requested.items():
+        if key == "evidence_packet":
+            validation = validate_evidence_packet(value)
+            evidence_validation = validation
+            metadata[key] = evidence_packet_metadata(validation)
+            if not validation["ok"]:
+                unsupported[key] = evidence_packet_unsupported(validation)
+            continue
         if key in RECALCULATE_METADATA_FIELDS:
             metadata[key] = sanitize_for_agent(value)
             continue
@@ -556,9 +565,116 @@ def map_recalculate_overrides(requested: dict[str, Any]) -> tuple[dict[str, Any]
             }
     if autonomous_researched:
         mapped["researchedBaselineMode"] = True
+        evidence_blocker = evidence_packet_required_for_requested_changes(requested, evidence_validation)
+        if evidence_blocker is not None and "evidence_packet" not in unsupported:
+            unsupported["evidence_packet"] = evidence_blocker
     if request_policy_mode is not None:
         mapped["requestPolicyMode"] = request_policy_mode
     return mapped, unsupported, metadata
+
+
+def evidence_packet_metadata(validation: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": validation.get("status"),
+        "sanitized_packet": validation.get("sanitized_packet", {}),
+        "governed_evidence": validation.get("governed_evidence", []),
+        "report_only_evidence": validation.get("report_only_evidence", []),
+        "rejected_evidence": validation.get("rejected_evidence", []),
+        "source_family_status": validation.get("source_family_status", []),
+        "validation_warnings": validation.get("validation_warnings", []),
+        "unsupported_blockers": validation.get("unsupported_blockers", []),
+    }
+
+
+def evidence_packet_unsupported(validation: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "value": evidence_packet_metadata(validation),
+        "status": validation.get("status") or "invalid_packet",
+        "reason": "invalid_evidence_packet",
+        "message": "EvidencePacket validation failed; unsupported evidence cannot govern recalculation.",
+    }
+
+
+def evidence_packet_required_for_requested_changes(
+    requested: dict[str, Any],
+    validation: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    required_drivers = evidence_drivers_required_for_requested_changes(requested)
+    if not required_drivers:
+        return None
+    if validation is None:
+        return {
+            "value": None,
+            "status": "missing_evidence_packet_for_requested_changes",
+            "reason": "missing_evidence_packet_for_requested_changes",
+            "message": "Autonomous researched recalculation requested governed model changes, but no EvidencePacket was provided.",
+            "missing_drivers": required_drivers,
+        }
+    if not validation.get("ok"):
+        return None
+    governed_drivers = {
+        str(item.get("driver"))
+        for item in validation.get("governed_evidence", [])
+        if isinstance(item, dict)
+    }
+    missing_drivers = [driver for driver in required_drivers if driver not in governed_drivers]
+    if not missing_drivers:
+        return None
+    if governed_drivers:
+        return {
+            "value": evidence_packet_metadata(validation),
+            "status": "evidence_driver_mismatch",
+            "reason": "evidence_driver_mismatch",
+            "message": "Autonomous researched recalculation requested model changes that are not supported by matching governed EvidencePacket drivers.",
+            "missing_drivers": missing_drivers,
+        }
+    return {
+        "value": evidence_packet_metadata(validation),
+        "status": "no_governed_evidence_for_requested_changes",
+        "reason": "no_governed_evidence_for_requested_changes",
+        "message": "Autonomous researched recalculation requested governed model changes, but the EvidencePacket accepted no governed evidence.",
+        "missing_drivers": missing_drivers,
+    }
+
+
+def evidence_drivers_required_for_requested_changes(requested: dict[str, Any]) -> list[str]:
+    required: list[str] = []
+    field_drivers = {
+        "revenue_growth": "revenue_growth",
+        "operating_margin": "operating_margin",
+        "sales_to_capital": "reinvestment_sales_to_capital",
+    }
+    for field, driver in field_drivers.items():
+        if field in requested:
+            required.append(driver)
+    if "sector_overrides" in requested:
+        for driver in sector_override_required_drivers(requested.get("sector_overrides")):
+            required.append(driver)
+    return dedupe(required)
+
+
+def sector_override_required_drivers(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    drivers: list[str] = []
+    parameter_drivers = {
+        "revenue_growth": "revenue_growth",
+        "operating_margin": "operating_margin",
+        "target_operating_margin": "operating_margin",
+        "target_pre_tax_operating_margin": "operating_margin",
+        "sales_to_capital": "reinvestment_sales_to_capital",
+        "reinvestment_sales_to_capital": "reinvestment_sales_to_capital",
+    }
+    for raw in value:
+        if not isinstance(raw, dict):
+            continue
+        parameter = _string_or_none(
+            _first_present(raw.get("parameter"), raw.get("parameter_type"), raw.get("parameterType"))
+        )
+        driver = parameter_drivers.get(parameter or "")
+        if driver:
+            drivers.append(driver)
+    return drivers
 
 
 def normalize_request_policy_mode(value: Any) -> tuple[str | None, dict[str, Any] | None]:
@@ -765,6 +881,7 @@ def valuation_success_payload(
         "dcf": extract_dcf_summary(valuation),
         "baseline": baseline,
         "assumptions": extract_assumptions(valuation),
+        "provenance": extract_source_provenance(valuation),
         "growthAnchor": extract_growth_anchor(valuation),
         "referenceData": reference_data_status(valuation),
         "version": version_metadata(valuation),
@@ -1082,6 +1199,23 @@ def extract_growth_anchor(valuation: dict[str, Any]) -> dict[str, Any]:
         "sourceDate": anchor.get("sourceDate") or anchor.get("year"),
         "source": anchor.get("source") or "valuation-service growth anchor",
         "warnings": warnings,
+    }
+
+
+def extract_source_provenance(valuation: dict[str, Any]) -> dict[str, Any]:
+    transparency = _dict(valuation.get("assumptionTransparency"))
+    source = _dict(transparency.get("sourceProvenance"))
+    if not source:
+        return {}
+    return {
+        "sourceClass": source.get("sourceClass"),
+        "provider": source.get("provider"),
+        "sourceDate": source.get("sourceDate"),
+        "periodEnd": source.get("periodEnd"),
+        "retrievalStatus": source.get("retrievalStatus"),
+        "crossCheckStatus": source.get("crossCheckStatus"),
+        "sourcePolicyStatus": source.get("sourcePolicyStatus"),
+        "warnings": _string_list(source.get("warnings")),
     }
 
 
@@ -1416,6 +1550,10 @@ def compact_text_content(payload: dict[str, Any], is_error: bool) -> str:
             summary += price_text + "."
         if baseline_status:
             summary += f" Baseline use {baseline_status}."
+        provenance = _dict(payload.get("provenance"))
+        source_policy_status = _string_or_none(provenance.get("sourcePolicyStatus"))
+        if source_policy_status:
+            summary += f" Source policy {source_policy_status}."
         return f"{summary}{policy_text} Full JSON is in structuredContent."
 
     if tool == "stockvaluation.health":

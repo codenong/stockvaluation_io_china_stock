@@ -47,6 +47,7 @@ Use these output sections:
 - `dcf`: compact DCF summary for reporting.
 - `baseline`: normalized live baseline contract for report writers.
 - `assumptions`: grouped assumptions and rationales.
+- `provenance`: compact core financial source metadata and source-policy status.
 - `growthAnchor`: Damodaran growth-anchor mapping, confidence, percentile band, source date, and warnings.
 - `referenceData`: market-data and reference-data status.
 - `warnings`: service and data-quality notes.
@@ -64,6 +65,7 @@ If `baselineUseStatus` is `mechanical_only`, `segment_evidence_insufficient`, `c
 
 Reportable rich-output fields are nested in `valuation` when the Java service returns them:
 
+- `valuation.assumptionTransparency.sourceProvenance`: core financial source class, provider, source date, retrieval status, cross-check status, source policy status, and warnings.
 - `valuation.assumptionTransparency.baselineQuality`: `segment_weighted_baseline`, `single_industry_fallback`, `segment_evidence_insufficient`, or `segment_mapping_blocked`.
 - `valuation.assumptionTransparency.baselineUseStatus`: whether the baseline is validated for researched use or only mechanical/challenged.
 - `valuation.assumptionTransparency.segmentCoveragePct`: percent of company revenue represented by accepted mapped segment evidence.
@@ -79,6 +81,13 @@ Reportable rich-output fields are nested in `valuation` when the Java service re
 - `valuation.financialDTO.fcff`, `valuation.financialDTO.reinvestment`, and `valuation.financialDTO.roic`: free-cash-flow, reinvestment, and return-on-capital trajectories.
 
 Use these fields as report inputs, not autonomous model changes. Market-implied fields are not evidence. If a field is absent, say it is unavailable or omit the related table.
+
+Source provenance rules:
+
+- `primary_filing`, `yahoo_normalized`, `company_ir`, and `agent_researched` are the supported source classes.
+- For US researched valuations, prefer `primary_filing` when SEC/XBRL or filing-derived data is returned. If the tool returns `primary_source_missing_fallback`, label Yahoo-normalized financials as a fallback and do not imply primary-source support.
+- For non-US researched valuations, `yahoo_normalized` is allowed when source date, retrieval status, and company-report or filing cross-check status are explicit.
+- Treat provenance warnings and material mismatch warnings as data-quality limitations. They are not autonomous assumption evidence.
 
 ## `stockvaluation.recalculate`
 
@@ -152,7 +161,17 @@ Input:
         "allowed_to_affect_autonomous_recalculation": true,
         "model_action": "governed assumption change|report explanation only|explain/flag only unsupported"
       }
-    ]
+    ],
+    "evidence_packet": {
+      "ticker": "MSFT",
+      "company": "Microsoft Corporation",
+      "run_mode": "full_researched",
+      "source_families": [],
+      "sources_checked": [],
+      "evidence_items": [],
+      "conflicts_or_uncertainties": [],
+      "data_gaps": []
+    }
   }
 }
 ```
@@ -177,6 +196,7 @@ Supported override keys:
 - `request_policy`
 - `rationale`
 - `evidence_used`
+- `evidence_packet`
 - `user_judgment`
 
 Request policy modes:
@@ -195,7 +215,7 @@ Baseline quality values:
 - `segment_evidence_insufficient`: names or generic sources were found without enough revenue-weighted evidence.
 - `segment_mapping_blocked`: revenue evidence exists but mapped industry coverage or confidence was insufficient.
 
-For autonomous assumption judgment, only driver-specific evidence for `revenue_growth`, `operating_margin`, `sales_to_capital`, and sector-level `sector_overrides` for those same parameters may change. `segments`, `rationale`, and `evidence_used` are context or metadata. Do not use `growth_pattern_override` autonomously; reserve it for explicit user-requested scenarios or supported payloads that are not autonomous judgment changes. Do not autonomously change `operating_margin_next_year`, WACC, terminal growth, tax rate, cash, debt, share count, market price, accounting adjustments, or direct valuation outputs.
+For autonomous assumption judgment, only matching driver-specific evidence for `revenue_growth`, `operating_margin`, `reinvestment_sales_to_capital`, and sector-level `sector_overrides` for those same levers may change mapped assumptions. `reinvestment_sales_to_capital` evidence maps to the `sales_to_capital` override. `segments`, `rationale`, and `evidence_used` are context or metadata. Do not use `growth_pattern_override` autonomously; reserve it for explicit user-requested scenarios or supported payloads that are not autonomous judgment changes. Do not autonomously change `operating_margin_next_year`, WACC, terminal growth, tax rate, cash, debt, share count, market price, accounting adjustments, or direct valuation outputs.
 
 `operating_margin_next_year` is scenario-only in autonomous researched mode. User-refined and explicit scenarios may send it directly, and it must not silently set `targetPreTaxOperatingMargin`.
 
@@ -209,13 +229,15 @@ Terminal growth must remain within mature-economy and risk-free-rate constraints
 
 Generic source presence is not evidence. Do not attach "10-K found" or "SEC filing source captured" as support for a researched recalculate call.
 
+`evidence_packet` is validated by the agent-native MCP layer before recalculation. It is preserved only in `assumptions.metadata.evidence_packet`; it is never sent to the deterministic valuation service as a valuation override. If validation rejects generic source presence, search-result URLs, missing source metadata, unsupported governed drivers, or no-governed-evidence support for requested autonomous changes, the recalculate call fails closed before service execution.
+
 The response separates:
 
 - `assumptions.requested`: what the user or agent requested.
 - `assumptions.mapped`: fields sent to the valuation service.
 - `assumptions.unsupported`: rejected fields.
 - `assumptions.effective`: what the service actually used.
-- `assumptions.metadata`: rationale and evidence preserved for auditability but not sent to the valuation service.
+- `assumptions.metadata`: rationale, evidence, and validated EvidencePacket metadata preserved for auditability but not sent to the valuation service.
 - `baseline`: live baseline quality/use-status contract after validation or rejection.
 
 Do not pass debt, cash, share count, market price, option value, fair value, target price, terminal value, equity value, upside/downside, direct market-price calibration, or other direct valuation-output fields.

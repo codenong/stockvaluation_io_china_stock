@@ -4,6 +4,7 @@ import io.stockvaluation.dto.FinancialDataDTO;
 import io.stockvaluation.provider.BalanceSheetSnapshot;
 import io.stockvaluation.provider.DataProvider;
 import io.stockvaluation.provider.IncomeStatementSnapshot;
+import io.stockvaluation.provider.SourceProvenance;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -115,6 +116,30 @@ class CompanyFinancialIngestionServiceTest {
         assertEquals(List.of(), result.historicalMargins());
         assertEquals(9.0, financialData.getResearchAndDevelopmentMap().get("currentR&D-1"));
         assertEquals(0.0, financialData.getResearchAndDevelopmentMap().get("currentR&D-0"));
+    }
+
+    @Test
+    void ingestPreservesCoreFinancialSourceProvenanceFromProviderSnapshots() {
+        int currentYear = LocalDate.now().getYear();
+        SourceProvenance provenance = SourceProvenance.yahooNormalized("yfinance-http", currentYear + "-03-31");
+
+        when(dataProvider.getIncomeStatementSnapshots("SAP.DE", "quarterly")).thenReturn(Map.of(
+                epoch(currentYear, 3, 31),
+                new IncomeStatementSnapshot(100.0, 20.0, null, 1.0, 5.0, 15.0, 4.0, provenance)));
+        when(dataProvider.getIncomeStatementSnapshots("SAP.DE", "yearly")).thenReturn(Map.of(
+                epoch(currentYear - 1, 12, 31),
+                new IncomeStatementSnapshot(400.0, 80.0, null, 4.0, 20.0, 60.0, 16.0, provenance)));
+        when(dataProvider.getBalanceSheetSnapshots("SAP.DE", "quarterly")).thenReturn(Map.of(
+                epoch(currentYear, 3, 31), new BalanceSheetSnapshot(50.0, 25.0, 10.0, 5.0, 1.0, provenance)));
+        when(dataProvider.getBalanceSheetSnapshots("SAP.DE", "yearly")).thenReturn(Map.of(
+                epoch(currentYear - 1, 12, 31), new BalanceSheetSnapshot(45.0, 20.0, 9.0, 5.0, 1.0, provenance)));
+
+        CompanyFinancialIngestionService.FinancialIngestionData result = service.ingest("SAP.DE", Map.of());
+
+        assertEquals("yahoo_normalized", result.sourceProvenance().getSourceClass());
+        assertEquals("yfinance-http", result.sourceProvenance().getProvider());
+        assertEquals(currentYear + "-03-31", result.sourceProvenance().getSourceDate());
+        assertEquals("not_checked_by_service", result.sourceProvenance().getCrossCheckStatus());
     }
 
     private static IncomeStatementSnapshot income(
