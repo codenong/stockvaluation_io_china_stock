@@ -7,6 +7,7 @@ REQUIRED_GUIDES = {
     "damodaran-coverage-map.md",
     "damodaran-source-map.md",
     "driver-specific-evidence.md",
+    "evidence-review-gate.md",
     "baseline-plausibility.md",
     "scenario-book.md",
     "guided-valuation-refinement.md",
@@ -128,10 +129,13 @@ def test_guides_preserve_current_autonomous_adjustment_boundary():
     assert "do not autonomously normalize one-time charges" in accounting
 
 
-def test_narrative_style_preserves_story_and_numbers_shape():
+def test_narrative_style_is_subordinate_to_canonical_report_template():
     narrative = _read_reference("narrative-report-style.md").lower()
 
     assert "combine story and numbers" in narrative
+    assert "subordinate to `report-template.md`" in narrative
+    assert "report-template.md controls the final report structure" in narrative
+    assert "does not control section order" in narrative
     for section in ["growth", "margins", "investment_efficiency", "risks", "key_takeaways"]:
         assert f'"{section}"' in narrative
     for phrase in [
@@ -149,9 +153,13 @@ def test_report_template_requires_rich_damodaran_data_displays_without_invention
     lower = template.lower()
 
     for phrase in [
+        "canonical controlling structure",
+        "narrative-report-style.md is subordinate",
+        "do not use the older loose story-and-numbers shape",
         "central narrative tension",
         "valuation snapshot",
         "user-refined scenario is the main scenario",
+        "evidence review status",
         "internal baseline audit",
         "explicit audit/debug",
         "guided user judgment and user-refined scenario",
@@ -163,6 +171,7 @@ def test_report_template_requires_rich_damodaran_data_displays_without_invention
         "sensitivity analysis",
         "terminal value and cash-flow composition",
         "evidence and segment summary",
+        "source quality summary",
         "supported vs explain-only",
         "do not invent",
         "marketimpliedexpectations",
@@ -176,7 +185,11 @@ def test_report_template_preserves_required_section_order():
     template = _read_reference("report-template.md")
     ordered_headings = [
         "## Educational-Use Framing",
+        "## Valuation Audit Packet Summary",
+        "## Scenario Book Summary",
+        "## Evidence Review Status",
         "## Valuation Snapshot",
+        "## Source Quality Summary",
         "## Central Narrative Tension",
         "## Growth",
         "## Margins",
@@ -264,15 +277,22 @@ def test_guided_refinement_is_default_with_quick_bypass_and_bounded_questions():
     guide = _read_reference("guided-valuation-refinement.md").lower()
 
     assert "guided-valuation-refinement.md" in skill
+    assert "evidence-review-gate.md" in skill
     assert "unless the user explicitly requested quick valuation, no questions, skip questions, one-shot report, automation, or smoke-test" in skill
     assert "do not treat a plain \"value company using stockvaluation.io\" request as a one-shot path" in skill
     assert "build a hidden guided question plan" in skill
+    assert "materiality-driven" in skill
+    assert "hard cap of 15" in skill
     assert "ask one question at a time" in skill
     assert "do not ask a batch of 4-6 questions" in skill
-    assert "at most 8 in deep mode" in skill
-    assert skill.index("baseline-plausibility.md") < skill.index("guided-valuation-refinement.md")
+    assert "at most 8 in deep mode" not in skill
+    assert "fixed 3-question" not in skill
+    assert skill.index("evidence-review-gate.md") < skill.index("guided-valuation-refinement.md")
     assert "quick valuation, no-questions, automation, smoke-test" in guide
     assert "bypass guided refinement" in guide
+    assert "hard cap of 15 visible guided questions" in guide
+    assert "no forced minimum" in guide
+    assert "at most 8 in deep mode" not in guide
 
 
 def test_guided_question_reference_requires_company_specific_auditable_shape():
@@ -336,3 +356,4 @@ def test_installer_copies_damodaran_references(tmp_path: Path):
     installed_references = home / ".codex" / "skills" / "stockvaluation-io" / "references"
     assert (installed_references / "damodaran-coverage-map.md").exists()
     assert (installed_references / "narrative-report-style.md").exists()
+    assert (installed_references / "evidence-review-gate.md").exists()

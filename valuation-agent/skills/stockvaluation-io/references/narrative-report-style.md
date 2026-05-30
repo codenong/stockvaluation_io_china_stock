@@ -2,6 +2,8 @@
 
 Use this style guide when writing the final educational report. It translates the old high-quality analyst prompt behavior into skill guidance without restoring the old Python runtime.
 
+This guide is subordinate to `report-template.md`; report-template.md controls the final report structure, section order, and required summaries. This guide improves prose quality only. It does not control section order, does not replace required template sections, and cannot justify the older loose story-and-numbers report shape.
+
 ## Core Style
 
 - Publication-quality valuation writing.
@@ -12,7 +14,7 @@ Use this style guide when writing the final educational report. It translates th
 - Clear separation between market price, model intrinsic value, assumptions, evidence, and unsupported topics.
 - No personalized recommendation language.
 
-Central rule: Combine story and numbers. Keep assumptions realistic and sector-consistent. Maintain numerical consistency between narrative and DCF data.
+Central prose rule: Combine story and numbers inside the canonical report template. Keep assumptions realistic and sector-consistent. Maintain numerical consistency between narrative and DCF data.
 
 ## Central Tension
 
@@ -26,9 +28,9 @@ When MCP JSON includes `marketImpliedExpectations` or `pricedInExpectations`, us
 
 Market-implied and priced-in sections are report inputs, not autonomous model changes.
 
-## Required Narrative Shape
+## Internal Narrative Completeness Check
 
-The report should use prose-first sections supported by compact tables. Tables support the story; they do not replace it.
+The report should use prose-first sections supported by compact tables, but only within the structure controlled by `report-template.md`. Tables support the story; they do not replace required template sections.
 
 ```json
 {

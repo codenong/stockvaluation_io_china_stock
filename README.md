@@ -87,7 +87,7 @@ The LLM should not silently hand-calculate valuation outputs. Scenario math must
 - Local Docker services: `postgres`, `yfinance`, and `valuation-service`.
 - Deterministic DCF math through `valuation-service`.
 - Structured JSON for assumptions, baseline value, recalculated scenarios, growth anchors, reference-data status, and failures.
-- A researched workflow that asks guided valuation questions before producing the final educational report.
+- A researched workflow that stops for evidence review, then asks guided valuation questions before producing the final educational report.
 - A process designed to make assumptions visible and challengeable.
 
 MCP means Model Context Protocol. In this repo, it is the local bridge between Codex or Claude and the valuation tools.
@@ -124,11 +124,13 @@ The default flow is not a one-shot report.
 2. The agent researches the company.
 3. Source-heavy research can use subagents when supported.
 4. The agent builds a mechanical baseline from local MCP output.
-5. The agent builds an evidence-constrained assumption judgment.
-6. Any DCF math must come from `stockvaluation.recalculate`, not hand calculations.
-7. The agent stops and asks guided valuation questions before the final report.
-8. The guided questions include bounded modeling defaults, not investment advice.
-9. After the user answers, the agent maps those answers into a user-refined scenario, calls local MCP tools again, and writes the final educational report.
+5. The agent gathers and classifies driver-specific evidence.
+6. The agent stops at a human evidence review gate before guided valuation refinement.
+7. After the gate is cleared, the agent builds an evidence-constrained assumption judgment.
+8. Any DCF math must come from `stockvaluation.recalculate`, not hand calculations.
+9. The agent asks materiality-driven guided valuation questions before the final report.
+10. The guided questions include bounded modeling defaults, not investment advice.
+11. After the user answers, the agent maps those answers into a user-refined scenario, calls local MCP tools again, and writes the final educational report.
 
 Use a quick or no-questions path only when the user explicitly asks for it.
 

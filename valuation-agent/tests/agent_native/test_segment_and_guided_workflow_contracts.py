@@ -81,9 +81,15 @@ def test_guided_refinement_reference_defines_bounded_user_judgment_flow():
 
     for phrase in [
         "default full researched valuation: use guided refinement",
-        "ask one question at a time",
+        "materiality-driven guided refinement",
+        "ask every material company-specific question",
+        "hard cap of 15 visible guided questions",
+        "no forced minimum",
+        "one question at a time",
         "hidden guided question plan",
+        "batch mode only when explicitly requested",
         "do not ask a batch of 4-6 questions",
+        "do not invent filler questions",
         "use defaults",
         "user answers are user judgment, not external evidence",
         "one final user-refined recalculation",
@@ -92,6 +98,9 @@ def test_guided_refinement_reference_defines_bounded_user_judgment_flow():
         "not financial advice",
     ]:
         assert phrase in lower
+
+    for stale_rule in ["at most 8 in deep mode", "8 questions", "fixed 3-question", "ask three questions"]:
+        assert stale_rule not in lower
 
     for field in [
         '"id"',
@@ -121,8 +130,55 @@ def test_guided_refinement_reference_defines_bounded_user_judgment_flow():
         "business impact",
         "model impact",
         "confidence",
+        "markdown question card",
+        "question number",
+        "choices table",
+        "default marker",
+        "reply options",
     ]:
         assert phrase in lower
+
+
+def test_evidence_review_gate_is_required_before_guided_refinement():
+    skill = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8").lower()
+    gate = _reference("evidence-review-gate.md").lower()
+
+    assert "evidence-review-gate.md" in skill
+    assert skill.index("driver-specific-evidence.md") < skill.index("evidence-review-gate.md")
+    assert skill.index("evidence-review-gate.md") < skill.index("baseline-plausibility.md")
+    assert skill.index("evidence-review-gate.md") < skill.index("guided-valuation-refinement.md")
+
+    for phrase in [
+        "default interactive researched valuation must stop at this gate",
+        "do not ask guided valuation refinement questions before the gate is cleared",
+        "approve and continue to guided questions",
+        "provide corrections",
+        "provide additional sources",
+        "continue with caveats",
+        "approval is not financial advice",
+        "user corrections are not external evidence unless source-backed",
+    ]:
+        assert phrase in gate
+
+
+def test_evidence_review_gate_documents_required_visible_fields():
+    gate = _reference("evidence-review-gate.md").lower()
+
+    for phrase in [
+        "source quality summary",
+        "sources checked",
+        "source dates",
+        "driver-specific evidence",
+        "segment evidence and segment limitations",
+        "latest news or material business context",
+        "data gaps",
+        "conflicts",
+        "supported model changes",
+        "report-only",
+        "unsupported topics",
+        "workflow treatment",
+    ]:
+        assert phrase in gate
 
 
 def test_guided_refinement_documents_supported_and_report_only_fields():

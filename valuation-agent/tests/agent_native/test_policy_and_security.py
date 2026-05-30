@@ -18,6 +18,7 @@ def test_skill_pack_contains_required_agent_native_references():
         "mcp-tools.md",
         "search-and-evidence.md",
         "driver-specific-evidence.md",
+        "evidence-review-gate.md",
         "baseline-plausibility.md",
         "scenario-book.md",
         "guided-valuation-refinement.md",
@@ -111,9 +112,12 @@ def test_main_skill_makes_full_researched_valuation_the_default_workflow():
     assert "stockvaluation.value_ticker" in skill_text
     assert "segment discovery" in lower
     assert "evidence packet" in lower
+    assert "evidence review gate" in lower
     assert "assumption_judgment" in skill_text
     assert "auto-recalculate once" in lower
     assert "stockvaluation.recalculate" in skill_text
+    assert lower.index("driver-specific-evidence.md") < lower.index("evidence-review-gate.md")
+    assert lower.index("evidence-review-gate.md") < lower.index("baseline-plausibility.md")
     assert lower.index("assumption_judgment") < lower.index("stockvaluation.recalculate")
 
 
@@ -125,6 +129,7 @@ def test_stockvaluation_io_reference_triggers_guided_refinement_by_default():
     assert "plain request such as \"value company using stockvaluation.io\"" in lower
     assert "not a quick valuation and not a one-shot report request" in lower
     assert "do not infer a guided-refinement bypass from ordinary phrasing" in lower
+    assert "the final report is blocked until the evidence review gate is cleared" in lower
     assert "the final report is blocked until guided refinement" in lower
     assert "build a hidden guided question plan" in lower
     assert "ask one question at a time" in lower

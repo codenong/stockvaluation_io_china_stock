@@ -1,14 +1,18 @@
 # Educational Valuation Report Template
 
-Use this structure after the full researched valuation workflow completes. Write the report from MCP JSON, the Scenario Book, the valuation audit packet, evidence packet, segment discovery, `assumption_judgment`, baseline plausibility, guided-refinement `user_judgment` when present, recalculation output, and effective assumptions.
+This file is the canonical controlling structure for the final educational valuation report. Use this structure after the full researched valuation workflow completes. Write the report from MCP JSON, the Scenario Book, the valuation audit packet, evidence packet, evidence review gate status, segment discovery, `assumption_judgment`, baseline plausibility, guided-refinement `user_judgment` when present, recalculation output, and effective assumptions.
+
+`narrative-report-style.md` is subordinate to this template. narrative-report-style.md is subordinate to the report template. It may improve prose, but it must not remove, rename, or reorder required template sections. Do not use the older loose story-and-numbers shape as the controlling report structure.
 
 Do not print raw `assumption_judgment` JSON by default. Summarize it in prose and tables. Do not invent missing values. If MCP/service output does not return a value, say unavailable or omit the table.
 
 Do not print raw `valuation_audit_packet` JSON by default. Summarize the packet status, packet reference, final case type, rejected evidence, unsupported fields, guided-refinement status, and data-quality limitations in prose or compact tables. Keep mechanical baseline value/detail out of user-facing output unless the user explicitly asks for audit/debug detail.
 
-Do not print raw `scenario_book.v1` JSON by default. Summarize the Scenario Book status, reference, main scenario, scenario types, guided-refinement status, diagnostics, unsupported inputs, and limitations in prose or compact tables.
+Do not print raw `scenario_book.v1` JSON by default. Summarize the Scenario Book status, reference, main scenario, scenario types, evidence review status, guided-refinement status, diagnostics, unsupported inputs, and limitations in prose or compact tables.
 
-The user-refined scenario is the main scenario when guided refinement was completed. Mechanical baseline is internal-only and is internal scaffolding by default: do not include mechanical baseline value as a primary valuation case in the main report. Keep mechanical baseline detail available only in the explicit audit/debug section.
+No raw hidden JSON by default: keep hidden guided question plans, audit packets, Scenario Book internals, and assumption-judgment objects summarized unless the user explicitly asks for audit/debug detail.
+
+The user-refined scenario is the main scenario when guided refinement was completed. Mechanical baseline is internal-only and remains internal-only by default. Mechanical baseline is internal scaffolding by default: do not include mechanical baseline value as a primary valuation case in the main report. Keep mechanical baseline detail available only in the explicit audit/debug section.
 
 ## Educational-Use Framing
 
@@ -49,6 +53,20 @@ Each scenario table must keep requested, mapped, unsupported, metadata, and effe
 
 Do not present direct valuation outputs, fair value, target price, upside/downside, market price fitting, cash, debt, share count, or report-only accounting topics as mapped scenario inputs unless a tested governed contract accepted them.
 
+## Evidence Review Status
+
+State whether the human-in-the-loop evidence review gate was approved, corrected, caveated, bypassed by an explicit quick/no-questions/automation/smoke-test request, or not run because the workflow stopped earlier. User approval is not financial advice. User corrections are not external evidence unless source-backed and processed through evidence rules.
+
+| Field | Status |
+| --- | --- |
+| Evidence review status | approved, corrected, caveated, bypassed, not_run, or unavailable |
+| Gate timing | after evidence gathering and before guided valuation refinement |
+| User action | approve, corrections, additional sources, continue with caveats, or explicit bypass |
+| Source-backed corrections processed | yes/no/unavailable |
+| Remaining caveats |  |
+
+If the gate was bypassed for a quick/no-questions/automation/smoke-test path, label the bypass plainly and do not imply the user approved the evidence base.
+
 ## Valuation Snapshot
 
 Lead with the scenario the user actually selected. Include compact values only when returned by MCP/service output.
@@ -57,7 +75,7 @@ Lead with the scenario the user actually selected. Include compact values only w
 | --- | --- |
 | Company |  |
 | Ticker |  |
-| Main scenario | user-refined scenario, evidence-constrained base, or one-shot baseline path |
+| Main scenario | user-refined scenario, evidence-constrained base, or explicit quick/no-questions bypass path |
 | User-refined scenario intrinsic value per share |  |
 | Evidence-constrained base intrinsic value per share |  |
 | Market price |  |
@@ -201,6 +219,8 @@ State plainly: user answers define a scenario; they are not independent evidence
 |  | revenue growth, margin path, target margin, convergence year, sales-to-capital, sector driver, or report-only topic |  |  |  | user scenario override, report-only user judgment, or unsupported |
 
 Do not include unsupported answers in the MCP payload. Keep report-only answers in prose and metadata.
+
+If guided refinement was bypassed, do not fabricate a user-refined scenario, do not describe accepted defaults as user answers, and make the evidence-constrained base the main user-facing case only when evidence was sufficient.
 
 ## Evidence And Segment Summary
 

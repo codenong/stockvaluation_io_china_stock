@@ -1,6 +1,6 @@
 # Guided Valuation Refinement
 
-Use this reference for the default full researched valuation flow after the mechanical baseline, segment review, evidence packet, driver-specific evidence classification, assumption judgment, and baseline plausibility gate are complete.
+Use this reference for the default full researched valuation flow after the mechanical baseline, segment review, evidence packet, driver-specific evidence classification, evidence review gate, assumption judgment, and baseline plausibility gate are complete.
 
 Guided refinement turns bounded user judgment into a clearly labeled `user_refined_scenario`. It does not replace the mechanical baseline or the autonomous evidence-constrained base. User answers are user judgment, not external evidence.
 
@@ -8,19 +8,21 @@ Guided refinement turns bounded user judgment into a clearly labeled `user_refin
 
 Default full researched valuation: use guided refinement.
 
-Quick valuation, no-questions, automation, smoke-test, skip-questions, or explicit one-shot requests: bypass guided refinement and write the educational report from the evidence-constrained workflow and report-only diagnostics.
+Quick valuation, no-questions, automation, smoke-test, skip-questions, or explicit one-shot requests: bypass guided refinement, label the bypass, do not fabricate a user-refined scenario, and write the educational report from the evidence-constrained workflow and report-only diagnostics.
 
-Default interactive mode: build a hidden guided question plan, then ask one question at a time. Do not ask a batch of 4-6 questions unless the user explicitly requests batch mode.
+Default interactive mode: build a hidden guided question plan only after the evidence review gate is cleared, then ask one question at a time. Do not ask a batch of 4-6 questions unless the user explicitly requests batch mode. Batch mode only when explicitly requested.
 
-Deep mode: the hidden guided question plan may contain at most 8 questions. Otherwise keep the plan concise and prioritize the most company-specific drivers. If fewer than 3 useful company-specific questions can be built, explain the limitation and continue without inventing generic questions.
+Materiality-driven guided refinement: ask every material company-specific question the hidden plan identifies, subject to a hard cap of 15 visible guided questions. There is no forced minimum. If only one or two useful company-specific questions matter, ask only those. If no material company-specific questions exist, explain why and continue without inventing filler questions. Deep mode may broaden the materiality scan, but the same hard cap of 15 visible guided questions applies.
+
+Prioritize questions by valuation materiality, evidence strength, uncertainty, model impact, and company-specificity. Do not ask generic checklist questions, do not ask what value the user wants, and do not fit assumptions to market price.
 
 ## Allowed Action
 
-Generate a hidden guided question plan, ask one question at a time, capture selected choices as `user_judgment`, and run one final user-refined recalculation after the dialogue is complete. Send only supported mapped assumptions to `stockvaluation.recalculate` with `request_policy.mode = "user_refined_scenario"`.
+Generate a hidden materiality-driven guided question plan, ask every material company-specific question up to the cap, ask one question at a time, capture selected choices as `user_judgment`, and run one final user-refined recalculation after the dialogue is complete. Send only supported mapped assumptions to `stockvaluation.recalculate` with `request_policy.mode = "user_refined_scenario"`.
 
 ## Do Not
 
-Do not ask generic checklist questions, do not treat user answers as evidence, do not fit to market price, and do not send unsupported answers to MCP. Do not use investment recommendation language such as buy, sell, hold, target price, or should invest. You may provide a recommended bounded scenario answer as a modeling default when it is clearly labeled as educational scenario judgment and not financial advice.
+Do not ask generic checklist questions, do not invent filler questions, do not use a preset question count, do not treat user answers as evidence, do not fit to market price, and do not send unsupported answers to MCP. Do not use investment recommendation language such as buy, sell, hold, target price, or should invest. You may provide a recommended bounded scenario answer as a modeling default when it is clearly labeled as educational scenario judgment and not financial advice.
 
 Do not print the hidden guided question plan JSON by default. Show exact model mapping only when the user asks for audit/debug detail.
 
@@ -34,6 +36,9 @@ Before asking the user anything, create an internal plan from the company eviden
   "company": "Company name",
   "ticker": "TICKER",
   "source_type": "guided_question_plan",
+  "planning_rule": "materiality_driven_cap_15_no_minimum",
+  "planned_visible_question_count": 2,
+  "question_count_rationale": "Ask every material company-specific question identified, capped at 15, with no filler.",
   "question_order": ["growth_durability", "margin_path"],
   "questions": [
     {
@@ -109,28 +114,35 @@ Generic source presence is insufficient for a recommended default. "10-K found",
 
 ## User-Facing Question Format
 
-Ask only the next unanswered question. The visible question should be compact and should not expose exact override JSON unless the user asks for audit/debug detail.
+Ask only the next unanswered question. The visible question should be a Markdown question card. It must show the question number and total count, company-specific title, business tension, choices table, default marker, My analysis, Why this default, Evidence used, Business impact, Model impact, Confidence, and reply options. Do not expose exact override JSON unless the user asks for audit/debug detail.
 
 ```text
-Question 2 of 4 - Azure growth durability
+### Guided valuation refinement: Question 2 of 9 - Azure growth durability
 
 Microsoft's cloud segment is still growing faster than the company average, but the model has to decide how quickly that advantage fades.
 
-A. Fade toward the company baseline
-B. Keep a modest cloud premium for years 2-5
-C. Keep a larger cloud premium for years 2-5
+| Choice | Scenario | Assumption effect | Model action | Confidence |
+| --- | --- | --- | --- | --- |
+| A | Fade toward the company baseline | Lower years 2-5 growth premium | User scenario override | Medium |
+| **B (default)** | Keep a modest cloud premium | Moderate years 2-5 growth premium | User scenario override | Medium |
+| C | Keep a larger cloud premium | Higher years 2-5 growth premium | User scenario override | Low |
 
-My analysis: B is my modeling default, not financial advice.
-Why this default: recent segment and earnings evidence supports a premium, but not an indefinite one.
-Evidence used: FY annual report segment revenue mix and latest earnings cloud growth commentary.
-Business impact: this assumes cloud remains the main growth engine while larger segments dilute total growth.
-Model impact: maps to a bounded revenue-growth scenario if selected.
-Confidence: medium
+**My analysis:** B is my modeling default, not financial advice.
 
-Reply with A, B, C, "default" for this question, "use defaults" for all remaining questions, or a short note.
+**Why this default:** Recent segment and earnings evidence supports a premium, but not an indefinite one.
+
+**Evidence used:** FY annual report segment revenue mix and latest earnings cloud growth commentary.
+
+**Business impact:** This assumes cloud remains the main growth engine while larger segments dilute total growth.
+
+**Model impact:** Maps to a bounded revenue-growth scenario if selected.
+
+**Confidence:** Medium.
+
+**Reply options:** Reply with `A`, `B`, `C`, `default` for this question, `use defaults` for all remaining questions, or a short note.
 ```
 
-Every user-facing question must include "My analysis" or equivalent modeling-default language, why this default was selected, evidence used, business impact, model impact, and confidence.
+Every user-facing question must include "My analysis" or equivalent modeling-default language, why this default was selected, evidence used, business impact, model impact, confidence, and reply options. The default marker must be visible in the choices table.
 
 ## Answer Handling
 

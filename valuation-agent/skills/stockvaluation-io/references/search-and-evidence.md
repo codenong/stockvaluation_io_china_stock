@@ -1,6 +1,6 @@
 # Search And Evidence
 
-Use this reference when building the evidence packet for a full researched valuation. Search is performed by the user agent, not by StockValuation MCP tools. In full researched valuations, source-heavy search should run in fresh-context research subagents when the client supports subagents or task delegation. After collecting compact source summaries, classify every usable item with `{baseDir}/references/driver-specific-evidence.md`.
+Use this reference when building the evidence packet for a full researched valuation. Search is performed by the user agent, not by StockValuation MCP tools. In full researched valuations, source-heavy search should run in fresh-context research subagents when the client supports subagents or task delegation. After collecting compact source summaries, classify every usable item with `{baseDir}/references/driver-specific-evidence.md`, then stop at `{baseDir}/references/evidence-review-gate.md` before guided valuation refinement.
 
 ## Fresh-Context Research Delegation
 

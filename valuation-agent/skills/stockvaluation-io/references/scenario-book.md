@@ -11,15 +11,16 @@ The enforced schema is `scenario_book.v1`. The artifact is agent-native and vali
 - Present user-facing scenarios only when the validator marks them user-facing and eligible.
 - Preserve requested, mapped, unsupported, metadata, and effective assumptions for every scenario.
 - Preserve payload references, audit packet references, evidence/provenance references, segment economics status, and accounting/claims status.
+- Preserve evidence review status: approved, corrected, caveated, bypassed, not run, or unavailable.
 - Include market-implied diagnostics only under diagnostics.
-- Record quick/no-questions guided-refinement bypass when the user requested it.
+- Record quick/no-questions evidence-review and guided-refinement bypass when the user requested it.
 - Keep the report educational and not financial advice.
 
 ## Do Not
 
 - Do not make the mechanical baseline a user-facing scenario or main scenario.
 - Do not use market-implied diagnostics as evidence, autonomous model changes, or the main scenario.
-- Do not create a user-refined scenario when guided refinement was bypassed.
+- Do not create a user-refined scenario when evidence review or guided refinement was bypassed.
 - Do not mix explicit scenario mode with guided user-refined mode.
 - Do not reopen Phase 5 accounting paths. R&D capitalization remains the only governed Phase 5 accounting scenario path; leases, SBC/dilution, options/warrants, NOL/tax, cash, debt, and share count remain statused, report-only, or service-returned unless a future tested contract expands them.
 - Do not send unsupported scenario inputs to MCP/service payloads.
@@ -37,7 +38,7 @@ Market-implied diagnostics are diagnostic-only. They cannot become evidence, aut
 
 Guided refinement creates exactly one user-refined scenario after all questions are answered or accepted through use defaults. User answers are user judgment, not external evidence.
 
-Quick/no-questions path records guided-refinement bypass and must not fabricate a user-refined scenario.
+Quick/no-questions path records evidence-review bypass and guided-refinement bypass and must not fabricate a user-refined scenario.
 
 Explicit scenario mode is distinct from user-refined guided mode. Explicit scenarios require explicit user intent, supported scenario inputs, and `request_policy.mode = "explicit_scenario"`.
 
@@ -51,6 +52,7 @@ Each user-facing scenario must preserve:
 - Payload reference and deterministic service output reference.
 - Audit packet reference and EvidencePacket reference.
 - SourceProvenance references and data-quality warnings.
+- Evidence review status, caveats, source-backed corrections status, and bypass reason when applicable.
 - SegmentEconomics status and limitations.
 - AccountingAndClaims status and Phase 5 support labels.
 
@@ -58,7 +60,7 @@ Unsupported or report-only inputs must be preserved in unsupported/metadata/repo
 
 ## Report Guidance
 
-Use the Scenario Book to choose the main report case. If a user-refined scenario exists, it is the main scenario. If guided refinement was bypassed, lead with the evidence-constrained base and state the bypass. If evidence is insufficient, explain the blocker without promoting the mechanical baseline.
+Use the Scenario Book to choose the main report case. If a user-refined scenario exists, it is the main scenario. If guided refinement was bypassed, lead with the evidence-constrained base and state the evidence-review and guided-refinement bypasses. If evidence is insufficient, explain the blocker without promoting the mechanical baseline.
 
 Market-implied diagnostics, priced-in frontiers, scenario grids, and sensitivity data belong in diagnostics or comparison sections. They are not evidence and not recommendations.
 
