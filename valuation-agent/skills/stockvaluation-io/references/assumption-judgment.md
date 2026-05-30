@@ -129,8 +129,9 @@ After producing `assumption_judgment`, convert only governed instructions into `
 - `operating_margin_next_year` does not map to an autonomous override; flag it in `baseline_plausibility.unsupported_blockers` for the evidence-constrained base and reserve it for `user_refined_scenario` or `explicit_scenario`.
 - `dcf_adjustment_instructions` map to `stockvaluation.recalculate` overrides.
 - `sector_adjustment_instructions` map to `sector_overrides`.
-- `evidence_used` stays attached to the recalculate metadata.
+- `evidence_used` stays attached to the recalculate metadata only as compact governed evidence references when needed; do not duplicate a full `evidence_packet`.
 - Use a short `rationale` that summarizes why the governed changes were or were not made.
+- Keep MCP call arguments compact. Put source-quality discussion, conflicts, data gaps, report-only evidence, and unsupported blockers in the evidence review and report instead of pasting them into `stockvaluation.recalculate`.
 
 ## Fail-Closed Rules
 

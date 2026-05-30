@@ -6,6 +6,18 @@ When returned, `auditPacket` contains a `valuation_audit_packet.v1` packet refer
 
 When returned, `scenarioBook` contains a `scenario_book.v1` artifact reference, compact summary, and validator-backed book. Use it to choose the main educational scenario and to separate evidence-constrained base, user-refined scenario, explicit scenario, market-implied diagnostics, and internal mechanical baseline references. Do not copy raw Scenario Book JSON into the visible report.
 
+## Client-Visible Call Arguments
+
+Some agent clients display MCP call arguments before execution. Keep input payloads compact enough to inspect:
+
+- Do not send full research logs, full filing text, broad source lists, report-only evidence, hidden guided-question plans, raw `assumption_judgment`, raw Scenario Book JSON, or raw audit packets as MCP arguments.
+- Send only the override fields needed for the current call. Do not use the documented examples as a single payload containing every supported key.
+- Use short rationale text. Prefer one sentence.
+- For autonomous researched recalculation with a governed assumption change, include the smallest valid `evidence_packet` that validates the requested changed driver: one checked source-family entry per governed source family, one checked source entry per governed evidence source, and only the governed evidence items directly supporting the override.
+- Keep broader source quality, conflicts, data gaps, report-only evidence, and unused sources in the evidence review/report, not in the MCP call arguments.
+- Avoid duplicating the same evidence in both `evidence_packet` and `evidence_used`. If `evidence_packet` is present, omit `evidence_used` unless a short reference list is necessary for audit clarity.
+- If a call fails with `UNSUPPORTED_OVERRIDES`, remove unsupported/report-only fields and retry once only with governed fields. Do not retry by pasting a larger debug object.
+
 ## `stockvaluation.health`
 
 Checks the local MCP adapter and valuation service.
@@ -99,96 +111,62 @@ Source provenance rules:
 
 Recalculates deterministic DCF output with governed scenario overrides. In the default full researched valuation workflow, call it once after producing `assumption_judgment` when the payload is supported.
 
-Input:
+Compact input example:
 
 ```json
 {
   "ticker": "MSFT",
   "overrides": {
     "revenue_growth": 8.5,
-    "operating_margin_next_year": 39.0,
-    "operating_margin": 42.0,
-    "target_operating_margin": 42.0,
-    "margin_convergence_year": 6,
-    "sales_to_capital": 2.4,
-    "sales_to_capital_years_1_to_5": 2.4,
-    "sales_to_capital_years_6_to_10": 2.0,
-    "wacc": 8.25,
-    "terminal_growth": 3.0,
-    "tax_rate": 21.0,
-    "segments": [
-      {
-        "segment_name": "Cloud software",
-        "sector_key": "software-infrastructure",
-        "mapped_industry": "Software (System & Application)",
-        "components": ["Azure"],
-        "mapping_score": 0.9,
-        "mapping_confidence": "high",
-        "revenue_share": 0.525,
-        "source_name": "FY annual report",
-        "source_date": "2026-06-30",
-        "source_url": "https://example.com/annual-report",
-        "validation_warnings": [],
-        "operating_margin": 43.0
-      }
-    ],
-    "sector_overrides": [
-      {
-        "sector_key": "software-infrastructure",
-        "parameter": "revenue_growth",
-        "value": 12.0,
-        "unit": "percent",
-        "adjustment_type": "absolute",
-        "timeframe": "years_1_to_5",
-        "rationale": "Cited segment evidence supports the adjustment."
-      }
-    ],
-    "growth_pattern_override": "THREE_STAGE",
     "request_policy": {
-      "mode": "user_refined_scenario"
+      "mode": "autonomous_researched"
     },
-    "rationale": "Brief reason for the governed recalculation.",
-    "user_judgment": {
-      "source_type": "user_judgment",
-      "scenario_label": "user-refined scenario",
-      "answers": []
-    },
-    "baseline_plausibility": {
-      "status": "accepted",
-      "unsupported_blockers": []
-    },
-    "assumption_judgment": {
-      "status": "governed_recalculation_supported",
-      "assumptions_left_unchanged": []
-    },
-    "evidence_used": [
-      {
-        "claim": "string",
-        "source_title": "string",
-        "source_url": "string",
-        "source_date": "YYYY-MM-DD or unknown",
-        "evidence_type": "filing|earnings|company_news|macro|segment",
-        "driver": "revenue_growth|operating_margin|reinvestment_sales_to_capital|risk_wacc|terminal_value_mature_state|accounting_adjustments",
-        "direction": "supports higher assumption|supports lower assumption|neutral/mixed",
-        "confidence": "high|medium|low",
-        "assumption_implication": "string",
-        "allowed_to_affect_autonomous_recalculation": true,
-        "model_action": "governed assumption change|report explanation only|explain/flag only unsupported"
-      }
-    ],
+    "rationale": "One sentence explaining the governed change.",
     "evidence_packet": {
       "ticker": "MSFT",
       "company": "Microsoft Corporation",
       "run_mode": "full_researched",
-      "source_families": [],
-      "sources_checked": [],
-      "evidence_items": [],
+      "source_families": [
+        {
+          "family": "earnings_ir_research",
+          "status": "checked",
+          "source_title": "FY earnings release",
+          "source_url": "https://example.com/msft-earnings",
+          "source_date": "2026-01-30"
+        }
+      ],
+      "sources_checked": [
+        {
+          "source_title": "FY earnings release",
+          "source_url": "https://example.com/msft-earnings",
+          "source_date": "2026-01-30",
+          "status": "used",
+          "source_type": "earnings",
+          "used": true
+        }
+      ],
+      "evidence_items": [
+        {
+          "driver": "revenue_growth",
+          "source_title": "FY earnings release",
+          "source_url": "https://example.com/msft-earnings",
+          "source_date": "2026-01-30",
+          "evidence_summary": "Cloud revenue growth remained above the company average.",
+          "direction": "supports higher assumption",
+          "confidence": "high",
+          "assumption_implication": "Supports modestly higher revenue growth than the mechanical baseline.",
+          "allowed_to_affect_autonomous_recalculation": true,
+          "model_action": "governed assumption change"
+        }
+      ],
       "conflicts_or_uncertainties": [],
       "data_gaps": []
     }
   }
 }
 ```
+
+This example is intentionally minimal. For user-refined or explicit scenarios, send only the user-selected supported fields plus `request_policy.mode`; do not include autonomous evidence metadata unless it is needed for that call.
 
 Supported override keys:
 

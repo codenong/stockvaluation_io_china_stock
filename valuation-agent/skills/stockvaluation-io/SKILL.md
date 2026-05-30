@@ -63,6 +63,10 @@ The product surface is the user's agent. The deterministic valuation math comes 
 - Treat guided-refinement answers as `user_judgment` scenario inputs, not external evidence.
 - Treat Scenario Book as the validated scenario artifact. The mechanical baseline is internal-only, market-implied diagnostics are diagnostic-only, and explicit scenario mode is distinct from guided user-refined mode.
 - Keep `request_policy.mode = "autonomous_researched"` strict. Use `request_policy.mode = "user_refined_scenario"` only for bounded user-judgment scenario inputs.
+- Codex and some other clients display MCP call arguments. Keep `stockvaluation.recalculate` arguments compact: send only contract-supported override fields plus the minimal metadata needed for validation. Do not place raw research logs, full source lists, full report-only evidence packets, hidden guided-question plans, raw `assumption_judgment`, raw Scenario Book JSON, raw audit packets, or long rationale text in MCP arguments.
+- For autonomous researched recalculation, include only the minimal valid `evidence_packet` needed to validate requested governed changes: one source-family status per governed source family, one source-checked entry per governed evidence source, and the governed evidence items that directly support the requested override. Keep broader source quality, conflicts, data gaps, report-only evidence, and unused sources in the evidence review and report, not in MCP call arguments.
+- Avoid duplicating the same material across `evidence_packet`, `evidence_used`, `rationale`, and `assumption_judgment`. If `evidence_packet` is present, `evidence_used` should be omitted or kept to short governed evidence references only.
+- If `stockvaluation.recalculate` returns `UNSUPPORTED_OVERRIDES`, do not retry with a larger debug payload. Remove unsupported/report-only fields, keep only governed inputs, and retry once only when the remaining payload is valid.
 - Do not create break-even, priced-in, sensitivity, terminal composition, or accounting-adjustment values when MCP/service output did not return them.
 - Treat the first successful `stockvaluation.value_ticker` output as the mechanical baseline. If `baseline.baselineUseStatus` is not `validated_segment_weighted` or the baseline plausibility gate flags an optimistic assumption stack, do not call it the rational researched base.
 
@@ -71,6 +75,7 @@ The product surface is the user's agent. The deterministic valuation math comes 
 - Frame the report as educational use only and not financial advice.
 - Avoid buy, sell, hold, target-price, and personalized recommendation language.
 - Use `{baseDir}/references/report-template.md` as the controlling final report structure. Section order and required summaries come from the report template; narrative style is subordinate and cannot remove or reorder required sections.
+- Render the final report with the report-template headings. Do not replace the template with a compressed memo, a paragraph that starts "Using stockvaluation.io...", a "Key assumptions" bullet list, a "Main caveats" bullet list, and a "Sources used" line.
 - Separate market price, model intrinsic value, and assumptions. Do not turn model output into an instruction.
 - Explain key drivers: growth, margins, reinvestment, cost of capital, terminal value, tax rate, and accounting adjustments.
 - Include data-quality notes and service/version metadata when returned.
@@ -78,6 +83,7 @@ The product surface is the user's agent. The deterministic valuation math comes 
 - Make evidence review status and guided-refinement status visible: approved, caveated, corrected, bypassed by explicit quick/no-questions/automation/smoke-test request, or not run because of an unsupported/failed workflow.
 - Do not print raw `assumption_judgment`, `valuation_audit_packet`, hidden guided question plan, or raw Scenario Book JSON by default.
 - In guided refinement, make the user-refined scenario the main scenario when it exists. Keep the mechanical baseline internal by default; expose mechanical baseline details only when the user explicitly asks for audit/debug detail.
+- Keep diagnostic scenarios diagnostic. Do not blend a user-refined scenario with a diagnostic no-segment, market-implied, or sensitivity run into a headline valuation range unless the user explicitly requested a range and the report labels each case under the template's scenario/diagnostic sections.
 - Keep supported adjustments separate from supported explanations, explain-only topics, future-support gaps, unsupported-stop cases, and out-of-scope topics.
 - Do not count "10-K found", "earnings release found", or other generic source presence as evidence. Evidence must name a valuation driver and the relevant fact.
 - When the baseline is challenged, mention baseline quality and unsupported blockers in the main narrative, but put mechanical baseline value/detail only in explicit audit/debug output.

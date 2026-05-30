@@ -156,6 +156,12 @@ def test_report_template_requires_rich_damodaran_data_displays_without_invention
         "canonical controlling structure",
         "narrative-report-style.md is subordinate",
         "do not use the older loose story-and-numbers shape",
+        "final report rendering contract",
+        "must render the required report-template headings in order",
+        "a final answer that starts with a sentence such as \"using stockvaluation.io",
+        "\"key assumptions\", \"main caveats\", and \"sources used\" is not template-compliant",
+        "diagnostic scenarios stay diagnostic",
+        "do not blend the main scenario with a diagnostic no-segment run",
         "central narrative tension",
         "valuation snapshot",
         "user-refined scenario is the main scenario",
@@ -213,6 +219,22 @@ def test_report_template_preserves_required_section_order():
 
     positions = [template.index(heading) for heading in ordered_headings]
     assert positions == sorted(positions)
+
+
+def test_skill_report_rules_reject_compressed_memo_and_diagnostic_ranges():
+    skill = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8").lower()
+
+    for phrase in [
+        "render the final report with the report-template headings",
+        "do not replace the template with a compressed memo",
+        "using stockvaluation.io",
+        "key assumptions",
+        "main caveats",
+        "sources used",
+        "keep diagnostic scenarios diagnostic",
+        "do not blend a user-refined scenario with a diagnostic no-segment",
+    ]:
+        assert phrase in skill
 
 
 def test_report_template_has_explicit_no_invention_rules_for_absent_service_fields():

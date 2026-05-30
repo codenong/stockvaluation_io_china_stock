@@ -349,6 +349,19 @@ def test_recalculate_reference_documents_researched_payload_contract():
     assert "ask the user before calling it" not in mcp_reference
 
 
+def test_skill_docs_require_compact_client_visible_mcp_payloads():
+    skill_text = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8").lower()
+    mcp_reference = (bundled_skill_dir() / "references" / "mcp-tools.md").read_text(encoding="utf-8").lower()
+    judgment = (bundled_skill_dir() / "references" / "assumption-judgment.md").read_text(encoding="utf-8").lower()
+
+    for text in [skill_text, mcp_reference, judgment]:
+        assert "compact" in text
+    assert "client-visible call arguments" in mcp_reference
+    assert "minimal valid `evidence_packet`" in skill_text
+    assert "do not place raw research logs" in skill_text
+    assert "do not retry by pasting a larger debug object" in mcp_reference
+
+
 def test_recalculate_reference_does_not_autonomously_change_growth_pattern():
     mcp_reference = (bundled_skill_dir() / "references" / "mcp-tools.md").read_text(encoding="utf-8").lower()
 

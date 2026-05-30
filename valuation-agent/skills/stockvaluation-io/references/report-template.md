@@ -4,6 +4,35 @@ This file is the canonical controlling structure for the final educational valua
 
 `narrative-report-style.md` is subordinate to this template. narrative-report-style.md is subordinate to the report template. It may improve prose, but it must not remove, rename, or reorder required template sections. Do not use the older loose story-and-numbers shape as the controlling report structure.
 
+## Final Report Rendering Contract
+
+The final answer must render the required report-template headings in order. Do not replace this template with a compressed memo, even when the user asks for a concise answer. A final answer that starts with a sentence such as "Using stockvaluation.io, the user-refined case values COMPANY at PRICE" and then gives only "Key assumptions", "Main caveats", and "Sources used" is not template-compliant.
+
+Every final report must visibly include evidence review status and guided-refinement status. If a status is unavailable, say unavailable in the relevant template section rather than omitting the section.
+
+Diagnostic scenarios stay diagnostic. Do not blend the main scenario with a diagnostic no-segment run, market-implied diagnostic, sensitivity run, or unsupported scenario into a headline valuation range. If a diagnostic run is useful, put it in the Scenario Book Summary, Scenario Headline Table, Sensitivity Analysis, or Internal Baseline Audit section, and label why it is not the main scenario.
+
+Use these section names as the visible spine of the final report unless the user explicitly asks for audit/debug appendices to be added:
+
+1. Educational-Use Framing
+2. Valuation Audit Packet Summary
+3. Scenario Book Summary
+4. Evidence Review Status
+5. Valuation Snapshot
+6. Source Quality Summary
+7. Central Narrative Tension
+8. Growth
+9. Margins
+10. Investment Efficiency
+11. Risk
+12. Market-Implied Expectations
+13. Assumptions Used
+14. Data Quality And Limitations
+15. Key Takeaways
+16. Guided User Judgment And User-Refined Scenario
+17. Evidence And Segment Summary
+18. Assumption Judgment Summary
+
 Do not print raw `assumption_judgment` JSON by default. Summarize it in prose and tables. Do not invent missing values. If MCP/service output does not return a value, say unavailable or omit the table.
 
 Do not print raw `valuation_audit_packet` JSON by default. Summarize the packet status, packet reference, final case type, rejected evidence, unsupported fields, guided-refinement status, and data-quality limitations in prose or compact tables. Keep mechanical baseline value/detail out of user-facing output unless the user explicitly asks for audit/debug detail.
