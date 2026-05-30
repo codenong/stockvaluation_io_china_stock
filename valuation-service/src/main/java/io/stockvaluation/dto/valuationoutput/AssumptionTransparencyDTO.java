@@ -41,6 +41,7 @@ public class AssumptionTransparencyDTO {
     private SourceProvenance sourceProvenance;
     private DiscountRate discountRate;
     private OperatingAssumptions operatingAssumptions;
+    private AccountingAndClaimsDTO accountingAndClaims;
     private List<String> notes = new ArrayList<>();
     private GrowthAnchor growthAnchor;
     private MarketImpliedExpectations marketImpliedExpectations;

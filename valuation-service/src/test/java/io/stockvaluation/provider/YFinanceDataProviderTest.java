@@ -92,6 +92,23 @@ class YFinanceDataProviderTest {
     }
 
     @Test
+    void getCashFlowSnapshotsExposeStockBasedCompensation() {
+        when(properties.getBaseUrl()).thenReturn("http://localhost:5000");
+        when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), eq(null), any(ParameterizedTypeReference.class)))
+                .thenReturn(ResponseEntity.ok(Map.of(
+                        "1704067200000", Map.of("StockBasedCompensation", 6.0))));
+
+        CashFlowSnapshot snapshot = provider.getCashFlowSnapshots("AAPL", "yearly")
+                .get("1704067200000");
+
+        ArgumentCaptor<String> urlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(restTemplate).exchange(urlCaptor.capture(), eq(HttpMethod.GET), eq(null), any(ParameterizedTypeReference.class));
+        assertEquals("http://localhost:5000/cash-flow?ticker=AAPL&freq=yearly", urlCaptor.getValue());
+        assertEquals(6.0, snapshot.stockBasedCompensation());
+        assertEquals("yahoo_normalized", snapshot.sourceProvenance().getSourceClass());
+    }
+
+    @Test
     void getDividendHistoryFlattensNestedHistoryMap() {
         when(properties.getBaseUrl()).thenReturn("http://localhost:5000");
         when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), eq(null), any(ParameterizedTypeReference.class)))

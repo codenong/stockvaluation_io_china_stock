@@ -2,6 +2,7 @@ package io.stockvaluation.service;
 
 import io.stockvaluation.dto.FinancialDataDTO;
 import io.stockvaluation.provider.BalanceSheetSnapshot;
+import io.stockvaluation.provider.CashFlowSnapshot;
 import io.stockvaluation.provider.DataProvider;
 import io.stockvaluation.provider.FinancialSnapshotProvider;
 import io.stockvaluation.provider.IncomeStatementSnapshot;
@@ -37,6 +38,10 @@ public class CompanyFinancialIngestionService {
                 financialDataProvider.getIncomeStatementSnapshots(ticker, "quarterly");
         Map<String, IncomeStatementSnapshot> yearlyIncomeSnapshots =
                 financialDataProvider.getIncomeStatementSnapshots(ticker, "yearly");
+        Map<String, CashFlowSnapshot> quarterlyCashFlowSnapshots =
+                safeCashFlowSnapshots(financialDataProvider, ticker, "quarterly");
+        Map<String, CashFlowSnapshot> yearlyCashFlowSnapshots =
+                safeCashFlowSnapshots(financialDataProvider, ticker, "yearly");
 
         Map<String, IncomeStatementSnapshot> recentQuarterlyIncome = getMostRecentPeriods(quarterlyIncomeSnapshots, 4);
         double totalRevenueTTM = calculateTotal(recentQuarterlyIncome, IncomeStatementSnapshot::totalRevenue);
@@ -69,6 +74,14 @@ public class CompanyFinancialIngestionService {
                 findSnapshotByYear(yearlyIncomeSnapshots, targetYears(1, 2, 3),
                         snapshot -> snapshot.totalRevenue() != null,
                         IncomeStatementSnapshot.empty());
+        IncomeStatementSnapshot priorYearShareSnapshot =
+                findSnapshotByYear(yearlyIncomeSnapshots, targetYears(2, 3, 4),
+                        snapshot -> snapshot.dilutedAverageShares() != null,
+                        IncomeStatementSnapshot.empty());
+        CashFlowSnapshot recentYearlyCashFlowSnapshot =
+                findSnapshotByYear(yearlyCashFlowSnapshots, targetYears(1, 2, 3),
+                        snapshot -> snapshot.stockBasedCompensation() != null,
+                        CashFlowSnapshot.empty());
 
         Double revenueLTM = previousYearIncomeSnapshot.totalRevenue();
         if (Objects.equals(revenueLTM, totalRevenueTTM)) {
@@ -133,6 +146,20 @@ public class CompanyFinancialIngestionService {
         financialDataDTO.setMinorityInterestTTM(valueOrZero(recentYearlyBalanceSnapshot.minorityInterest()));
         financialDataDTO.setMinorityInterestLTM(0.0);
         financialDataDTO.setNoOfShareOutstanding(numberOfShareOutStanding);
+        financialDataDTO.setBasicSharesOutstanding(previousYearIncomeSnapshot.basicAverageShares());
+        financialDataDTO.setDilutedSharesOutstanding(previousYearIncomeSnapshot.dilutedAverageShares());
+        financialDataDTO.setPriorDilutedSharesOutstanding(priorYearShareSnapshot.dilutedAverageShares());
+        financialDataDTO.setStockBasedCompensationLTM(recentYearlyCashFlowSnapshot.stockBasedCompensation());
+        double stockBasedCompensationTTM = calculateTotal(
+                getMostRecentPeriods(quarterlyCashFlowSnapshots, 4),
+                CashFlowSnapshot::stockBasedCompensation);
+        Double stockBasedCompensationTtmValue;
+        if (stockBasedCompensationTTM == 0.0) {
+            stockBasedCompensationTtmValue = recentYearlyCashFlowSnapshot.stockBasedCompensation();
+        } else {
+            stockBasedCompensationTtmValue = stockBasedCompensationTTM;
+        }
+        financialDataDTO.setStockBasedCompensationTTM(stockBasedCompensationTtmValue);
 
         financialDataDTO.setHighestStockPrice(toDouble(basicInfoMap.get("dayHigh")));
         financialDataDTO.setPreviousDayStockPrice(toDouble(basicInfoMap.get("previousClose")));
@@ -208,9 +235,9 @@ public class CompanyFinancialIngestionService {
                 .getYear();
     }
 
-    private static double calculateTotal(
-            Map<String, IncomeStatementSnapshot> snapshots,
-            Function<IncomeStatementSnapshot, Double> extractor) {
+    private static <T> double calculateTotal(
+            Map<String, T> snapshots,
+            Function<T, Double> extractor) {
         return snapshots.values().stream()
                 .filter(Objects::nonNull)
                 .map(extractor)
@@ -241,6 +268,18 @@ public class CompanyFinancialIngestionService {
         researchAndDevelopmentMap.put("currentR&D-0", currentResearchAndDevelopment);
 
         return researchAndDevelopmentMap;
+    }
+
+    private static Map<String, CashFlowSnapshot> safeCashFlowSnapshots(
+            FinancialSnapshotProvider financialDataProvider,
+            String ticker,
+            String freq) {
+        try {
+            Map<String, CashFlowSnapshot> snapshots = financialDataProvider.getCashFlowSnapshots(ticker, freq);
+            return snapshots != null ? snapshots : Map.of();
+        } catch (RuntimeException ignored) {
+            return Map.of();
+        }
     }
 
     private static double valueOrZero(Double value) {

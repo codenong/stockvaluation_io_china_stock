@@ -29,6 +29,10 @@ public class FinancialDataInput {
                 + ", companyRiskLevel=" + companyRiskLevel + ", hasEmployeeOptions=" + hasEmployeeOptions
                 + ", numberOfOptions=" + numberOfOptions + ", averageStrikePrice=" + averageStrikePrice
                 + ", averageMaturity=" + averageMaturity + ", stockPriceStdDev=" + stockPriceStdDev
+                + ", rdAmortizationMethod=" + rdAmortizationMethod
+                + ", rdAmortizationPeriodYears=" + rdAmortizationPeriodYears
+                + ", leaseExpenseCurrentYear=" + leaseExpenseCurrentYear
+                + ", leaseCommitmentAfterYear5=" + leaseCommitmentAfterYear5
                 + ", overrideAssumptionCostCapital=" + overrideAssumptionCostCapital
                 + ", overrideAssumptionReturnOnCapital="
                 + overrideAssumptionReturnOnCapital + ", overrideAssumptionProbabilityOfFailure="
@@ -65,6 +69,11 @@ public class FinancialDataInput {
     private Double averageStrikePrice = 0.0;
     private Double averageMaturity = 0.0;
     private Double stockPriceStdDev = 0.0;
+    private String rdAmortizationMethod;
+    private Integer rdAmortizationPeriodYears;
+    private Double leaseExpenseCurrentYear;
+    private Double[] leaseCommitmentsYears1To5;
+    private Double leaseCommitmentAfterYear5;
     private OverrideAssumption overrideAssumptionCostCapital;
     private OverrideAssumption overrideAssumptionReturnOnCapital;
     private OverrideAssumption overrideAssumptionProbabilityOfFailure;
@@ -107,6 +116,13 @@ public class FinancialDataInput {
             this.averageStrikePrice = financialDataInput.averageStrikePrice;
             this.averageMaturity = financialDataInput.averageMaturity;
             this.stockPriceStdDev = financialDataInput.stockPriceStdDev;
+            this.rdAmortizationMethod = financialDataInput.rdAmortizationMethod;
+            this.rdAmortizationPeriodYears = financialDataInput.rdAmortizationPeriodYears;
+            this.leaseExpenseCurrentYear = financialDataInput.leaseExpenseCurrentYear;
+            this.leaseCommitmentsYears1To5 = financialDataInput.leaseCommitmentsYears1To5 != null
+                    ? financialDataInput.leaseCommitmentsYears1To5.clone()
+                    : null;
+            this.leaseCommitmentAfterYear5 = financialDataInput.leaseCommitmentAfterYear5;
             this.overrideAssumptionCostCapital = financialDataInput.overrideAssumptionCostCapital;
             this.overrideAssumptionReturnOnCapital = financialDataInput.overrideAssumptionReturnOnCapital;
             this.overrideAssumptionProbabilityOfFailure = financialDataInput.overrideAssumptionProbabilityOfFailure;

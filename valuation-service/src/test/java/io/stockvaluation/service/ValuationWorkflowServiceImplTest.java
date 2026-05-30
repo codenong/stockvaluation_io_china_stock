@@ -9,12 +9,14 @@ import io.stockvaluation.dto.FinancialDataDTO;
 import io.stockvaluation.dto.GrowthDto;
 import io.stockvaluation.dto.GrowthAnchorDTO;
 import io.stockvaluation.dto.OptionValueResultDTO;
+import io.stockvaluation.dto.OverrideAssumption;
 import io.stockvaluation.dto.SegmentResponseDTO;
 import io.stockvaluation.dto.SegmentWeightedParameters;
 import io.stockvaluation.dto.ValuationOutputDTO;
 import io.stockvaluation.dto.ValuationTemplate;
 import io.stockvaluation.dto.valuationoutput.CompanyDTO;
 import io.stockvaluation.dto.valuationoutput.FinancialDTO;
+import io.stockvaluation.dto.valuationoutput.AccountingAndClaimsDTO;
 import io.stockvaluation.dto.valuationoutput.AssumptionTransparencyDTO;
 import io.stockvaluation.dto.valuationoutput.SimulationResultsDTO;
 import io.stockvaluation.dto.valuationoutput.CalibrationResultDTO;
@@ -238,6 +240,327 @@ class ValuationWorkflowServiceImplTest {
                                 .anyMatch(warning -> warning.contains("researched baseline mode")));
                 assertTrue(result.getAssumptionTransparency().getUnsupportedBaselineDrivers().stream()
                                 .anyMatch(driver -> "segments".equals(driver.getField())));
+        }
+
+        @Test
+        void getValuation_returnsAccountingAndClaimsStatusesForDefaultDataGaps() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                ValuationTemplate template = fcffTemplate();
+                stubHappyPath(companyData, template, valuationOutput(100.0, 100.0), valuationOutput(100.0, 100.0));
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", null);
+
+                AccountingAndClaimsDTO accounting = result.getAssumptionTransparency().getAccountingAndClaims();
+                assertNotNull(accounting);
+                assertEquals("accounting_and_claims.v1", accounting.getSchemaVersion());
+                assertEquals("source_required", accounting.getRdCapitalization().getStatus());
+                assertEquals("blocked_report_only", accounting.getSbcDilution().getStatus());
+                assertEquals("zero_by_default", accounting.getLeases().getStatus());
+                assertEquals("zero_by_default", accounting.getOptionsWarrants().getStatus());
+                assertEquals("source_required", accounting.getNolTax().getStatus());
+                assertEquals("missing", accounting.getCash().getStatus());
+                assertEquals("missing", accounting.getDebt().getStatus());
+                assertEquals("missing", accounting.getShareCount().getStatus());
+        }
+
+        @Test
+        void getValuation_marksCashDebtAndShareCountReturnedWhenFinancialDataExists() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                companyData.getFinancialDataDTO().setCashAndMarkablTTM(10_000.0);
+                companyData.getFinancialDataDTO().setBookValueDebtTTM(5_000.0);
+                companyData.getFinancialDataDTO().setNoOfShareOutstanding(100.0);
+                companyData.getFinancialDataDTO()
+                                .setSourceProvenance(SourceProvenance.yahooNormalized("yfinance-http", "2026-02-26"));
+                ValuationTemplate template = fcffTemplate();
+                stubHappyPath(companyData, template, valuationOutput(100.0, 100.0), valuationOutput(100.0, 100.0));
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", null);
+
+                AccountingAndClaimsDTO accounting = result.getAssumptionTransparency().getAccountingAndClaims();
+                assertEquals("returned", accounting.getCash().getStatus());
+                assertEquals("returned", accounting.getDebt().getStatus());
+                assertEquals("returned", accounting.getShareCount().getStatus());
+                assertEquals(10_000.0, accounting.getCash().getValue(), 0.001);
+                assertEquals(5_000.0, accounting.getDebt().getValue(), 0.001);
+                assertEquals(100.0, accounting.getShareCount().getValue(), 0.001);
+        }
+
+        @Test
+        void getValuation_reportsSbcDilutionMinimumDiagnosticsAsReportOnly() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                companyData.getFinancialDataDTO().setRevenueTTM(1_000.0);
+                companyData.getFinancialDataDTO().setOperatingIncomeTTM(200.0);
+                companyData.getFinancialDataDTO().setStockBasedCompensationTTM(50.0);
+                companyData.getFinancialDataDTO().setDilutedSharesOutstanding(110.0);
+                companyData.getFinancialDataDTO().setPriorDilutedSharesOutstanding(100.0);
+                companyData.getFinancialDataDTO().setBasicSharesOutstanding(105.0);
+                ValuationTemplate template = fcffTemplate();
+                ValuationOutputDTO output = valuationOutput(100.0, 100.0);
+                FinancialDTO financialOutput = new FinancialDTO();
+                financialOutput.getFcff()[0] = 125.0;
+                output.setFinancialDTO(financialOutput);
+                stubHappyPath(companyData, template, output, output);
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", null);
+
+                AccountingAndClaimsDTO.Topic sbc = result.getAssumptionTransparency()
+                                .getAccountingAndClaims()
+                                .getSbcDilution();
+                assertEquals("blocked_report_only", sbc.getStatus());
+                assertEquals("report_only", sbc.getModelTreatment());
+                assertEquals(5.0, (Double) sbc.getDiagnostics().get("sbcPercentRevenue"), 0.001);
+                assertEquals(25.0, (Double) sbc.getDiagnostics().get("sbcPercentOperatingIncome"), 0.001);
+                assertEquals(40.0, (Double) sbc.getDiagnostics().get("sbcPercentFreeCashFlow"), 0.001);
+                assertEquals(10.0, (Double) sbc.getDiagnostics().get("dilutedShareCountTrendPct"), 0.001);
+                assertEquals("diluted_share_count_above_basic",
+                                sbc.getDiagnostics().get("dilutedShareConsistencyStatus"));
+                assertEquals(5.0, (Double) sbc.getReportedValues().get("sbcPercentRevenue"), 0.001);
+                assertEquals(25.0, (Double) sbc.getReportedValues().get("sbcPercentOperatingIncome"), 0.001);
+                assertEquals(40.0, (Double) sbc.getReportedValues().get("sbcPercentFreeCashFlow"), 0.001);
+                assertEquals(10.0, (Double) sbc.getReportedValues().get("dilutedShareCountTrendPct"), 0.001);
+                assertEquals("diluted_share_count_above_basic",
+                                sbc.getReportedValues().get("dilutedShareConsistencyStatus"));
+        }
+
+        @Test
+        void getValuation_keepsNolTaxReportOnlyEvenWhenScenarioInputsExist() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                companyData.getFinancialDataDTO()
+                                .setSourceProvenance(SourceProvenance.primaryFiling("sec-filing", "2026-02-26"));
+                ValuationTemplate template = fcffTemplate();
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setRequestPolicyMode("explicit_scenario");
+                overrides.setOverrideAssumptionNOL(new OverrideAssumption(100.0, true, 0.0, null));
+                overrides.setOverrideAssumptionTaxRate(new OverrideAssumption(21.0, true, 0.0, null));
+                stubHappyPath(companyData, template, valuationOutput(100.0, 100.0), valuationOutput(100.0, 100.0));
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides);
+
+                AccountingAndClaimsDTO.Topic nolTax = result.getAssumptionTransparency()
+                                .getAccountingAndClaims()
+                                .getNolTax();
+                assertEquals("source_required", nolTax.getStatus());
+                assertEquals("report_only", nolTax.getModelTreatment());
+                assertTrue(nolTax.getReason().contains("R&D capitalization is the only governed accounting scenario path"));
+                assertTrue(result.getAssumptionTransparency()
+                                .getAccountingAndClaims()
+                                .getEffectiveAccountingDecisions()
+                                .stream()
+                                .anyMatch(decision -> "nol_tax".equals(decision.getTopic())
+                                                && "source_required".equals(decision.getStatus())));
+        }
+
+        @Test
+        void getValuation_rejectsLeaseAdjustmentAsReportOnlyAtServiceBoundary() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                companyData.getFinancialDataDTO()
+                                .setSourceProvenance(SourceProvenance.primaryFiling("sec-filing", "2026-02-26"));
+                ValuationTemplate template = fcffTemplate();
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setRequestPolicyMode("explicit_scenario");
+                overrides.setHasOperatingLease(true);
+                overrides.setLeaseExpenseCurrentYear(100.0);
+                overrides.setLeaseCommitmentsYears1To5(new Double[] { 90.0, 80.0, 70.0, 60.0, 50.0 });
+                overrides.setLeaseCommitmentAfterYear5(120.0);
+                lenient().when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
+                when(valuationTemplateService.determineTemplate(eq(overrides), eq(companyData))).thenReturn(template);
+
+                ResponseStatusException ex = assertThrows(
+                                ResponseStatusException.class,
+                                () -> workflow.getValuation("AAPL", overrides));
+                assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, ex.getStatusCode());
+                assertTrue(ex.getReason().contains("LEASE_REPORT_ONLY"));
+                verify(valuationOutputService, never())
+                                .getValuationOutput(eq("AAPL"), any(FinancialDataInput.class), eq(template));
+        }
+
+        @Test
+        void getValuation_rejectsInvalidLeaseScheduleAsReportOnlyAtServiceBoundary() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                companyData.getFinancialDataDTO()
+                                .setSourceProvenance(SourceProvenance.primaryFiling("sec-filing", "2026-02-26"));
+                ValuationTemplate template = fcffTemplate();
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setRequestPolicyMode("explicit_scenario");
+                overrides.setHasOperatingLease(true);
+                overrides.setLeaseExpenseCurrentYear(100.0);
+                overrides.setLeaseCommitmentsYears1To5(new Double[] { 90.0, -80.0 });
+                overrides.setLeaseCommitmentAfterYear5(120.0);
+
+                lenient().when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
+                when(valuationTemplateService.determineTemplate(eq(overrides), eq(companyData))).thenReturn(template);
+
+                ResponseStatusException ex = assertThrows(
+                                ResponseStatusException.class,
+                                () -> workflow.getValuation("AAPL", overrides));
+                assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, ex.getStatusCode());
+                assertTrue(ex.getReason().contains("LEASE_REPORT_ONLY"));
+                verify(valuationOutputService, never())
+                                .getValuationOutput(eq("AAPL"), any(FinancialDataInput.class), eq(template));
+        }
+
+        @Test
+        void getValuation_marksCashDebtAndShareCountReconciliationStatuses() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                companyData.getFinancialDataDTO().setCashAndMarkablTTM(10_000.0);
+                companyData.getFinancialDataDTO().setBookValueDebtTTM(5_000.0);
+                companyData.getFinancialDataDTO().setNoOfShareOutstanding(100.0);
+                SourceProvenance provenance = SourceProvenance.primaryFiling("sec-filing", "2026-02-26");
+                provenance.setDataQualityWarnings(List.of(new SourceProvenance.DataQualityWarning(
+                                "cash_and_marketable_securities",
+                                "material_mismatch",
+                                9_000.0,
+                                10_000.0,
+                                0.10,
+                                0.05,
+                                "primary_filing",
+                                "2026-02-26")));
+                companyData.getFinancialDataDTO().setSourceProvenance(provenance);
+                ValuationTemplate template = fcffTemplate();
+                stubHappyPath(companyData, template, valuationOutput(100.0, 100.0), valuationOutput(100.0, 100.0));
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", null);
+
+                AccountingAndClaimsDTO accounting = result.getAssumptionTransparency().getAccountingAndClaims();
+                assertEquals("conflict", accounting.getCash().getStatus());
+                assertEquals("reconciled", accounting.getDebt().getStatus());
+                assertEquals("reconciled", accounting.getShareCount().getStatus());
+                assertEquals("filing_derived", accounting.getShareCount().getReportedValues().get("shareCountBasis"));
+                assertEquals("material_mismatch", accounting.getCash().getReportedValues().get("reconciliationStatus"));
+        }
+
+        @Test
+        void getValuation_marksCashDebtAndShareCountStaleWhenSourcePolicyIsStale() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                companyData.getFinancialDataDTO().setCashAndMarkablTTM(10_000.0);
+                companyData.getFinancialDataDTO().setBookValueDebtTTM(5_000.0);
+                companyData.getFinancialDataDTO().setNoOfShareOutstanding(100.0);
+                SourceProvenance provenance = SourceProvenance.yahooNormalized("yfinance-http", "2024-12-31");
+                provenance.setSourcePolicyStatus("stale_source_date");
+                companyData.getFinancialDataDTO().setSourceProvenance(provenance);
+                ValuationTemplate template = fcffTemplate();
+                stubHappyPath(companyData, template, valuationOutput(100.0, 100.0), valuationOutput(100.0, 100.0));
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", null);
+
+                AccountingAndClaimsDTO accounting = result.getAssumptionTransparency().getAccountingAndClaims();
+                assertEquals("stale", accounting.getCash().getStatus());
+                assertEquals("stale", accounting.getDebt().getStatus());
+                assertEquals("stale", accounting.getShareCount().getStatus());
+                assertEquals("stale_source_date", accounting.getCash().getReportedValues().get("reconciliationStatus"));
+        }
+
+        @Test
+        void getValuation_explicitScenarioCanApplyRdCapitalizationWithMultiYearHistoryAndProvenance() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                companyData.getFinancialDataDTO().setResearchAndDevelopmentMap(Map.of(
+                                "currentR&D-0", 12_000.0,
+                                "currentR&D-1", 9_000.0,
+                                "currentR&D-2", 7_000.0));
+                companyData.getFinancialDataDTO()
+                                .setSourceProvenance(SourceProvenance.primaryFiling("sec-filing", "2026-02-26"));
+                ValuationTemplate template = fcffTemplate();
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setRequestPolicyMode("explicit_scenario");
+                overrides.setIsExpensesCapitalize(true);
+                overrides.setRdAmortizationMethod("straight_line");
+                overrides.setRdAmortizationPeriodYears(4);
+                stubHappyPath(companyData, template, valuationOutput(100.0, 100.0), valuationOutput(100.0, 100.0));
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides);
+
+                AccountingAndClaimsDTO accounting = result.getAssumptionTransparency().getAccountingAndClaims();
+                assertEquals("governed_scenario_supported", accounting.getRdCapitalization().getStatus());
+                assertEquals("governed_scenario_effective", accounting.getRdCapitalization().getModelTreatment());
+                ArgumentCaptor<FinancialDataInput> captor = ArgumentCaptor.forClass(FinancialDataInput.class);
+                verify(valuationOutputService, atLeastOnce())
+                                .getValuationOutput(eq("AAPL"), captor.capture(), eq(template));
+                assertTrue(captor.getAllValues().stream()
+                                .anyMatch(FinancialDataInput::getIsExpensesCapitalize));
+        }
+
+        @Test
+        void getValuation_requiresRdAmortizationPolicyBeforeGovernedStatus() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                companyData.getFinancialDataDTO().setResearchAndDevelopmentMap(Map.of(
+                                "currentR&D-0", 12_000.0,
+                                "currentR&D-1", 9_000.0,
+                                "currentR&D-2", 7_000.0));
+                companyData.getFinancialDataDTO()
+                                .setSourceProvenance(SourceProvenance.primaryFiling("sec-filing", "2026-02-26"));
+                ValuationTemplate template = fcffTemplate();
+                stubHappyPath(companyData, template, valuationOutput(100.0, 100.0), valuationOutput(100.0, 100.0));
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", null);
+
+                AccountingAndClaimsDTO.Topic rd = result.getAssumptionTransparency()
+                                .getAccountingAndClaims()
+                                .getRdCapitalization();
+                assertEquals("source_required", rd.getStatus());
+                assertEquals(true, rd.getReportedValues().get("multiYearHistory"));
+                @SuppressWarnings("unchecked")
+                Map<String, Object> policy = (Map<String, Object>) rd.getReportedValues().get("amortizationPolicy");
+                assertEquals(true, policy.get("serviceDefault"));
+        }
+
+        @Test
+        void getValuation_rejectsRdCapitalizationWithoutAmortizationPolicyAtServiceBoundary() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                companyData.getFinancialDataDTO().setResearchAndDevelopmentMap(Map.of(
+                                "currentR&D-0", 12_000.0,
+                                "currentR&D-1", 9_000.0,
+                                "currentR&D-2", 7_000.0));
+                companyData.getFinancialDataDTO()
+                                .setSourceProvenance(SourceProvenance.primaryFiling("sec-filing", "2026-02-26"));
+                ValuationTemplate template = fcffTemplate();
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setRequestPolicyMode("explicit_scenario");
+                overrides.setIsExpensesCapitalize(true);
+
+                lenient().when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
+                when(valuationTemplateService.determineTemplate(eq(overrides), eq(companyData))).thenReturn(template);
+
+                ResponseStatusException ex = assertThrows(
+                                ResponseStatusException.class,
+                                () -> workflow.getValuation("AAPL", overrides));
+                assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, ex.getStatusCode());
+                assertTrue(ex.getReason().contains("RD_CAPITALIZATION_AMORTIZATION_POLICY_REQUIRED"));
+                verify(valuationOutputService, never())
+                                .getValuationOutput(eq("AAPL"), any(FinancialDataInput.class), eq(template));
+        }
+
+        @Test
+        void getValuation_rejectsRdCapitalizationWhenHistoryIsNotMultiYear() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                companyData.getFinancialDataDTO()
+                                .setSourceProvenance(SourceProvenance.primaryFiling("sec-filing", "2026-02-26"));
+                ValuationTemplate template = fcffTemplate();
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setRequestPolicyMode("explicit_scenario");
+                overrides.setIsExpensesCapitalize(true);
+
+                lenient().when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
+                when(valuationTemplateService.determineTemplate(eq(overrides), eq(companyData))).thenReturn(template);
+
+                ResponseStatusException ex = assertThrows(
+                                ResponseStatusException.class,
+                                () -> workflow.getValuation("AAPL", overrides));
+                assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, ex.getStatusCode());
+                assertTrue(ex.getReason().contains("RD_CAPITALIZATION_SOURCE_REQUIRED"));
+                verify(valuationOutputService, never())
+                                .getValuationOutput(eq("AAPL"), any(FinancialDataInput.class), eq(template));
         }
 
         @Test

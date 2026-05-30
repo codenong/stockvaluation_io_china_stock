@@ -130,6 +130,28 @@ public interface DataProvider extends FinancialSnapshotProvider {
     }
 
     /**
+     * Get cash-flow data keyed by epoch milliseconds.
+     */
+    default Map<String, Map<String, Object>> getCashFlow(String ticker) {
+        return Map.of();
+    }
+
+    /**
+     * Get cash-flow data with frequency selection.
+     */
+    default Map<String, Map<String, Object>> getCashFlow(String ticker, String freq) {
+        return getCashFlow(ticker);
+    }
+
+    /**
+     * Get provider-neutral cash-flow snapshots keyed by epoch milliseconds.
+     */
+    @Override
+    default Map<String, CashFlowSnapshot> getCashFlowSnapshots(String ticker, String freq) {
+        return mapSnapshots(getCashFlow(ticker, freq), getProviderName(), DataProvider::toCashFlowSnapshot);
+    }
+
+    /**
      * Get revenue growth estimates.
      *
      * @param ticker Stock ticker
@@ -241,6 +263,12 @@ public interface DataProvider extends FinancialSnapshotProvider {
                         "researchAndDevelopment",
                         "ResearchAndDevelopment",
                         "ResearchAndDevelopmentExpense")),
+                firstNumeric(payload, List.of(
+                        "basicAverageShares",
+                        "BasicAverageShares")),
+                firstNumeric(payload, List.of(
+                        "dilutedAverageShares",
+                        "DilutedAverageShares")),
                 SourceProvenance.yahooNormalized(providerName, periodEndFromEpochMillis(periodKey)));
     }
 
@@ -270,6 +298,18 @@ public interface DataProvider extends FinancialSnapshotProvider {
                         "minorityInterest",
                         "MinorityInterest",
                         "MinorityInterests")),
+                SourceProvenance.yahooNormalized(providerName, periodEndFromEpochMillis(periodKey)));
+    }
+
+    private static CashFlowSnapshot toCashFlowSnapshot(
+            String periodKey,
+            Map<String, Object> payload,
+            String providerName) {
+        return new CashFlowSnapshot(
+                firstNumeric(payload, List.of(
+                        "stockBasedCompensation",
+                        "StockBasedCompensation",
+                        "ShareBasedCompensation")),
                 SourceProvenance.yahooNormalized(providerName, periodEndFromEpochMillis(periodKey)));
     }
 

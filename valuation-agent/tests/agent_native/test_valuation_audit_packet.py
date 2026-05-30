@@ -144,6 +144,16 @@ def _packet(**overrides):
         "mcp_call_references": [
             {"tool": "stockvaluation.recalculate", "status": "ok"},
         ],
+        "accounting_decisions": {
+            "requested": {},
+            "mapped": {},
+            "unsupported": {},
+            "report_only": [],
+            "governed_scenarios": [],
+            "rejected": [],
+            "metadata": {},
+            "effective": [],
+        },
     }
     packet.update(overrides)
     return packet
@@ -186,12 +196,14 @@ def test_validate_valuation_audit_packet_rejects_missing_required_sections():
     packet = _packet()
     del packet["segment_validation"]
     del packet["assumption_buckets"]["effective"]
+    del packet["accounting_decisions"]
 
     result = validate_valuation_audit_packet(packet)
 
     assert result["ok"] is False
     assert "segment_validation is required." in result["validation_warnings"]
     assert "assumption_buckets.effective is required." in result["validation_warnings"]
+    assert "accounting_decisions is required." in result["validation_warnings"]
 
 
 def test_validate_valuation_audit_packet_keeps_mechanical_baseline_internal_only():

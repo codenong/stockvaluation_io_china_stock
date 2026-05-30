@@ -8,6 +8,11 @@ import re
 from typing import Any, Callable
 
 from . import __version__
+from .accounting_and_claims import (
+    accounting_metadata,
+    merge_accounting_metadata,
+    validate_accounting_override,
+)
 from .evidence_packet import validate_evidence_packet
 from .security import sanitize_for_agent
 from .segment_discovery import parse_revenue_weight, sanitize_segment_package
@@ -95,11 +100,14 @@ USER_REFINED_SCENARIO_FIELDS = {
 REPORT_ONLY_OVERRIDE_FIELDS = {
     "rd_capitalization",
     "r_and_d_capitalization",
+    "sbc_dilution",
     "leases",
     "operating_leases",
     "options",
     "warrants",
+    "options_warrants",
     "nols",
+    "nol_tax",
     "cash",
     "debt",
     "share_count",
@@ -213,7 +221,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                     **ticker_property,
                     "overrides": {
                         "type": "object",
-                        "description": "Supported keys: revenue_growth, operating_margin_next_year, operating_margin/target_operating_margin, margin_convergence_year, sales_to_capital, sales_to_capital_years_1_to_5, sales_to_capital_years_6_to_10, segments, sector_overrides, segment_economics, wacc, terminal_growth, tax_rate, growth_pattern_override, request_policy, rationale, evidence_used, evidence_packet, user_judgment, baseline_plausibility, assumption_judgment, guided_refinement.",
+                        "description": "Supported keys: revenue_growth, operating_margin_next_year, operating_margin/target_operating_margin, margin_convergence_year, sales_to_capital, sales_to_capital_years_1_to_5, sales_to_capital_years_6_to_10, segments, sector_overrides, segment_economics, rd_capitalization (explicit governed accounting scenario only), leases (report-only AccountingAndClaims status), wacc, terminal_growth, tax_rate, growth_pattern_override, request_policy, rationale, evidence_used, evidence_packet, user_judgment, baseline_plausibility, assumption_judgment, guided_refinement.",
                         "additionalProperties": True,
                     },
                 },
@@ -476,6 +484,17 @@ def map_recalculate_overrides(requested: dict[str, Any]) -> tuple[dict[str, Any]
     autonomous_researched = request_policy_mode == "autonomous_researched"
     user_refined_scenario = request_policy_mode == "user_refined_scenario"
     for key, value in requested.items():
+        if key in REPORT_ONLY_OVERRIDE_FIELDS:
+            validation = validate_accounting_override(key, value, request_policy_mode)
+            metadata["accounting_and_claims"] = merge_accounting_metadata(
+                metadata.get("accounting_and_claims"),
+                validation,
+            )
+            if not validation["ok"]:
+                unsupported[key] = accounting_override_unsupported(validation, key, value)
+                continue
+            mapped.update(validation.get("accepted_mcp_inputs", {}))
+            continue
         if key == "evidence_packet":
             validation = validate_evidence_packet(value)
             evidence_validation = validation
@@ -691,6 +710,22 @@ def segment_economics_unsupported(validation: dict[str, Any]) -> dict[str, Any]:
         "status": validation.get("status") or "invalid_segment_economics",
         "reason": "invalid_segment_economics",
         "message": details or "SegmentEconomics validation failed; rejected segment economics cannot govern recalculation.",
+    }
+
+
+def accounting_override_unsupported(validation: dict[str, Any], key: str, value: Any) -> dict[str, Any]:
+    unsupported = validation.get("unsupported", [])
+    status = validation.get("status") or "invalid_accounting_and_claims"
+    reason = "invalid_accounting_and_claims"
+    if unsupported and isinstance(unsupported[0], dict):
+        status = str(unsupported[0].get("status") or status)
+        reason = str(unsupported[0].get("reason") or reason)
+    return {
+        "value": sanitize_for_agent(value),
+        "metadata": accounting_metadata(validation),
+        "status": status,
+        "reason": reason,
+        "message": f"{key} is report-only unless accepted by a governed AccountingAndClaims scenario validator.",
     }
 
 
@@ -1063,6 +1098,7 @@ def valuation_success_payload(
         "dcf": extract_dcf_summary(valuation),
         "baseline": baseline,
         "assumptions": extract_assumptions(valuation),
+        "accountingAndClaims": extract_accounting_and_claims(valuation),
         "provenance": extract_source_provenance(valuation),
         "growthAnchor": extract_growth_anchor(valuation),
         "referenceData": reference_data_status(valuation),
@@ -1192,9 +1228,12 @@ def default_unsupported_adjustment_fields() -> list[dict[str, str]]:
             "reason": "Tax-rate changes are report-only or explicit-scenario fields in autonomous researched mode.",
         },
         {"field": "rd_capitalization", "status": "blocked_report_only", "reason": "R&D capitalization is explain/flag only unless a governed service contract applies it."},
-        {"field": "leases", "status": "blocked_report_only", "reason": "Lease adjustments are explain/flag only unless a governed service contract applies them."},
+        {"field": "leases", "status": "blocked_report_only", "reason": "Lease adjustments are report-only in Phase 5; R&D capitalization is the only governed accounting scenario path."},
         {"field": "options", "status": "blocked_report_only", "reason": "Options and warrants are explain/flag only unless a governed service contract applies them."},
+        {"field": "options_warrants", "status": "blocked_report_only", "reason": "Options and warrants are report-only unless service-calculated option inputs are available; direct claim overrides remain blocked."},
         {"field": "nols", "status": "blocked_report_only", "reason": "NOL adjustments are explain/flag only unless a governed service contract applies them."},
+        {"field": "nol_tax", "status": "blocked_report_only", "reason": "NOL/tax adjustments are report-only or explicit scenario-only unless a tested governed path exists."},
+        {"field": "sbc_dilution", "status": "blocked_report_only", "reason": "SBC/dilution diagnostics are report-only in Phase 5."},
         {"field": "cash", "status": "blocked_report_only", "reason": "Cash adjustments are report-only for autonomous researched baselines."},
         {"field": "debt", "status": "blocked_report_only", "reason": "Debt adjustments are report-only for autonomous researched baselines."},
         {"field": "share_count", "status": "blocked_report_only", "reason": "Share-count adjustments are report-only for autonomous researched baselines."},
@@ -1327,11 +1366,7 @@ def extract_assumptions(valuation: dict[str, Any]) -> dict[str, Any]:
             "limitNote": "Compare terminal growth to inflation and mature economy growth before presenting scenarios.",
         },
         "taxRate": tax_rate,
-        "accountingAdjustments": {
-            "rdCapitalization": valuation.get("rdCapitalization") or valuation.get("rdCapitalized"),
-            "operatingLeaseConversion": valuation.get("operatingLeaseConversion"),
-            "optionsOrWarrants": valuation.get("optionValueResultDTO") or valuation.get("valueOfOptions"),
-        },
+        "accountingAdjustments": extract_accounting_and_claims(valuation),
         "source": "valuation-service",
         "rationale": {
             "templateSelection": valuation.get("templateSelectionReason")
@@ -1356,6 +1391,14 @@ def effective_assumptions(valuation: dict[str, Any]) -> dict[str, Any]:
         "terminal_growth": assumptions["terminalGrowth"]["rate"],
         "tax_rate": assumptions["taxRate"],
     }
+
+
+def extract_accounting_and_claims(valuation: dict[str, Any]) -> dict[str, Any]:
+    transparency = _dict(valuation.get("assumptionTransparency"))
+    accounting = _dict(transparency.get("accountingAndClaims"))
+    if not accounting:
+        return {}
+    return sanitize_for_agent(accounting)
 
 
 def attach_valuation_audit_packet(
@@ -1421,6 +1464,7 @@ def attach_valuation_audit_packet(
                 "service_call_status": recalculate_status,
             }
         ],
+        accounting_decisions=accounting_decisions_from_assumptions(assumption_meta, payload),
         internal_state=mechanical_baseline_internal_state(baseline),
     )
     payload["auditPacket"] = valuation_audit_packet_metadata(audit_validation)
@@ -1515,6 +1559,8 @@ def derive_final_case_type(assumption_meta: dict[str, Any]) -> str:
         return "user_refined_scenario"
     if unsupported:
         return "insufficient_researched_evidence"
+    if request_mode == "explicit_scenario" and mapped.get("isExpensesCapitalize") is True:
+        return "evidence_constrained_governed_recalculation"
     if request_mode == "autonomous_researched":
         if has_governed_recalculate_change(mapped):
             return "evidence_constrained_governed_recalculation"
@@ -1529,6 +1575,7 @@ def has_governed_recalculate_change(mapped: dict[str, Any]) -> bool:
         "salesToCapitalYears1To5",
         "salesToCapitalYears6To10",
         "sectorOverrides",
+        "isExpensesCapitalize",
     }
     return any(field in mapped for field in governed_fields)
 
@@ -1551,6 +1598,47 @@ def data_quality_limitations(payload: dict[str, Any]) -> list[Any]:
     limitations.extend(provenance.get("warnings") or [])
     limitations.extend(provenance.get("dataQualityWarnings") or [])
     return limitations
+
+
+def accounting_decisions_from_assumptions(
+    assumption_meta: dict[str, Any],
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    requested = _dict(assumption_meta.get("requested"))
+    mapped = _dict(assumption_meta.get("mapped"))
+    unsupported = _dict(assumption_meta.get("unsupported"))
+    metadata = _dict(assumption_meta.get("metadata"))
+    accounting_metadata = _dict(metadata.get("accounting_and_claims"))
+    accounting_requested = {
+        key: value
+        for key, value in requested.items()
+        if key in REPORT_ONLY_OVERRIDE_FIELDS
+    }
+    accounting_mapped = {
+        key: value
+        for key, value in mapped.items()
+        if key in {
+            "isExpensesCapitalize",
+            "rdAmortizationMethod",
+            "rdAmortizationPeriodYears",
+        }
+    }
+    accounting_unsupported = {
+        key: value
+        for key, value in unsupported.items()
+        if key in REPORT_ONLY_OVERRIDE_FIELDS
+    }
+    accounting_output = _dict(payload.get("accountingAndClaims"))
+    return {
+        "requested": accounting_requested,
+        "mapped": accounting_mapped,
+        "unsupported": accounting_unsupported,
+        "report_only": accounting_metadata.get("report_only_diagnostics", []),
+        "governed_scenarios": accounting_metadata.get("governed_scenarios", []),
+        "rejected": accounting_metadata.get("rejected_claims", []),
+        "metadata": accounting_metadata,
+        "effective": accounting_output.get("effectiveAccountingDecisions", []),
+    }
 
 
 def mechanical_baseline_internal_state(baseline: dict[str, Any]) -> dict[str, Any]:

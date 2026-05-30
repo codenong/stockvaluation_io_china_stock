@@ -23,18 +23,22 @@ class DataProviderTest {
                         "InterestExpense", 3.0,
                         "IncomeTaxExpense", 4.0,
                         "IncomeBeforeTax", 16.0,
-                        "ResearchAndDevelopmentExpense", 2.0)),
+                        "ResearchAndDevelopmentExpense", 2.0,
+                        "BasicAverageShares", 4.0,
+                        "DilutedAverageShares", 4.5)),
                 Map.of("1704067200000", Map.of(
                         "CommonStockEquity", 50.0,
                         "TotalDebt", 25.0,
                         "CashCashEquivalentsAndShortTermInvestments", 10.0,
                         "OrdinarySharesNumber", 5.0,
                         "MinorityInterests", 1.0)),
+                Map.of("1704067200000", Map.of("StockBasedCompensation", 6.0)),
                 Map.of("nextYearRevenue", 0.12),
                 List.of(Map.of("date", "2024-01-01", "amount", 1.5)));
 
         IncomeStatementSnapshot income = provider.getIncomeStatementSnapshots("AAPL").get("1704067200000");
         BalanceSheetSnapshot balance = provider.getBalanceSheetSnapshots("AAPL").get("1704067200000");
+        CashFlowSnapshot cashFlow = provider.getCashFlowSnapshots("AAPL", "yearly").get("1704067200000");
 
         assertSame(provider.getIncomeStatement("AAPL"), provider.getIncomeStatement("AAPL", "quarterly"));
         assertSame(provider.getBalanceSheet("AAPL"), provider.getBalanceSheet("AAPL", "quarterly"));
@@ -46,11 +50,14 @@ class DataProviderTest {
         assertEquals(4.0, income.taxProvision());
         assertEquals(16.0, income.pretaxIncome());
         assertEquals(2.0, income.researchAndDevelopment());
+        assertEquals(4.0, income.basicAverageShares());
+        assertEquals(4.5, income.dilutedAverageShares());
         assertEquals(50.0, balance.bookValueEquity());
         assertEquals(25.0, balance.totalDebt());
         assertEquals(10.0, balance.cashAndShortTermInvestments());
         assertEquals(5.0, balance.sharesOutstanding());
         assertEquals(1.0, balance.minorityInterest());
+        assertEquals(6.0, cashFlow.stockBasedCompensation());
         assertEquals(50.0, provider.extractBookValueEquity(provider.getBalanceSheet("AAPL").get("1704067200000")));
         assertEquals(25.0, provider.extractTotalDebt(provider.getBalanceSheet("AAPL").get("1704067200000")));
         assertEquals(10.0, provider.extractCashAndShortTermInvestments(provider.getBalanceSheet("AAPL").get("1704067200000")));
@@ -63,7 +70,7 @@ class DataProviderTest {
 
     @Test
     void defaultMethodsHandleEmptyPayloadsAndExceptionsExposeMetadata() {
-        StubProvider provider = new StubProvider(Map.of(), Map.of(), Map.of(), List.of());
+        StubProvider provider = new StubProvider(Map.of(), Map.of(), Map.of(), Map.of(), List.of());
 
         assertTrue(provider.getIncomeStatementSnapshots("AAPL").isEmpty());
         assertTrue(provider.getBalanceSheetSnapshots("AAPL").isEmpty());
@@ -84,6 +91,7 @@ class DataProviderTest {
     private record StubProvider(
             Map<String, Map<String, Object>> incomeStatement,
             Map<String, Map<String, Object>> balanceSheet,
+            Map<String, Map<String, Object>> cashFlow,
             Map<String, Object> revenueEstimate,
             List<Map<String, Object>> dividendHistory) implements DataProvider {
 
@@ -105,6 +113,11 @@ class DataProviderTest {
         @Override
         public Map<String, Map<String, Object>> getBalanceSheet(String ticker) {
             return balanceSheet;
+        }
+
+        @Override
+        public Map<String, Map<String, Object>> getCashFlow(String ticker) {
+            return cashFlow;
         }
 
         @Override

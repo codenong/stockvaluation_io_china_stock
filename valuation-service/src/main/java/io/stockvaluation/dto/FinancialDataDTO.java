@@ -24,6 +24,11 @@ public class FinancialDataDTO {
                 + ", cashAndMarkablLTM=" + cashAndMarkablLTM + ", nonOperatingAssetTTM=" + nonOperatingAssetTTM
                 + ", nonOperatingAssetLTM=" + nonOperatingAssetLTM + ", minorityInterestTTM=" + minorityInterestTTM
                 + ", minorityInterestLTM=" + minorityInterestLTM + ", noOfShareOutstanding=" + noOfShareOutstanding
+                + ", basicSharesOutstanding=" + basicSharesOutstanding
+                + ", dilutedSharesOutstanding=" + dilutedSharesOutstanding
+                + ", priorDilutedSharesOutstanding=" + priorDilutedSharesOutstanding
+                + ", stockBasedCompensationTTM=" + stockBasedCompensationTTM
+                + ", stockBasedCompensationLTM=" + stockBasedCompensationLTM
                 + ", stockPrice=" + stockPrice + ", lowestStockPrice=" + lowestStockPrice + ", highestStockPrice="
                 + highestStockPrice + ", previousDayStockPrice=" + previousDayStockPrice + ", effectiveTaxRate="
                 + effectiveTaxRate + ", marginalTaxRate=" + marginalTaxRate + ", researchAndDevelopmentMap="
@@ -62,6 +67,16 @@ public class FinancialDataDTO {
     private Double minorityInterestLTM;
 
     private Double noOfShareOutstanding;
+
+    private Double basicSharesOutstanding;
+
+    private Double dilutedSharesOutstanding;
+
+    private Double priorDilutedSharesOutstanding;
+
+    private Double stockBasedCompensationTTM;
+
+    private Double stockBasedCompensationLTM;
 
     private Double stockPrice;
 

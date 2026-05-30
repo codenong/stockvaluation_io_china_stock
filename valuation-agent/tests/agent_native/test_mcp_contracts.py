@@ -38,6 +38,42 @@ def _valuation_payload():
             "costOfCapital": 8.0,
         },
         "assumptionTransparency": {
+            "accountingAndClaims": {
+                "schemaVersion": "accounting_and_claims.v1",
+                "rdCapitalization": {
+                    "status": "source_required",
+                    "modelTreatment": "report_only",
+                    "reason": "Multi-year R&D history and amortization policy were not source-backed.",
+                },
+                "sbcDilution": {
+                    "status": "blocked_report_only",
+                    "modelTreatment": "report_only",
+                },
+                "leases": {
+                    "status": "zero_by_default",
+                    "modelTreatment": "report_only",
+                },
+                "optionsWarrants": {
+                    "status": "zero_by_default",
+                    "modelTreatment": "service_calculated_when_inputs_available",
+                },
+                "nolTax": {
+                    "status": "source_required",
+                    "modelTreatment": "scenario_only",
+                },
+                "cash": {
+                    "status": "returned",
+                    "modelTreatment": "service_returned",
+                },
+                "debt": {
+                    "status": "returned",
+                    "modelTreatment": "service_returned",
+                },
+                "shareCount": {
+                    "status": "returned",
+                    "modelTreatment": "service_returned",
+                },
+            },
             "discountRate": {
                 "riskFreeRate": 4.5,
                 "initialCostOfCapital": 8.5,
@@ -215,6 +251,33 @@ def test_jsonrpc_mcp_server_lists_and_calls_tools():
     assert listed["result"]["tools"][0]["name"] == "stockvaluation.health"
     assert called["result"]["structuredContent"]["ticker"] == "MSFT"
     assert called["result"]["isError"] is False
+
+
+def test_value_ticker_preserves_service_accounting_and_claims_status():
+    registry = MCPToolRegistry(FakeClient())
+
+    result = registry.call(
+        "stockvaluation.value_ticker",
+        {"ticker": "MSFT"},
+    )
+
+    assert result["isError"] is False
+    structured = result["structuredContent"]
+    accounting = structured["accountingAndClaims"]
+    assert accounting["schemaVersion"] == "accounting_and_claims.v1"
+    assert set(accounting) >= {
+        "rdCapitalization",
+        "sbcDilution",
+        "leases",
+        "optionsWarrants",
+        "nolTax",
+        "cash",
+        "debt",
+        "shareCount",
+    }
+    assert accounting["leases"]["status"] == "zero_by_default"
+    assert accounting["cash"]["status"] == "returned"
+    assert "accountingAndClaims" not in result["content"][0]["text"]
 
 
 def test_value_ticker_visible_text_does_not_expose_mechanical_baseline_value():
@@ -1439,8 +1502,11 @@ def test_recalculate_preserves_unsupported_accounting_fields_as_blocked_report_o
                 "operating_margin_next_year": 60.0,
                 "rd_capitalization": True,
                 "leases": {"capitalize": True},
+                "sbc_dilution": {"value": 1},
                 "options": {"value": 100},
+                "options_warrants": {"value": 100},
                 "nols": 10,
+                "nol_tax": {"value": 10},
                 "cash": 1,
                 "debt": 2,
                 "share_count": 3,
@@ -1455,8 +1521,11 @@ def test_recalculate_preserves_unsupported_accounting_fields_as_blocked_report_o
         "operating_margin_next_year",
         "rd_capitalization",
         "leases",
+        "sbc_dilution",
         "options",
+        "options_warrants",
         "nols",
+        "nol_tax",
         "cash",
         "debt",
         "share_count",
@@ -1468,6 +1537,175 @@ def test_recalculate_preserves_unsupported_accounting_fields_as_blocked_report_o
             continue
         assert item["status"] == "blocked_report_only"
         assert "report-only" in item["message"]
+    audit_accounting = result["structuredContent"]["auditPacket"]["packet"]["accounting_decisions"]
+    for key in {
+        "rd_capitalization",
+        "leases",
+        "sbc_dilution",
+        "options_warrants",
+        "nol_tax",
+        "cash",
+        "debt",
+        "share_count",
+    }:
+        assert key in audit_accounting["requested"]
+        assert key in audit_accounting["unsupported"]
+    assert client.calls == []
+
+
+def test_recalculate_maps_governed_rd_capitalization_only_for_explicit_scenario():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "NVDA",
+            "overrides": {
+                "request_policy": {"mode": "explicit_scenario"},
+                "rd_capitalization": {
+                    "enabled": True,
+                    "rd_history": [
+                        {
+                            "fiscal_year": 2026,
+                            "amount": 12_000.0,
+                            "source_url": "https://example.com/nvda-2026-10k",
+                            "source_date": "2026-02-26",
+                        },
+                        {
+                            "fiscal_year": 2025,
+                            "amount": 9_000.0,
+                            "source_url": "https://example.com/nvda-2025-10k",
+                            "source_date": "2025-02-27",
+                        },
+                        {
+                            "fiscal_year": 2024,
+                            "amount": 7_000.0,
+                            "source_url": "https://example.com/nvda-2024-10k",
+                            "source_date": "2024-02-28",
+                        },
+                    ],
+                    "amortization_policy": {
+                        "method": "straight_line",
+                        "amortization_period_years": 4,
+                    },
+                    "source_provenance": {
+                        "source_class": "primary_filing",
+                        "provider": "sec-filing",
+                        "source_date": "2026-02-26",
+                        "retrieval_status": "retrieved",
+                    },
+                },
+            },
+        },
+    )
+
+    assert result["isError"] is False
+    assumptions = result["structuredContent"]["assumptions"]
+    assert assumptions["mapped"]["isExpensesCapitalize"] is True
+    assert client.calls[0][1]["isExpensesCapitalize"] is True
+    accounting = assumptions["metadata"]["accounting_and_claims"]
+    assert accounting["status"] == "valid_accounting_and_claims"
+    assert accounting["governed_scenarios"][0]["topic"] == "rd_capitalization"
+    assert accounting["governed_scenarios"][0]["status"] == "governed_scenario_supported"
+    audit_packet = result["structuredContent"]["auditPacket"]["packet"]
+    assert result["structuredContent"]["auditPacket"]["summary"]["final_case_type"] == (
+        "evidence_constrained_governed_recalculation"
+    )
+    audit_metadata = audit_packet["assumption_buckets"]["metadata"]
+    assert audit_metadata["accounting_and_claims"]["governed_scenarios"][0]["topic"] == "rd_capitalization"
+    audit_accounting = audit_packet["accounting_decisions"]
+    assert audit_accounting["requested"]["rd_capitalization"]["enabled"] is True
+    assert audit_accounting["mapped"] == {
+        "isExpensesCapitalize": True,
+        "rdAmortizationMethod": "straight_line",
+        "rdAmortizationPeriodYears": 4,
+    }
+    assert audit_accounting["governed_scenarios"][0]["topic"] == "rd_capitalization"
+    assert audit_accounting["unsupported"] == {}
+
+
+def test_recalculate_rejects_invalid_rd_capitalization_before_service_call():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "NVDA",
+            "overrides": {
+                "request_policy": {"mode": "explicit_scenario"},
+                "rd_capitalization": {
+                    "enabled": True,
+                    "rd_history": [
+                        {
+                            "fiscal_year": 2026,
+                            "amount": 12_000.0,
+                            "source_url": "https://example.com/nvda-2026-10k",
+                            "source_date": "2026-02-26",
+                        }
+                    ],
+                    "amortization_policy": {
+                        "method": "straight_line",
+                        "amortization_period_years": 4,
+                    },
+                    "source_provenance": {
+                        "source_class": "primary_filing",
+                        "provider": "sec-filing",
+                        "source_date": "2026-02-26",
+                        "retrieval_status": "retrieved",
+                    },
+                },
+            },
+        },
+    )
+
+    assert result["isError"] is True
+    unsupported = result["structuredContent"]["assumptions"]["unsupported"]
+    assert unsupported["rd_capitalization"]["status"] == "source_required"
+    accounting = result["structuredContent"]["assumptions"]["metadata"]["accounting_and_claims"]
+    assert accounting["rejected_claims"][0]["topic"] == "rd_capitalization"
+    assert client.calls == []
+
+
+def test_recalculate_blocks_lease_schedule_even_for_explicit_scenario():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "COST",
+            "overrides": {
+                "request_policy": {"mode": "explicit_scenario"},
+                "leases": {
+                    "enabled": True,
+                    "lease_expense_current_year": 100.0,
+                    "commitments": [90.0, 80.0, 70.0, 60.0, 50.0],
+                    "future_commitment": 120.0,
+                    "source_provenance": {
+                        "source_class": "primary_filing",
+                        "provider": "sec-filing",
+                        "source_date": "2026-02-26",
+                        "retrieval_status": "retrieved",
+                    },
+                },
+            },
+        },
+    )
+
+    assert result["isError"] is True
+    assumptions = result["structuredContent"]["assumptions"]
+    audit_accounting = result["structuredContent"]["auditPacket"]["packet"]["accounting_decisions"]
+    assert assumptions["mapped"] == {"requestPolicyMode": "explicit_scenario"}
+    assert assumptions["unsupported"]["leases"]["status"] == "blocked_report_only"
+    assert audit_accounting["requested"]["leases"]["enabled"] is True
+    assert audit_accounting["mapped"] == {}
+    assert audit_accounting["unsupported"]["leases"]["status"] == "blocked_report_only"
+    assert audit_accounting["governed_scenarios"] == []
+    assert result["structuredContent"]["auditPacket"]["summary"]["final_case_type"] == (
+        "insufficient_researched_evidence"
+    )
     assert client.calls == []
 
 

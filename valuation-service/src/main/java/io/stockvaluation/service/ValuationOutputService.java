@@ -1218,7 +1218,7 @@ public class ValuationOutputService {
         OptionValueResultDTO optionValueResultDTO = optionValueService.calculateOptionValue(ticker,
                 valuationInputDTO.getAverageStrikePrice(), valuationInputDTO.getAverageMaturity(),
                 valuationInputDTO.getNumberOfOptions(), valuationInputDTO.getStockPriceStdDev());
-        LeaseResultDTO leaseResultDTO = commonService.calculateOperatingLeaseConverter();
+        LeaseResultDTO leaseResultDTO = calculateLeaseResult(valuationInputDTO);
 
         // calling methods to get the calculated values
         FinancialDTO financialDTO = calculateFinancialData(valuationInputDTO, rdResult, leaseResultDTO, ticker,
@@ -1240,6 +1240,10 @@ public class ValuationOutputService {
         valuationOutputDTO.setStockCurrency(valuationInputDTO.getBasicInfoDataDTO().getStockCurrency());
 
         return valuationOutputDTO;
+    }
+
+    private LeaseResultDTO calculateLeaseResult(FinancialDataInput valuationInputDTO) {
+        return commonService.calculateOperatingLeaseConverter();
     }
 
     /**

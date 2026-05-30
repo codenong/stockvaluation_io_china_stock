@@ -33,6 +33,7 @@ REQUIRED_SECTIONS = (
     "final_report_inputs",
     "data_quality_limitations",
     "mcp_call_references",
+    "accounting_decisions",
 )
 
 REQUIRED_EVIDENCE_RESULT_FIELDS = (
@@ -117,6 +118,7 @@ def build_valuation_audit_packet(
     final_report_inputs: dict[str, Any],
     data_quality_limitations: list[Any] | None = None,
     mcp_call_references: list[dict[str, Any]] | None = None,
+    accounting_decisions: dict[str, Any] | None = None,
     internal_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     packet: dict[str, Any] = {
@@ -134,6 +136,16 @@ def build_valuation_audit_packet(
         "final_report_inputs": final_report_inputs,
         "data_quality_limitations": data_quality_limitations or [],
         "mcp_call_references": mcp_call_references or [],
+        "accounting_decisions": accounting_decisions or {
+            "requested": {},
+            "mapped": {},
+            "unsupported": {},
+            "report_only": [],
+            "governed_scenarios": [],
+            "rejected": [],
+            "metadata": {},
+            "effective": [],
+        },
     }
     if internal_state is not None:
         packet["internal_state"] = internal_state

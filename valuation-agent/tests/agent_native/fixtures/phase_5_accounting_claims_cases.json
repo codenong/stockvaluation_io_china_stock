@@ -1,0 +1,56 @@
+[
+  {
+    "case_id": "tech_rd_sbc",
+    "ticker": "NVDA",
+    "company": "NVIDIA Corporation",
+    "material_focus": ["rd_capitalization", "sbc_dilution"],
+    "expected_statuses": {
+      "rdCapitalization": ["source_required", "governed_scenario_supported"],
+      "sbcDilution": ["blocked_report_only"]
+    },
+    "expected_rejection_behavior": ["autonomous_rd_capitalization_blocked", "sbc_report_only"]
+  },
+  {
+    "case_id": "lease_heavy",
+    "ticker": "COST",
+    "company": "Costco Wholesale Corporation",
+    "material_focus": ["leases"],
+    "expected_statuses": {
+      "leases": ["returned", "missing", "zero_by_default", "source_required"]
+    },
+    "expected_rejection_behavior": ["default_zero_not_completed_analysis"]
+  },
+  {
+    "case_id": "options_warrants_claims",
+    "ticker": "CRM",
+    "company": "Salesforce, Inc.",
+    "material_focus": ["options_warrants", "share_count"],
+    "expected_statuses": {
+      "optionsWarrants": ["returned", "zero_by_default", "source_required", "unsupported"],
+      "shareCount": ["returned", "missing", "source_required"]
+    },
+    "expected_rejection_behavior": ["direct_claim_value_overrides_blocked"]
+  },
+  {
+    "case_id": "nol_tax_sensitive",
+    "ticker": "UBER",
+    "company": "Uber Technologies, Inc.",
+    "material_focus": ["nol_tax"],
+    "expected_statuses": {
+      "nolTax": ["source_required", "governed_scenario_supported", "unsupported"]
+    },
+    "expected_rejection_behavior": ["autonomous_tax_rate_change_blocked"]
+  },
+  {
+    "case_id": "cash_debt_share_count",
+    "ticker": "MSFT",
+    "company": "Microsoft Corporation",
+    "material_focus": ["cash", "debt", "share_count"],
+    "expected_statuses": {
+      "cash": ["returned", "missing", "source_required"],
+      "debt": ["returned", "missing", "source_required"],
+      "shareCount": ["returned", "missing", "source_required"]
+    },
+    "expected_rejection_behavior": ["direct_cash_debt_share_count_overrides_blocked"]
+  }
+]

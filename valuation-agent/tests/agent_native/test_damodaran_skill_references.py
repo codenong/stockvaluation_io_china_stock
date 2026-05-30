@@ -213,6 +213,40 @@ def test_report_template_has_explicit_no_invention_rules_for_absent_service_fiel
         assert rule in template
 
 
+def test_report_template_requires_accounting_and_claims_status_labels():
+    template = _read_reference("report-template.md").lower()
+    accounting = _read_reference("accounting-cleanup.md").lower()
+    rd = _read_reference("rd-capitalization-decision.md").lower()
+    claims = _read_reference("options-leases-other-claims.md").lower()
+
+    for phrase in [
+        "accountingandclaims",
+        "supported versus report-only accounting labels",
+        "zero_by_default",
+        "source_required",
+        "stale",
+        "reconciled",
+        "conflict",
+        "governed_scenario_supported",
+        "do not infer accounting support from a numeric zero",
+        "do not invent accounting adjustments",
+        "sbc percent of revenue",
+        "diluted share-count trend",
+    ]:
+        assert phrase in template
+
+    assert "accountingandclaims" in accounting
+    assert "sbc percent of revenue" in accounting
+    assert "returned, missing, stale, reconciled, conflict, or source_required" in accounting
+    assert "governed accounting scenario" in rd
+    assert "multi-year r&d history" in rd
+    assert "service boundary must also receive the amortization method" in rd
+    assert "source provenance" in rd
+    assert "zero_by_default" in claims
+    assert "leases are report-only in phase 5" in claims
+    assert "direct claim value overrides remain blocked" in claims
+
+
 def test_market_expectation_guidance_stays_report_only_not_model_changes():
     skill = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8")
     checks = _read_reference("assumption-checks.md")

@@ -290,7 +290,28 @@ If these fields are absent, say the composition is unavailable.
 
 ## Tax And Accounting Adjustments
 
-Explain tax-rate assumptions, R&D capitalization, operating lease conversion, options/warrants, NOLs, one-time charges, and other claims only when supported by service output or cited as explain-only limitations. R&D capitalization is explain/flag only until governed input support is fully wired and tested.
+Use `structuredContent.accountingAndClaims` and `valuation.assumptionTransparency.accountingAndClaims` when returned. AccountingAndClaims is the structured status source for R&D capitalization, SBC/dilution, leases, options/warrants, NOL/tax, cash, debt, and share count.
+
+Show supported versus report-only accounting labels before explaining impact. Valid labels include `returned`, `missing`, `stale`, `zero_by_default`, `source_required`, `blocked_report_only`, `governed_scenario_supported`, `reconciled`, `conflict`, and `unsupported`.
+
+| Topic | Status | Model treatment | Source class / provider | Effective? | Report action |
+| --- | --- | --- | --- | --- | --- |
+| R&D capitalization |  | governed scenario, report-only, or unsupported |  | yes/no |  |
+| SBC / dilution |  | report-only by default |  | no |  |
+| Leases |  | returned, source-required, or zero-by-default |  | yes/no |  |
+| Options / warrants |  | service-calculated when inputs are available or blocked report-only |  | yes/no |  |
+| NOL / tax |  | scenario-only or report-only |  | yes/no |  |
+| Cash |  | service-returned data quality context |  | yes/no |  |
+| Debt |  | service-returned data quality context |  | yes/no |  |
+| Share count |  | service-returned data quality context |  | yes/no |  |
+
+Do not infer accounting support from a numeric zero. A zero adjustment needs a status such as `returned`, `missing`, `zero_by_default`, or `source_required`. Do not invent accounting adjustments when service fields are absent, missing, defaulted, unsupported, or report-only.
+
+For SBC/dilution, show service-returned report-only diagnostics when present: SBC percent of revenue, SBC percent of operating income or free cash flow, diluted share-count trend, and diluted-share consistency status. Do not treat SBC as a hidden cash-flow, reinvestment, or dilution adjustment.
+
+For cash, debt, and share count, show source and reconciliation status before discussing the equity bridge. Statuses such as `stale`, `reconciled`, `conflict`, and `source_required` are data-quality labels, not free-form override permission.
+
+Explain tax-rate assumptions, R&D capitalization, operating lease conversion, options/warrants, NOLs, one-time charges, and other claims only when supported by service output or cited as explain-only limitations. R&D capitalization can affect recalculation only through the governed AccountingAndClaims explicit scenario with multi-year R&D history, amortization policy, source provenance, and audit recording. Lease conversion is report-only in Phase 5 and has no governed recalculation path. SBC/dilution, leases, options/warrants, NOL/tax, cash, debt, and share-count topics remain report-only, statused, or scenario-only unless a tested governed path accepts them.
 
 ## Effective Assumptions
 

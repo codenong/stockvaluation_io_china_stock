@@ -4,6 +4,7 @@ import io.stockvaluation.config.ValuationAssumptionProperties;
 import io.stockvaluation.constant.RDResult;
 import io.stockvaluation.dto.*;
 import io.stockvaluation.dto.valuationoutput.AssumptionTransparencyDTO;
+import io.stockvaluation.dto.valuationoutput.AccountingAndClaimsDTO;
 import io.stockvaluation.dto.valuationoutput.CalibrationResultDTO;
 import io.stockvaluation.dto.valuationoutput.CompanyDTO;
 import io.stockvaluation.dto.valuationoutput.FinancialDTO;
@@ -405,6 +406,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 null,
                                 null,
                                 null));
+                dto.setAccountingAndClaims(buildAccountingAndClaims(financialDataInput, valuationOutputDTO));
 
                 List<String> notes = new ArrayList<>();
                 notes.add("Rates are shown in percent.");
@@ -429,6 +431,424 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 valuationOutputDTO,
                                 template));
                 return dto;
+        }
+
+        private AccountingAndClaimsDTO buildAccountingAndClaims(
+                        FinancialDataInput financialDataInput,
+                        ValuationOutputDTO valuationOutputDTO) {
+                AccountingAndClaimsDTO dto = new AccountingAndClaimsDTO();
+                SourceProvenance provenance = buildSourceProvenance(financialDataInput);
+                FinancialDataDTO financial = financialDataInput != null ? financialDataInput.getFinancialDataDTO()
+                                : null;
+                CompanyDTO company = valuationOutputDTO != null ? valuationOutputDTO.getCompanyDTO() : null;
+                FinancialDTO outputFinancial = valuationOutputDTO != null ? valuationOutputDTO.getFinancialDTO() : null;
+                Map<String, Double> rdHistory = financial != null ? financial.getResearchAndDevelopmentMap() : null;
+
+                boolean sourceReturned = provenance != null
+                                && "retrieved".equals(provenance.getRetrievalStatus())
+                                && !SourceProvenance.YAHOO_NORMALIZED.equals(provenance.getSourceClass());
+                boolean multiYearRdHistory = hasMultiYearRdHistory(rdHistory);
+                boolean rdScenarioApplied = financialDataInput != null
+                                && Boolean.TRUE.equals(financialDataInput.getIsExpensesCapitalize());
+                boolean rdAmortizationPolicyAvailable = validRdAmortizationPolicy(financialDataInput);
+                String rdStatus;
+                String rdTreatment;
+                String rdReason;
+                if (rdScenarioApplied && multiYearRdHistory && sourceReturned && rdAmortizationPolicyAvailable) {
+                        rdStatus = "governed_scenario_supported";
+                        rdTreatment = "governed_scenario_effective";
+                        rdReason = "R&D capitalization was enabled in a governed scenario with multi-year R&D history, amortization policy, and source provenance.";
+                } else if (multiYearRdHistory && sourceReturned && rdAmortizationPolicyAvailable) {
+                        rdStatus = "governed_scenario_supported";
+                        rdTreatment = "scenario_only";
+                        rdReason = "Multi-year R&D history, amortization policy, and source provenance are available; R&D capitalization still requires an explicit governed scenario.";
+                } else if (hasAnyPositiveValue(rdHistory)) {
+                        rdStatus = "source_required";
+                        rdTreatment = "report_only";
+                        rdReason = "R&D was present, but multi-year history, amortization policy, or source provenance were insufficient for governed modeling.";
+                } else {
+                        rdStatus = "missing";
+                        rdTreatment = "report_only";
+                        rdReason = "No usable R&D history was returned.";
+                }
+                AccountingAndClaimsDTO.Topic rd = topic(
+                                rdStatus,
+                                rdTreatment,
+                                provenance,
+                                rdReason,
+                                null);
+                rd.getReportedValues().put("multiYearHistory", multiYearRdHistory);
+                rd.getReportedValues().put("historyYears", positiveValueCount(rdHistory));
+                rd.getReportedValues().put("amortizationPolicy", rdAmortizationPolicy(financialDataInput));
+                dto.setRdCapitalization(rd);
+
+                Double sbc = firstNonNull(financial != null ? financial.getStockBasedCompensationTTM() : null,
+                                financial != null ? financial.getStockBasedCompensationLTM() : null);
+                AccountingAndClaimsDTO.Topic sbcDilution = topic(
+                                "blocked_report_only",
+                                "report_only",
+                                provenance,
+                                "SBC and dilution diagnostics are report-only in Phase 5; they do not change service assumptions.",
+                                sbc);
+                putDiagnostic(sbcDilution, "sbcPercentRevenue",
+                                percentOf(sbc, financial != null ? financial.getRevenueTTM() : null));
+                putDiagnostic(sbcDilution, "sbcPercentOperatingIncome",
+                                percentOf(sbc, financial != null ? financial.getOperatingIncomeTTM() : null));
+                putDiagnostic(sbcDilution, "sbcPercentFreeCashFlow",
+                                percentOf(sbc, outputFinancial != null ? firstFinite(outputFinancial.getFcff()) : null));
+                putDiagnostic(sbcDilution, "dilutedShareCountTrendPct",
+                                percentChange(
+                                                financial != null ? financial.getPriorDilutedSharesOutstanding() : null,
+                                                financial != null ? financial.getDilutedSharesOutstanding() : null));
+                putDiagnostic(sbcDilution, "dilutedShareConsistencyStatus",
+                                dilutedShareConsistencyStatus(financial));
+                dto.setSbcDilution(sbcDilution);
+
+                boolean leaseScenario = financialDataInput != null
+                                && Boolean.TRUE.equals(financialDataInput.getHasOperatingLease());
+                boolean leaseScheduleAvailable = hasLeaseSchedule(financialDataInput);
+                LeaseResultDTO leaseResult = commonService.calculateOperatingLeaseConverter();
+                AccountingAndClaimsDTO.Topic leases = topic(
+                                leaseScenario ? "source_required" : "zero_by_default",
+                                "report_only",
+                                provenance,
+                                leaseScenario
+                                                ? "Lease conversion is report-only in Phase 5; R&D capitalization is the only governed accounting scenario path."
+                                                : "No operating lease schedule was supplied; the service used a zero default rather than proof of no lease adjustment.",
+                                0.0);
+                leases.getReportedValues().put("scheduleAvailable", leaseScheduleAvailable);
+                leases.getReportedValues().put("leaseExpenseCurrentYear",
+                                financialDataInput != null ? financialDataInput.getLeaseExpenseCurrentYear() : null);
+                leases.getReportedValues().put("commitmentYears",
+                                financialDataInput != null && financialDataInput.getLeaseCommitmentsYears1To5() != null
+                                                ? financialDataInput.getLeaseCommitmentsYears1To5().length
+                                                : 0);
+                leases.getReportedValues().put("futureCommitment",
+                                financialDataInput != null ? financialDataInput.getLeaseCommitmentAfterYear5() : null);
+                leases.getReportedValues().put("adjustmentToOperatingEarnings",
+                                leaseResult != null ? leaseResult.getAdjustmentToOperatingEarnings() : null);
+                leases.getReportedValues().put("adjustmentToTotalDebt",
+                                leaseResult != null ? leaseResult.getAdjustmentToTotalDebt() : null);
+                dto.setLeases(leases);
+
+                boolean optionsInput = financialDataInput != null
+                                && Boolean.TRUE.equals(financialDataInput.getHasEmployeeOptions())
+                                && positive(financialDataInput.getNumberOfOptions());
+                Double optionValue = company != null ? company.getValueOfOptions() : null;
+                dto.setOptionsWarrants(topic(
+                                optionsInput ? "returned" : "zero_by_default",
+                                "service_calculated_when_inputs_available",
+                                provenance,
+                                optionsInput
+                                                ? "Employee option value was calculated from service inputs; direct claim value overrides remain blocked."
+                                                : "No employee option or warrant input was supplied; the service used a zero default.",
+                                firstNonNull(optionValue, 0.0)));
+
+                dto.setNolTax(topic(
+                                "source_required",
+                                "report_only",
+                                provenance,
+                                "NOL/tax normalization is report-only in Phase 5; R&D capitalization is the only governed accounting scenario path.",
+                                null));
+
+                dto.setCash(topic(
+                                statusForClaimValue("cash_and_marketable_securities",
+                                                firstNonNull(company != null ? company.getCash() : null,
+                                                                financial != null ? financial.getCashAndMarkablTTM()
+                                                                                : null),
+                                                provenance),
+                                "service_returned",
+                                provenance,
+                                "Cash is service-returned data quality context, not a free-form override.",
+                                firstNonNull(company != null ? company.getCash() : null,
+                                                financial != null ? financial.getCashAndMarkablTTM() : null)));
+                addClaimSourceStatus(dto.getCash(), "cash_and_marketable_securities", provenance, null);
+
+                dto.setDebt(topic(
+                                statusForClaimValue("debt",
+                                                firstNonNull(company != null ? company.getDebt() : null,
+                                                                financial != null ? financial.getBookValueDebtTTM()
+                                                                                : null),
+                                                provenance),
+                                "service_returned",
+                                provenance,
+                                "Debt is service-returned data quality context, not a free-form override.",
+                                firstNonNull(company != null ? company.getDebt() : null,
+                                                financial != null ? financial.getBookValueDebtTTM() : null)));
+                addClaimSourceStatus(dto.getDebt(), "debt", provenance, null);
+
+                dto.setShareCount(topic(
+                                statusForClaimValue("shares_outstanding",
+                                                firstNonNull(company != null ? company.getNumberOfShares() : null,
+                                                                financial != null ? financial.getNoOfShareOutstanding()
+                                                                                : null),
+                                                provenance),
+                                "service_returned",
+                                provenance,
+                                "Share count is service-returned data quality context, not a free-form override.",
+                                firstNonNull(company != null ? company.getNumberOfShares() : null,
+                                                financial != null ? financial.getNoOfShareOutstanding() : null)));
+                addClaimSourceStatus(dto.getShareCount(), "shares_outstanding", provenance,
+                                shareCountBasis(financial, provenance));
+
+                dto.setEffectiveAccountingDecisions(effectiveAccountingDecisions(dto));
+                return dto;
+        }
+
+        private AccountingAndClaimsDTO.Topic topic(
+                        String status,
+                        String modelTreatment,
+                        SourceProvenance provenance,
+                        String reason,
+                        Double value) {
+                AccountingAndClaimsDTO.Topic topic = new AccountingAndClaimsDTO.Topic();
+                topic.setStatus(status);
+                topic.setModelTreatment(modelTreatment);
+                if (provenance != null) {
+                        topic.setSourceClass(provenance.getSourceClass());
+                        topic.setProvider(provenance.getProvider());
+                        topic.setSourceDate(provenance.getSourceDate());
+                        topic.setRetrievalStatus(provenance.getRetrievalStatus());
+                        topic.setSourcePolicyStatus(provenance.getSourcePolicyStatus());
+                }
+                topic.setReason(reason);
+                topic.setValue(value);
+                topic.setDiagnostics(new LinkedHashMap<>());
+                topic.setReportedValues(new LinkedHashMap<>());
+                return topic;
+        }
+
+        private void putDiagnostic(AccountingAndClaimsDTO.Topic topic, String key, Object value) {
+                topic.getDiagnostics().put(key, value);
+                topic.getReportedValues().put(key, value);
+        }
+
+        private Map<String, Object> rdAmortizationPolicy(FinancialDataInput input) {
+                Map<String, Object> policy = new LinkedHashMap<>();
+                policy.put("method", input != null ? input.getRdAmortizationMethod() : null);
+                policy.put("amortizationPeriodYears", input != null ? input.getRdAmortizationPeriodYears() : null);
+                policy.put("serviceDefault", input == null || input.getRdAmortizationMethod() == null
+                                || input.getRdAmortizationPeriodYears() == null);
+                return policy;
+        }
+
+        private Double percentOf(Double numerator, Double denominator) {
+                if (!positive(numerator) || !positive(denominator)) {
+                        return null;
+                }
+                return round2((numerator / denominator) * 100.0);
+        }
+
+        private Double percentChange(Double prior, Double current) {
+                if (!positive(prior) || current == null || !Double.isFinite(current)) {
+                        return null;
+                }
+                return round2(((current - prior) / prior) * 100.0);
+        }
+
+        private String dilutedShareConsistencyStatus(FinancialDataDTO financial) {
+                if (financial == null || financial.getDilutedSharesOutstanding() == null) {
+                        return "missing_diluted_share_count";
+                }
+                Double basic = financial.getBasicSharesOutstanding();
+                if (basic == null) {
+                        return "basic_share_count_missing";
+                }
+                if (financial.getDilutedSharesOutstanding() + 0.0001 < basic) {
+                        return "diluted_share_count_below_basic_conflict";
+                }
+                if (financial.getDilutedSharesOutstanding() > basic) {
+                        return "diluted_share_count_above_basic";
+                }
+                return "basic_and_diluted_share_counts_equal";
+        }
+
+        private LeaseResultDTO leaseResultForInput(FinancialDataInput input) {
+                return commonService.calculateOperatingLeaseConverter();
+        }
+
+        private boolean hasLeaseSchedule(FinancialDataInput input) {
+                if (input == null || !Boolean.TRUE.equals(input.getHasOperatingLease())) {
+                        return false;
+                }
+                if (!positive(input.getLeaseExpenseCurrentYear())) {
+                        return false;
+                }
+                Double[] commitments = input.getLeaseCommitmentsYears1To5();
+                return commitments != null
+                                && commitments.length > 0
+                                && commitments.length <= 5
+                                && (input.getLeaseCommitmentAfterYear5() == null
+                                                || input.getLeaseCommitmentAfterYear5() >= 0.0)
+                                && Arrays.stream(commitments)
+                                                .allMatch(value -> value != null
+                                                                && Double.isFinite(value)
+                                                                && value >= 0.0)
+                                && Arrays.stream(commitments)
+                                                .filter(Objects::nonNull)
+                                                .anyMatch(this::positive);
+        }
+
+        private String statusForClaimValue(String field, Double value, SourceProvenance provenance) {
+                if (value == null) {
+                        return "missing";
+                }
+                SourceProvenance.DataQualityWarning warning = dataQualityWarningForField(provenance, field);
+                if (warning != null) {
+                        return "conflict";
+                }
+                if ("stale_source_date".equals(provenance != null ? provenance.getSourcePolicyStatus() : null)) {
+                        return "stale";
+                }
+                if (provenance == null
+                                || provenance.getSourceDate() == null
+                                || provenance.getSourceDate().isBlank()
+                                || "retrieved_missing_period".equals(provenance.getRetrievalStatus())
+                                || "missing_source_date".equals(provenance.getSourcePolicyStatus())) {
+                        return "source_required";
+                }
+                if (SourceProvenance.PRIMARY_FILING.equals(provenance.getSourceClass())
+                                && "primary_filing_used".equals(provenance.getSourcePolicyStatus())) {
+                        return "reconciled";
+                }
+                return "returned";
+        }
+
+        private void addClaimSourceStatus(
+                        AccountingAndClaimsDTO.Topic topic,
+                        String field,
+                        SourceProvenance provenance,
+                        String shareCountBasis) {
+                if (topic == null) {
+                        return;
+                }
+                SourceProvenance.DataQualityWarning warning = dataQualityWarningForField(provenance, field);
+                topic.getReportedValues().put("reconciliationStatus",
+                                warning != null ? warning.getStatus() : reconciliationStatus(provenance));
+                topic.getReportedValues().put("sourceBasis", sourceBasis(provenance));
+                if (shareCountBasis != null) {
+                        topic.getReportedValues().put("shareCountBasis", shareCountBasis);
+                }
+                if (warning != null) {
+                        topic.getReportedValues().put("dataQualityWarning", dataQualityWarningMap(warning));
+                }
+        }
+
+        private SourceProvenance.DataQualityWarning dataQualityWarningForField(
+                        SourceProvenance provenance,
+                        String field) {
+                if (provenance == null || provenance.getDataQualityWarnings() == null) {
+                        return null;
+                }
+                return provenance.getDataQualityWarnings().stream()
+                                .filter(Objects::nonNull)
+                                .filter(warning -> field.equals(warning.getField()))
+                                .findFirst()
+                                .orElse(null);
+        }
+
+        private String reconciliationStatus(SourceProvenance provenance) {
+                if (provenance == null) {
+                        return "source_required";
+                }
+                if (SourceProvenance.PRIMARY_FILING.equals(provenance.getSourceClass())
+                                && "primary_filing_used".equals(provenance.getSourcePolicyStatus())) {
+                        return "reconciled";
+                }
+                if ("stale_source_date".equals(provenance.getSourcePolicyStatus())) {
+                        return "stale_source_date";
+                }
+                return firstNonBlank(provenance.getCrossCheckStatus(), "not_reconciled");
+        }
+
+        private String sourceBasis(SourceProvenance provenance) {
+                if (provenance == null) {
+                        return "missing";
+                }
+                if (SourceProvenance.PRIMARY_FILING.equals(provenance.getSourceClass())) {
+                        return "filing_derived";
+                }
+                return firstNonBlank(provenance.getSourceClass(), "unknown");
+        }
+
+        private String shareCountBasis(FinancialDataDTO financial, SourceProvenance provenance) {
+                if (financial != null && financial.getDilutedSharesOutstanding() != null) {
+                        return "diluted";
+                }
+                if (financial != null && financial.getBasicSharesOutstanding() != null) {
+                        return "basic";
+                }
+                if (SourceProvenance.PRIMARY_FILING.equals(provenance != null ? provenance.getSourceClass() : null)) {
+                        return "filing_derived";
+                }
+                if (SourceProvenance.YAHOO_NORMALIZED.equals(provenance != null ? provenance.getSourceClass() : null)) {
+                        return "yahoo_normalized";
+                }
+                return financial != null && financial.getNoOfShareOutstanding() != null ? "reported" : "missing";
+        }
+
+        private Map<String, Object> dataQualityWarningMap(SourceProvenance.DataQualityWarning warning) {
+                Map<String, Object> values = new LinkedHashMap<>();
+                values.put("field", warning.getField());
+                values.put("status", warning.getStatus());
+                values.put("normalizedValue", warning.getNormalizedValue());
+                values.put("filingValue", warning.getFilingValue());
+                values.put("differencePct", warning.getDifferencePct());
+                values.put("thresholdPct", warning.getThresholdPct());
+                values.put("sourceClass", warning.getSourceClass());
+                values.put("sourceDate", warning.getSourceDate());
+                return values;
+        }
+
+        private String firstNonBlank(String primary, String fallback) {
+                return primary != null && !primary.isBlank() ? primary : fallback;
+        }
+
+        private boolean hasMultiYearRdHistory(Map<String, Double> rdHistory) {
+                return positiveValueCount(rdHistory) >= 3;
+        }
+
+        private int positiveValueCount(Map<String, Double> values) {
+                if (values == null) {
+                        return 0;
+                }
+                return (int) values.values().stream()
+                                .filter(Objects::nonNull)
+                                .filter(this::positive)
+                                .count();
+        }
+
+        private boolean hasAnyPositiveValue(Map<String, Double> values) {
+                return positiveValueCount(values) > 0;
+        }
+
+        private boolean positive(Double value) {
+                return value != null && Double.isFinite(value) && value > 0.0;
+        }
+
+        private List<AccountingAndClaimsDTO.Decision> effectiveAccountingDecisions(AccountingAndClaimsDTO dto) {
+                List<AccountingAndClaimsDTO.Decision> decisions = new ArrayList<>();
+                decisions.add(accountingDecision("rd_capitalization", dto.getRdCapitalization(), "isExpensesCapitalize"));
+                decisions.add(accountingDecision("sbc_dilution", dto.getSbcDilution(), "stockBasedCompensationTTM/dilutedSharesOutstanding"));
+                decisions.add(accountingDecision("leases", dto.getLeases(), "hasOperatingLease"));
+                decisions.add(accountingDecision("options_warrants", dto.getOptionsWarrants(), "hasEmployeeOptions"));
+                decisions.add(accountingDecision("nol_tax", dto.getNolTax(), "overrideAssumptionNOL/overrideAssumptionTaxRate"));
+                decisions.add(accountingDecision("cash", dto.getCash(), "companyDTO.cash"));
+                decisions.add(accountingDecision("debt", dto.getDebt(), "companyDTO.debt"));
+                decisions.add(accountingDecision("share_count", dto.getShareCount(), "companyDTO.numberOfShares"));
+                return decisions;
+        }
+
+        private AccountingAndClaimsDTO.Decision accountingDecision(
+                        String topic,
+                        AccountingAndClaimsDTO.Topic status,
+                        String field) {
+                return new AccountingAndClaimsDTO.Decision(
+                                topic,
+                                status != null ? status.getStatus() : "missing",
+                                "effective",
+                                field,
+                                status != null ? status.getReason() : "Accounting status was missing.");
         }
 
         private void applyBaselineConstructionTransparency(
@@ -617,7 +1037,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 baselineIssue("rd_capitalization", "blocked_report_only",
                                                 "R&D capitalization is explain/flag only unless a governed service contract applies it."),
                                 baselineIssue("leases", "blocked_report_only",
-                                                "Lease adjustments are explain/flag only unless a governed service contract applies them."),
+                                                "Lease adjustments are report-only in Phase 5; R&D capitalization is the only governed accounting scenario path."),
                                 baselineIssue("options", "blocked_report_only",
                                                 "Options and warrants are explain/flag only unless a governed service contract applies them."),
                                 baselineIssue("nols", "blocked_report_only",
@@ -2058,7 +2478,8 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 || adjusted.contains("convergenceYearMargin")
                                 || adjusted.contains("salesToCapitalYears1To5")
                                 || adjusted.contains("salesToCapitalYears6To10")
-                                || adjusted.contains("sectorOverrides");
+                                || adjusted.contains("sectorOverrides")
+                                || adjusted.contains("isExpensesCapitalize");
         }
 
         private Set<String> adjustedParameterSet(List<String> adjustedParameters) {
@@ -2239,7 +2660,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                                         financialDataInput.getFinancialDataDTO().getMarginalTaxRate(),
                                                         financialDataInput.getFinancialDataDTO()
                                                                         .getResearchAndDevelopmentMap()),
-                                        commonService.calculateOperatingLeaseConverter());
+                                        leaseResultForInput(financialDataInput));
 
                         // Adjust Years 1-5 sales-to-capital ratio
                         double inputSalesToCapital1To5 = financialDataInput.getSalesToCapitalYears1To5();
@@ -2277,6 +2698,22 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         overrideCount++;
                 }
                 rejectExplicitOnlyUserRefinedScenarioOverrides(baseline, overrides);
+
+                if (Boolean.TRUE.equals(overrides.getIsExpensesCapitalize())) {
+                        baseline.setRdAmortizationMethod(overrides.getRdAmortizationMethod());
+                        baseline.setRdAmortizationPeriodYears(overrides.getRdAmortizationPeriodYears());
+                        validateRdCapitalizationScenario(baseline);
+                        baseline.setIsExpensesCapitalize(true);
+                        log.info("   Override: isExpensesCapitalize = true");
+                        overrideCount++;
+                        adjustedParameters.add("isExpensesCapitalize");
+                }
+
+                if (Boolean.TRUE.equals(overrides.getHasOperatingLease())) {
+                        throw accountingScenarioRejected(
+                                        "LEASE_REPORT_ONLY",
+                                        "Lease conversion is report-only in Phase 5; R&D capitalization is the only governed accounting scenario path.");
+                }
 
                 // Apply each override if present (non-null)
                 if (overrides.getRevenueNextYear() != null) {
@@ -2407,6 +2844,53 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 return new ArrayList<>(adjustedParameters);
         }
 
+        private void validateRdCapitalizationScenario(FinancialDataInput baseline) {
+                if (!POLICY_EXPLICIT_SCENARIO.equals(resolveRequestPolicyMode(baseline))) {
+                        throw accountingScenarioRejected(
+                                        "RD_CAPITALIZATION_SCENARIO_REQUIRED",
+                                        "R&D capitalization can be applied only in explicit_scenario mode.");
+                }
+                FinancialDataDTO financial = baseline != null ? baseline.getFinancialDataDTO() : null;
+                if (financial == null || !hasMultiYearRdHistory(financial.getResearchAndDevelopmentMap())) {
+                        throw accountingScenarioRejected(
+                                        "RD_CAPITALIZATION_SOURCE_REQUIRED",
+                                        "R&D capitalization requires at least three positive R&D history records.");
+                }
+                if (!validRdAmortizationPolicy(baseline)) {
+                        throw accountingScenarioRejected(
+                                        "RD_CAPITALIZATION_AMORTIZATION_POLICY_REQUIRED",
+                                        "R&D capitalization requires an explicit amortization method and period.");
+                }
+                SourceProvenance provenance = buildSourceProvenance(baseline);
+                if (provenance == null
+                                || !"retrieved".equals(provenance.getRetrievalStatus())
+                                || SourceProvenance.YAHOO_NORMALIZED.equals(provenance.getSourceClass())) {
+                        throw accountingScenarioRejected(
+                                        "RD_CAPITALIZATION_SOURCE_REQUIRED",
+                                        "R&D capitalization requires retrieved filing or company source provenance.");
+                }
+        }
+
+        private boolean validRdAmortizationPolicy(FinancialDataInput input) {
+                if (input == null || input.getRdAmortizationMethod() == null
+                                || input.getRdAmortizationPeriodYears() == null) {
+                        return false;
+                }
+                String method = input.getRdAmortizationMethod();
+                int period = input.getRdAmortizationPeriodYears();
+                return ("straight_line".equals(method) || "service_industry_policy".equals(method))
+                                && period >= 2
+                                && period <= 10;
+        }
+
+        private ResponseStatusException accountingScenarioRejected(String error, String message) {
+                String body = String.format(Locale.ROOT,
+                                "{\"error\":\"%s\",\"message\":\"%s\"}",
+                                error,
+                                message);
+                return new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, body);
+        }
+
         /**
          * Count non-null fields in FinancialDataInput for logging purposes.
          */
@@ -2434,6 +2918,18 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 if (input.getInitialCostCapital() != null)
                         count++;
                 if (input.getTerminalGrowthRate() != null)
+                        count++;
+                if (input.getRdAmortizationMethod() != null)
+                        count++;
+                if (input.getRdAmortizationPeriodYears() != null)
+                        count++;
+                if (Boolean.TRUE.equals(input.getHasOperatingLease()))
+                        count++;
+                if (input.getLeaseExpenseCurrentYear() != null)
+                        count++;
+                if (input.getLeaseCommitmentsYears1To5() != null)
+                        count++;
+                if (input.getLeaseCommitmentAfterYear5() != null)
                         count++;
                 if (input.getGrowthPatternOverride() != null)
                         count++;

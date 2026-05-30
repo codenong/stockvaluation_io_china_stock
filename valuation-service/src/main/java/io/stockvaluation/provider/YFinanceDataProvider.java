@@ -67,6 +67,14 @@ public class YFinanceDataProvider implements DataProvider {
     }
 
     @Override
+    public Map<String, Map<String, Object>> getCashFlow(String ticker, String freq) {
+        return toTimeSeriesMap(getMap(
+            endpoint("/cash-flow", ticker, freq),
+            ticker,
+            "cash-flow(" + normalizeFreq(freq) + ")"));
+    }
+
+    @Override
     public Map<String, Object> getRevenueEstimate(String ticker) {
         return getRevenueEstimate(ticker, "yearly");
     }

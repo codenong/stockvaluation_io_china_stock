@@ -49,6 +49,7 @@ Use these output sections:
 - `dcf`: compact DCF summary for reporting.
 - `baseline`: normalized live baseline contract for report writers.
 - `assumptions`: grouped assumptions and rationales.
+- `accountingAndClaims`: compact AccountingAndClaims statuses for accounting cleanup and capital-claim topics.
 - `provenance`: compact core financial source metadata and source-policy status.
 - `growthAnchor`: Damodaran growth-anchor mapping, confidence, percentile band, source date, and warnings.
 - `referenceData`: market-data and reference-data status.
@@ -79,6 +80,7 @@ Reportable rich-output fields are nested in `valuation` when the Java service re
 - `valuation.assumptionTransparency.pricedInExpectations.frontier`: break-even or priced-in operating-margin vs implied-growth frontier.
 - `valuation.assumptionTransparency.pricedInExpectations.scenarios`: scenario headline table with risk and capital-efficiency settings.
 - `valuation.assumptionTransparency.pricedInExpectations.grid`: sensitivity grid when returned.
+- `valuation.assumptionTransparency.accountingAndClaims`: status object for R&D capitalization, SBC/dilution, leases, options/warrants, NOL/tax, cash, debt, and share count.
 - `valuation.companyDTO.pvTerminalValue`, `valuation.companyDTO.pvCFOverNext10Years`, `valuation.companyDTO.terminalCashFlow`, and `valuation.companyDTO.terminalValue`: terminal value and cash-flow composition.
 - `valuation.financialDTO.fcff`, `valuation.financialDTO.reinvestment`, and `valuation.financialDTO.roic`: free-cash-flow, reinvestment, and return-on-capital trajectories.
 
@@ -203,6 +205,8 @@ Supported override keys:
 - `segments`
 - `sector_overrides`
 - `segment_economics`
+- `rd_capitalization` (explicit-scenario-only governed AccountingAndClaims path)
+- `leases` or `operating_leases` (report-only AccountingAndClaims status; blocked as recalculation overrides)
 - `growth_pattern_override`
 - `request_policy`
 - `rationale`
@@ -225,6 +229,10 @@ Request policy modes:
 `segment_economics` is a validated SegmentEconomics artifact. MCP validates it agent-side, maps accepted revenue mix into the existing `segments` payload, maps governed segment growth, margin, or reinvestment decisions into `sector_overrides`, and preserves rejected/report-only economics in metadata. MCP does not send the raw `segment_economics` artifact to the valuation service. SegmentEconomics acceptance is not the effective baseline by itself; after recalculation, rely on the returned `baseline.segmentAware` and `baseline.baselineUseStatus` to say whether the service actually used a segment-weighted baseline.
 
 Driver-specific SegmentEconomics entries must reference accepted EvidencePacket evidence by exact driver, `source_url`, and `source_date`. Blank URL/date references are not wildcards.
+
+Phase 5 governed accounting scenario input is `rd_capitalization` only. MCP accepts it only when `request_policy.mode = "explicit_scenario"` and the AccountingAndClaims validator accepts the payload. R&D capitalization requires at least three positive dated R&D history records with direct source URLs, an amortization policy, and source provenance with source class, provider, source date, and retrieved status; MCP maps accepted R&D capitalization to `isExpensesCapitalize`, `rdAmortizationMethod`, and `rdAmortizationPeriodYears`. MCP preserves raw AccountingAndClaims decisions in `assumptions.metadata.accounting_and_claims` and `auditPacket.packet.accounting_decisions`. Autonomous researched mode must not toggle R&D capitalization, and lease conversion has no governed Phase 5 recalculation path.
+
+SBC/dilution, options/warrants, NOL/tax, cash, debt, share count, and generic accounting adjustments are report-only, statused, or scenario-only unless a tested governed path accepts them. Direct cash, debt, share-count, option value, warrant value, NOL, tax, target-price, equity-value, and other claim overrides remain blocked.
 
 Baseline quality values:
 
@@ -255,9 +263,9 @@ The response separates:
 - `assumptions.mapped`: fields sent to the valuation service.
 - `assumptions.unsupported`: rejected fields.
 - `assumptions.effective`: what the service actually used.
-- `assumptions.metadata`: rationale, evidence, and validated EvidencePacket metadata preserved for auditability but not sent to the valuation service.
+- `assumptions.metadata`: rationale, evidence, validated EvidencePacket metadata, SegmentEconomics metadata, and AccountingAndClaims metadata preserved for auditability but not sent to the valuation service except accepted governed fields.
 - `baseline`: live baseline quality/use-status contract after validation or rejection.
-- `auditPacket`: `reference`, compact `summary`, and redacted `packet` using schema `valuation_audit_packet.v1`. The packet preserves EvidencePacket status, rejected evidence, segment validation, baseline plausibility, assumption judgment, requested/mapped/unsupported/metadata/effective buckets, recalculate payload status, guided-refinement status, final case type, data-quality limitations, and audit-safe MCP call references.
+- `auditPacket`: `reference`, compact `summary`, and redacted `packet` using schema `valuation_audit_packet.v1`. The packet preserves EvidencePacket status, rejected evidence, segment validation, accounting decisions, baseline plausibility, assumption judgment, requested/mapped/unsupported/metadata/effective buckets, recalculate payload status, guided-refinement status, final case type, data-quality limitations, and audit-safe MCP call references.
 
 Allowed audit final case types are `evidence_constrained_no_change`, `evidence_constrained_governed_recalculation`, `user_refined_scenario`, and `insufficient_researched_evidence`. Mechanical baseline is internal-only and is not a user-facing final case, visible scenario, visible report case, or visible MCP text output.
 
