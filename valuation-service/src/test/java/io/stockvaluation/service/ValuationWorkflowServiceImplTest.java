@@ -481,6 +481,7 @@ class ValuationWorkflowServiceImplTest {
                 AccountingAndClaimsDTO accounting = result.getAssumptionTransparency().getAccountingAndClaims();
                 assertEquals("governed_scenario_supported", accounting.getRdCapitalization().getStatus());
                 assertEquals("governed_scenario_effective", accounting.getRdCapitalization().getModelTreatment());
+                verify(commonService).getCompanyDataFromProvider(eq("AAPL"), same(overrides));
                 ArgumentCaptor<FinancialDataInput> captor = ArgumentCaptor.forClass(FinancialDataInput.class);
                 verify(valuationOutputService, atLeastOnce())
                                 .getValuationOutput(eq("AAPL"), captor.capture(), eq(template));
@@ -528,7 +529,8 @@ class ValuationWorkflowServiceImplTest {
                 overrides.setRequestPolicyMode("explicit_scenario");
                 overrides.setIsExpensesCapitalize(true);
 
-                lenient().when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
+                lenient().when(commonService.getCompanyDataFromProvider(eq("AAPL"), same(overrides)))
+                                .thenReturn(companyData);
                 when(valuationTemplateService.determineTemplate(eq(overrides), eq(companyData))).thenReturn(template);
 
                 ResponseStatusException ex = assertThrows(
@@ -551,7 +553,8 @@ class ValuationWorkflowServiceImplTest {
                 overrides.setRequestPolicyMode("explicit_scenario");
                 overrides.setIsExpensesCapitalize(true);
 
-                lenient().when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
+                lenient().when(commonService.getCompanyDataFromProvider(eq("AAPL"), same(overrides)))
+                                .thenReturn(companyData);
                 when(valuationTemplateService.determineTemplate(eq(overrides), eq(companyData))).thenReturn(template);
 
                 ResponseStatusException ex = assertThrows(

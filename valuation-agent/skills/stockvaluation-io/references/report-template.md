@@ -1,12 +1,14 @@
 # Educational Valuation Report Template
 
-Use this structure after the full researched valuation workflow completes. Write the report from MCP JSON, the valuation audit packet, evidence packet, segment discovery, `assumption_judgment`, baseline plausibility, guided-refinement `user_judgment` when present, recalculation output, and effective assumptions.
+Use this structure after the full researched valuation workflow completes. Write the report from MCP JSON, the Scenario Book, the valuation audit packet, evidence packet, segment discovery, `assumption_judgment`, baseline plausibility, guided-refinement `user_judgment` when present, recalculation output, and effective assumptions.
 
 Do not print raw `assumption_judgment` JSON by default. Summarize it in prose and tables. Do not invent missing values. If MCP/service output does not return a value, say unavailable or omit the table.
 
 Do not print raw `valuation_audit_packet` JSON by default. Summarize the packet status, packet reference, final case type, rejected evidence, unsupported fields, guided-refinement status, and data-quality limitations in prose or compact tables. Keep mechanical baseline value/detail out of user-facing output unless the user explicitly asks for audit/debug detail.
 
-The user-refined scenario is the main scenario when guided refinement was completed. The mechanical baseline is internal scaffolding by default: do not include mechanical baseline value as a primary valuation case in the main report. Keep mechanical baseline detail available only in the explicit audit/debug section.
+Do not print raw `scenario_book.v1` JSON by default. Summarize the Scenario Book status, reference, main scenario, scenario types, guided-refinement status, diagnostics, unsupported inputs, and limitations in prose or compact tables.
+
+The user-refined scenario is the main scenario when guided refinement was completed. Mechanical baseline is internal-only and is internal scaffolding by default: do not include mechanical baseline value as a primary valuation case in the main report. Keep mechanical baseline detail available only in the explicit audit/debug section.
 
 ## Educational-Use Framing
 
@@ -22,6 +24,30 @@ Use `structuredContent.auditPacket.summary` when returned. State the final case 
 - `insufficient_researched_evidence`: the run did not earn a user-facing valuation case.
 
 Include the packet reference and a compact status summary. Do not present `mechanical_baseline` as a final case type, visible scenario, or report case. If the audit packet says `insufficient_researched_evidence`, stop or explain the insufficiency without showing the mechanical baseline value.
+
+## Scenario Book Summary
+
+Use `structuredContent.scenarioBook.summary` and `structuredContent.scenarioBook.book` when returned. State the main scenario before presenting valuation values.
+
+Valid user-facing scenario types:
+
+- `evidence_constrained_base`: researched case after evidence review, plausibility gate, and governed recalculation when supported.
+- `user_refined_scenario`: bounded user judgment after guided refinement completed or the user accepted defaults.
+- `explicit_scenario`: user-requested supported scenario outside the default guided flow.
+
+Diagnostics:
+
+- `market_implied_diagnostic`
+- `priced_in_diagnostic`
+- `sensitivity_diagnostic`
+
+Market-implied diagnostics are diagnostic-only. They are not evidence, autonomous changes, or the main scenario.
+
+If guided refinement was bypassed by a quick/no-questions request, state the guided-refinement bypass and do not invent a user-refined scenario. If guided defaults were accepted, state that defaults are user judgment, not external evidence, and that the workflow created exactly one user-refined scenario.
+
+Each scenario table must keep requested, mapped, unsupported, metadata, and effective assumptions separate. Include payload reference, audit packet reference, evidence/provenance references, segment economics status, and AccountingAndClaims status when material.
+
+Do not present direct valuation outputs, fair value, target price, upside/downside, market price fitting, cash, debt, share count, or report-only accounting topics as mapped scenario inputs unless a tested governed contract accepted them.
 
 ## Valuation Snapshot
 

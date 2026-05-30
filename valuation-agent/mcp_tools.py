@@ -17,6 +17,7 @@ from .evidence_packet import validate_evidence_packet
 from .security import sanitize_for_agent
 from .segment_discovery import parse_revenue_weight, sanitize_segment_package
 from .segment_economics import validate_segment_economics
+from .scenario_book import scenario_book_metadata, validate_scenario_book
 from .valuation_audit_packet import build_valuation_audit_packet, valuation_audit_packet_metadata
 from .service_client import (
     DEFAULT_SERVICE_URL,
@@ -366,6 +367,12 @@ class MCPToolRegistry:
                 assumption_meta=assumption_meta,
                 recalculate_status="blocked_pre_service",
             )
+            attach_scenario_book(
+                payload,
+                ticker=ticker,
+                assumption_meta=assumption_meta,
+                recalculate_status="blocked_pre_service",
+            )
             return payload
         try:
             valuation = self.service_client.value_ticker(ticker, mapped)
@@ -386,11 +393,23 @@ class MCPToolRegistry:
                 assumption_meta=assumption_meta,
                 recalculate_status="executed",
             )
+            attach_scenario_book(
+                payload,
+                ticker=ticker,
+                assumption_meta=assumption_meta,
+                recalculate_status="executed",
+            )
             return payload
         except ValuationServiceError as exc:
             payload = service_exception_payload(tool, exc, ticker=ticker)
             payload["assumptions"] = assumption_meta
             attach_valuation_audit_packet(
+                payload,
+                ticker=ticker,
+                assumption_meta=assumption_meta,
+                recalculate_status="service_error",
+            )
+            attach_scenario_book(
                 payload,
                 ticker=ticker,
                 assumption_meta=assumption_meta,
@@ -1470,6 +1489,289 @@ def attach_valuation_audit_packet(
     payload["auditPacket"] = valuation_audit_packet_metadata(audit_validation)
     if not audit_validation.get("ok"):
         payload["auditPacket"]["validation_warnings"] = audit_validation.get("validation_warnings", [])
+
+
+def attach_scenario_book(
+    payload: dict[str, Any],
+    *,
+    ticker: str,
+    assumption_meta: dict[str, Any],
+    recalculate_status: str,
+) -> None:
+    audit_packet = _dict(_dict(payload.get("auditPacket")).get("packet"))
+    dcf = _dict(payload.get("dcf"))
+    company = _string_or_none(dcf.get("companyName")) or ticker
+    guided_refinement = _dict(audit_packet.get("guided_refinement")) or guided_refinement_status(
+        _dict(assumption_meta.get("requested")),
+        _dict(assumption_meta.get("metadata")),
+        _scenario_request_mode(assumption_meta) or "recalculate",
+    )
+    guided_refinement = dict(guided_refinement)
+    if guided_refinement.get("status") == "completed":
+        if recalculate_status == "executed" and not _string_or_none(guided_refinement.get("final_recalculate_reference")):
+            guided_refinement["final_recalculate_reference"] = "recalculate_payload:0"
+        elif recalculate_status != "executed":
+            guided_refinement["status"] = "blocked"
+            guided_refinement["block_reason"] = "recalculate blocked before final user-refined scenario execution"
+    scenario = scenario_book_entry(payload, ticker, assumption_meta, audit_packet, recalculate_status)
+    scenarios = [scenario] if scenario is not None else []
+    main_scenario_id = scenario.get("scenario_id") if scenario else None
+    book_status = scenario_book_status(
+        payload=payload,
+        guided_refinement=guided_refinement,
+        scenarios=scenarios,
+        recalculate_status=recalculate_status,
+    )
+    book = {
+        "ticker": ticker,
+        "company": company,
+        "run_mode": _string_or_none(audit_packet.get("run_mode")) or _scenario_request_mode(assumption_meta) or "recalculate",
+        "status": book_status,
+        "main_scenario_id": main_scenario_id,
+        "guided_refinement": guided_refinement,
+        "scenarios": scenarios,
+        "diagnostics": scenario_book_diagnostics(payload),
+        "internal_references": scenario_book_internal_references(payload, audit_packet),
+        "provenance_summary": scenario_book_provenance_summary(payload),
+        "policy": {
+            "educational_use_only": True,
+            "not_financial_advice": True,
+            "prohibited_recommendation_language": ["buy", "sell", "hold", "target price"],
+        },
+    }
+    validation = validate_scenario_book(book)
+    payload["scenarioBook"] = scenario_book_metadata(validation)
+    if not validation.get("ok"):
+        payload["scenarioBook"]["validation_warnings"] = validation.get("validation_warnings", [])
+
+
+def scenario_book_entry(
+    payload: dict[str, Any],
+    ticker: str,
+    assumption_meta: dict[str, Any],
+    audit_packet: dict[str, Any],
+    recalculate_status: str,
+) -> dict[str, Any] | None:
+    if recalculate_status != "executed" or not payload.get("ok"):
+        return None
+
+    request_mode = _scenario_request_mode(assumption_meta)
+    final_case_type = _string_or_none(_dict(_dict(payload.get("auditPacket")).get("summary")).get("final_case_type"))
+    if request_mode == "user_refined_scenario":
+        scenario_id = "user_refined"
+        scenario_type = "user_refined_scenario"
+        label = "User-refined scenario"
+        source = "guided_user_judgment"
+        explicit_intent = None
+    elif request_mode == "explicit_scenario":
+        scenario_id = "explicit_scenario"
+        scenario_type = "explicit_scenario"
+        label = "Explicit scenario"
+        source = "explicit_user_request"
+        explicit_intent = _string_or_none(_dict(_dict(assumption_meta.get("metadata")).get("request_policy")).get("explicit_user_intent"))
+        if explicit_intent is None:
+            explicit_intent = "Explicit user-requested supported scenario outside guided refinement."
+    elif final_case_type == "insufficient_researched_evidence":
+        return None
+    else:
+        scenario_id = "evidence_base"
+        scenario_type = "evidence_constrained_base"
+        label = "Evidence-constrained base"
+        source = "evidence_constrained_workflow"
+        explicit_intent = None
+
+    assumptions = {
+        "requested": _dict(assumption_meta.get("requested")),
+        "mapped": _dict(assumption_meta.get("mapped")),
+        "unsupported": _dict(assumption_meta.get("unsupported")),
+        "metadata": _dict(assumption_meta.get("metadata")),
+        "effective": _dict(assumption_meta.get("effective")),
+    }
+    scenario: dict[str, Any] = {
+        "scenario_id": scenario_id,
+        "label": label,
+        "type": scenario_type,
+        "status": "completed",
+        "visibility": "user_facing",
+        "source": source,
+        "assumption_deltas": scenario_assumption_deltas(assumptions),
+        "assumptions": assumptions,
+        "payload_reference": "recalculate_payload:0",
+        "service_response_reference": f"service_response:{ticker}:{recalculate_status}",
+        "audit_packet_reference": _string_or_none(_dict(payload.get("auditPacket")).get("reference")),
+        "evidence_packet_reference": evidence_packet_reference(audit_packet),
+        "provenance_references": provenance_references(payload),
+        "segment_economics_status": scenario_segment_economics_status(payload, assumption_meta),
+        "accounting_claims_status": scenario_accounting_claims_status(payload, assumption_meta),
+        "warnings": payload.get("warnings") or [],
+        "limitations": data_quality_limitations(payload),
+    }
+    if explicit_intent is not None:
+        scenario["explicit_user_intent"] = explicit_intent
+    return sanitize_for_agent(scenario)
+
+
+def scenario_book_status(
+    *,
+    payload: dict[str, Any],
+    guided_refinement: dict[str, Any],
+    scenarios: list[dict[str, Any]],
+    recalculate_status: str,
+) -> str:
+    if recalculate_status != "executed" or not payload.get("ok"):
+        final_case_type = _string_or_none(_dict(_dict(payload.get("auditPacket")).get("summary")).get("final_case_type"))
+        return "insufficient_evidence" if final_case_type == "insufficient_researched_evidence" else "blocked"
+    if guided_refinement.get("status") == "bypassed":
+        return "completed_with_bypass"
+    if not scenarios:
+        return "partial"
+    return "completed"
+
+
+def scenario_book_diagnostics(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    valuation = _dict(payload.get("valuation"))
+    transparency = _dict(valuation.get("assumptionTransparency"))
+    diagnostics: list[dict[str, Any]] = []
+    market_implied = transparency.get("marketImpliedExpectations")
+    if market_implied is not None:
+        diagnostics.append(
+            {
+                "diagnostic_id": "market_implied",
+                "label": "Market-implied expectations",
+                "type": "market_implied_diagnostic",
+                "status": "available",
+                "visibility": "diagnostic_only",
+                "source": "market_implied_diagnostics",
+                "model_action": "diagnostic_only",
+                "evidence_status": "not_evidence",
+                "payload_reference": "valuation.assumptionTransparency.marketImpliedExpectations",
+                "data": sanitize_for_agent(market_implied),
+                "warnings": [],
+            }
+        )
+    priced_in = transparency.get("pricedInExpectations")
+    if priced_in is not None:
+        diagnostics.append(
+            {
+                "diagnostic_id": "priced_in",
+                "label": "Priced-in expectations",
+                "type": "priced_in_diagnostic",
+                "status": "available",
+                "visibility": "diagnostic_only",
+                "source": "market_implied_diagnostics",
+                "model_action": "diagnostic_only",
+                "evidence_status": "not_evidence",
+                "payload_reference": "valuation.assumptionTransparency.pricedInExpectations",
+                "data": sanitize_for_agent(priced_in),
+                "warnings": [],
+            }
+        )
+    return diagnostics
+
+
+def scenario_book_internal_references(payload: dict[str, Any], audit_packet: dict[str, Any]) -> dict[str, Any]:
+    baseline = _dict(payload.get("baseline"))
+    audit_reference = _string_or_none(_dict(payload.get("auditPacket")).get("reference"))
+    return {
+        "mechanical_baseline": {
+            "visibility": "internal_only",
+            "reference": f"mechanical_baseline:{_string_or_none(payload.get('ticker')) or 'unknown'}:{baseline.get('baselineUseStatus') or 'unknown'}",
+            "baseline_quality": baseline.get("baselineQuality") or "not_calculated",
+            "baseline_use_status": baseline.get("baselineUseStatus") or "unknown",
+        },
+        "valuation_audit_packet_reference": audit_reference,
+        "evidence_packet_reference": evidence_packet_reference(audit_packet),
+        "recalculate_payload_references": ["recalculate_payload:0"],
+        "service_response_references": ["service_response:not_called"] if not payload.get("ok") else ["service_response:latest"],
+    }
+
+
+def scenario_book_provenance_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    provenance = _dict(payload.get("provenance"))
+    source_class = _string_or_none(provenance.get("sourceClass"))
+    source_date = _string_or_none(provenance.get("sourceDate"))
+    return {
+        "source_classes": [source_class] if source_class else [],
+        "source_dates": [source_date] if source_date else [],
+        "data_quality_warnings": provenance.get("dataQualityWarnings") or [],
+        "missing_source_families": [],
+        "source_policy_status": provenance.get("sourcePolicyStatus"),
+    }
+
+
+def scenario_assumption_deltas(assumptions: dict[str, Any]) -> list[dict[str, Any]]:
+    requested = _dict(assumptions.get("requested"))
+    effective = _dict(assumptions.get("effective"))
+    deltas: list[dict[str, Any]] = []
+    for key, requested_value in requested.items():
+        if key in RECALCULATE_METADATA_FIELDS or key == "request_policy":
+            continue
+        delta = {
+            "field": key,
+            "requested": sanitize_for_agent(requested_value),
+            "effective": sanitize_for_agent(effective.get(key)),
+        }
+        if key in _dict(assumptions.get("unsupported")):
+            delta["status"] = "unsupported"
+        else:
+            delta["status"] = "mapped_or_metadata"
+        deltas.append(delta)
+    return deltas
+
+
+def scenario_segment_economics_status(payload: dict[str, Any], assumption_meta: dict[str, Any]) -> dict[str, Any]:
+    metadata = _dict(assumption_meta.get("metadata"))
+    segment_economics = _dict(metadata.get("segment_economics"))
+    if segment_economics:
+        return segment_economics
+    baseline = _dict(payload.get("baseline"))
+    return {
+        "status": baseline.get("baselineUseStatus") or "unknown",
+        "baseline_quality": baseline.get("baselineQuality") or "not_calculated",
+        "segment_aware": bool(baseline.get("segmentAware")),
+        "segment_coverage_pct": baseline.get("segmentCoveragePct"),
+        "mapped_industries": baseline.get("mappedIndustries") or [],
+        "limitations": baseline.get("baselineWarnings") or [],
+    }
+
+
+def scenario_accounting_claims_status(payload: dict[str, Any], assumption_meta: dict[str, Any]) -> dict[str, Any]:
+    metadata = _dict(_dict(assumption_meta.get("metadata")).get("accounting_and_claims"))
+    accounting = dict(_dict(payload.get("accountingAndClaims")))
+    governed = [
+        item for item in metadata.get("governed_scenarios", [])
+        if isinstance(item, dict)
+    ]
+    for item in governed:
+        if item.get("topic") == "rd_capitalization":
+            rd_status = dict(_dict(accounting.get("rdCapitalization")))
+            rd_status["status"] = item.get("status") or "governed_scenario_supported"
+            rd_status["modelTreatment"] = "governed_scenario"
+            rd_status["scenario"] = item
+            accounting["rdCapitalization"] = rd_status
+    if accounting:
+        return accounting
+    return metadata
+
+
+def evidence_packet_reference(audit_packet: dict[str, Any]) -> str | None:
+    evidence_packet = _dict(audit_packet.get("evidence_packet"))
+    status = _string_or_none(evidence_packet.get("status"))
+    if status is None:
+        return None
+    return f"evidence_packet:{status}"
+
+
+def provenance_references(payload: dict[str, Any]) -> list[str]:
+    provenance = _dict(payload.get("provenance"))
+    status = _string_or_none(provenance.get("sourcePolicyStatus"))
+    return [f"source_provenance:{status}"] if status else []
+
+
+def _scenario_request_mode(assumption_meta: dict[str, Any]) -> str | None:
+    metadata = _dict(assumption_meta.get("metadata"))
+    request_policy = _dict(metadata.get("request_policy")) or _dict(_dict(assumption_meta.get("requested")).get("request_policy"))
+    return _string_or_none(request_policy.get("mode")) or _string_or_none(_dict(assumption_meta.get("mapped")).get("requestPolicyMode"))
 
 
 def missing_evidence_packet_audit_result(unsupported: dict[str, Any]) -> dict[str, Any]:

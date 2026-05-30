@@ -19,6 +19,7 @@ def test_skill_pack_contains_required_agent_native_references():
         "search-and-evidence.md",
         "driver-specific-evidence.md",
         "baseline-plausibility.md",
+        "scenario-book.md",
         "guided-valuation-refinement.md",
         "segment-discovery.md",
         "assumption-judgment.md",
@@ -239,6 +240,30 @@ def test_mcp_reference_documents_compact_audit_packet_metadata():
     assert "visible text block" in lower
     assert "baseline_plausibility" in lower
     assert "assumption_judgment" in lower
+
+
+def test_scenario_book_reference_documents_visibility_and_mode_boundaries():
+    references = bundled_skill_dir() / "references"
+    skill = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8").lower()
+    scenario_book = (references / "scenario-book.md").read_text(encoding="utf-8").lower()
+    report = (references / "report-template.md").read_text(encoding="utf-8").lower()
+    mcp = (references / "mcp-tools.md").read_text(encoding="utf-8").lower()
+
+    for phrase in [
+        "scenario_book.v1",
+        "mechanical baseline is internal-only",
+        "market-implied diagnostics are diagnostic-only",
+        "exactly one user-refined scenario",
+        "guided-refinement bypass",
+        "explicit scenario mode is distinct",
+        "requested, mapped, unsupported, metadata, and effective",
+    ]:
+        assert phrase in scenario_book
+
+    assert "scenario book" in skill
+    assert "scenario book" in report
+    assert "`scenariobook`" in mcp
+    assert "mechanical baseline is internal-only" in report
 
 
 def test_researched_acceptance_matrix_covers_global_non_financial_workflow_behavior():

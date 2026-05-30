@@ -138,6 +138,8 @@ The user may answer with a choice letter, a short explanation, `default` for the
 
 After each answer, store it and ask the next unanswered question. Do not recalculate after each answer. Perform one final user-refined recalculation after all questions are answered or defaults are accepted.
 
+The Scenario Book must then contain exactly one user-refined scenario for the completed guided path. If the user says `use defaults`, record the defaults as user judgment, not evidence, and still run one final user-refined recalculation.
+
 ## User Judgment Package
 
 After the user answers, create a `user_judgment` package distinct from autonomous `assumption_judgment`:
@@ -200,6 +202,8 @@ Never accept fair value, target price, equity value, terminal value, upside/down
 The final report must make the user-refined scenario the main scenario when guided refinement was completed. State plainly that user answers are user judgment, not evidence. Avoid buy, sell, hold, target-price, and personalized advice language.
 
 The mechanical baseline is internal scaffolding by default. Keep it available only in explicit audit/debug detail, and do not present it as a primary user-facing valuation case.
+
+If guided refinement was bypassed for quick valuation, no questions, automation, smoke-test, skip-questions, or a one-shot report, the Scenario Book must record guided-refinement bypass and must not fabricate a user-refined scenario.
 
 The final report must separate:
 

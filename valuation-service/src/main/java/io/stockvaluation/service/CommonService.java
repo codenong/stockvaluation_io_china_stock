@@ -91,10 +91,13 @@ public class CommonService {
     }
 
     public CompanyDataDTO getCompanyDataFromProvider(String ticker, FinancialDataInput overrides) {
+        String policy = overrides != null ? overrides.getRequestPolicyMode() : null;
         boolean researchedSourcePolicy = overrides != null
                 && (Boolean.TRUE.equals(overrides.getResearchedBaselineMode())
-                || "autonomous_researched".equals(overrides.getRequestPolicyMode())
-                || "user_refined_scenario".equals(overrides.getRequestPolicyMode()));
+                        || "autonomous_researched".equals(policy)
+                        || "user_refined_scenario".equals(policy)
+                        || ("explicit_scenario".equals(policy)
+                                && Boolean.TRUE.equals(overrides.getIsExpensesCapitalize())));
         return getCompanyDataFromProvider(ticker, researchedSourcePolicy);
     }
 

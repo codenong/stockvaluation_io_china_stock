@@ -42,8 +42,9 @@ The product surface is the user's agent. The deterministic valuation math comes 
 12. Unless the user explicitly requested quick valuation, no questions, skip questions, one-shot report, automation, or smoke-test, run guided refinement using `{baseDir}/references/guided-valuation-refinement.md`. Build a hidden guided question plan of company-specific bounded questions after baseline, segment review, evidence gathering, and baseline plausibility. Ask one question at a time by default, or at most 8 in deep mode. Do not ask a batch of 4-6 questions unless the user explicitly requests batch mode. Do not treat a plain "value COMPANY using stockvaluation.io" request as a one-shot path.
 13. Accumulate answered choices into a distinct `user_judgment` package. User answers are user judgment, not evidence. Recalculate once, after guided refinement is complete, with `stockvaluation.recalculate` using `request_policy.mode = "user_refined_scenario"` and attach `user_judgment` as metadata. Keep unsupported or report-only answers out of the service payload.
 14. For explicitly requested quick/no-questions/one-shot/automation/smoke-test paths, bypass guided refinement and write the one-shot educational report after the evidence-constrained workflow.
-15. Write the final educational report using `{baseDir}/references/report-template.md` and `{baseDir}/references/narrative-report-style.md`, summarizing the judgment in prose and tables rather than printing raw JSON by default.
-16. Apply `{baseDir}/references/no-advice-policy.md` before finalizing.
+15. Build and read the Scenario Book using `{baseDir}/references/scenario-book.md` and returned `structuredContent.scenarioBook` when present. Use it to separate the evidence-constrained base, user-refined scenario, explicit scenario, market-implied diagnostics, and internal mechanical baseline references.
+16. Write the final educational report using `{baseDir}/references/report-template.md` and `{baseDir}/references/narrative-report-style.md`, summarizing the judgment in prose and tables rather than printing raw JSON by default.
+17. Apply `{baseDir}/references/no-advice-policy.md` before finalizing.
 
 ## Tool Rules
 
@@ -57,6 +58,7 @@ The product surface is the user's agent. The deterministic valuation math comes 
 - Treat segment weighting as researched mechanical baseline construction, not as a discretionary researched override.
 - Treat `marketImpliedExpectations`, `pricedInExpectations`, frontier, grid, and scenario data as report inputs, not autonomous model changes.
 - Treat guided-refinement answers as `user_judgment` scenario inputs, not external evidence.
+- Treat Scenario Book as the validated scenario artifact. The mechanical baseline is internal-only, market-implied diagnostics are diagnostic-only, and explicit scenario mode is distinct from guided user-refined mode.
 - Keep `request_policy.mode = "autonomous_researched"` strict. Use `request_policy.mode = "user_refined_scenario"` only for bounded user-judgment scenario inputs.
 - Do not create break-even, priced-in, sensitivity, terminal composition, or accounting-adjustment values when MCP/service output did not return them.
 - Treat the first successful `stockvaluation.value_ticker` output as the mechanical baseline. If `baseline.baselineUseStatus` is not `validated_segment_weighted` or the baseline plausibility gate flags an optimistic assumption stack, do not call it the rational researched base.
@@ -81,6 +83,7 @@ The product surface is the user's agent. The deterministic valuation math comes 
 - `{baseDir}/references/search-and-evidence.md`
 - `{baseDir}/references/driver-specific-evidence.md`
 - `{baseDir}/references/baseline-plausibility.md`
+- `{baseDir}/references/scenario-book.md`
 - `{baseDir}/references/guided-valuation-refinement.md`
 - `{baseDir}/references/segment-discovery.md`
 - `{baseDir}/references/assumption-judgment.md`

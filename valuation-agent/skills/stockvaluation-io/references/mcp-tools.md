@@ -4,6 +4,8 @@ All StockValuation tools return full MCP `structuredContent` with JSON. Read `st
 
 When returned, `auditPacket` contains a `valuation_audit_packet.v1` packet reference, compact packet summary, and redacted machine-readable packet. Use it for reproducibility and report writing. Do not copy raw packet JSON into the visible report. The visible text block remains compact and must not expose the internal mechanical baseline value.
 
+When returned, `scenarioBook` contains a `scenario_book.v1` artifact reference, compact summary, and validator-backed book. Use it to choose the main educational scenario and to separate evidence-constrained base, user-refined scenario, explicit scenario, market-implied diagnostics, and internal mechanical baseline references. Do not copy raw Scenario Book JSON into the visible report.
+
 ## `stockvaluation.health`
 
 Checks the local MCP adapter and valuation service.
@@ -266,8 +268,18 @@ The response separates:
 - `assumptions.metadata`: rationale, evidence, validated EvidencePacket metadata, SegmentEconomics metadata, and AccountingAndClaims metadata preserved for auditability but not sent to the valuation service except accepted governed fields.
 - `baseline`: live baseline quality/use-status contract after validation or rejection.
 - `auditPacket`: `reference`, compact `summary`, and redacted `packet` using schema `valuation_audit_packet.v1`. The packet preserves EvidencePacket status, rejected evidence, segment validation, accounting decisions, baseline plausibility, assumption judgment, requested/mapped/unsupported/metadata/effective buckets, recalculate payload status, guided-refinement status, final case type, data-quality limitations, and audit-safe MCP call references.
+- `scenarioBook`: `reference`, compact `summary`, and redacted `book` using schema `scenario_book.v1`. The book preserves scenario visibility, main scenario eligibility, requested/mapped/unsupported/metadata/effective assumptions, payload references, audit/evidence/provenance references, SegmentEconomics status, AccountingAndClaims status, guided-refinement status, and diagnostics.
 
 Allowed audit final case types are `evidence_constrained_no_change`, `evidence_constrained_governed_recalculation`, `user_refined_scenario`, and `insufficient_researched_evidence`. Mechanical baseline is internal-only and is not a user-facing final case, visible scenario, visible report case, or visible MCP text output.
+
+Scenario Book invariants:
+
+- Mechanical baseline is internal-only and cannot be the main scenario, a user-facing scenario, or visible MCP text output.
+- Market-implied diagnostics are diagnostic-only and cannot become evidence, autonomous model changes, or the main scenario.
+- Completed guided refinement produces exactly one user-refined scenario after answers are completed or defaults are accepted.
+- Quick/no-questions runs record guided-refinement bypass and do not invent a user-refined scenario.
+- Explicit scenario mode is distinct from user-refined guided mode and requires `request_policy.mode = "explicit_scenario"`.
+- Scenario entries preserve requested, mapped, unsupported, metadata, and effective assumptions separately.
 
 Do not pass debt, cash, share count, market price, option value, fair value, target price, terminal value, equity value, upside/downside, direct market-price calibration, or other direct valuation-output fields.
 

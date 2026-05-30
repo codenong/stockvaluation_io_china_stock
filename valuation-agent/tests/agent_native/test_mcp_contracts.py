@@ -654,6 +654,10 @@ def test_user_refined_scenario_rejects_explicit_scenario_only_fields():
         item["status"] == "explicit_scenario_only_in_user_refined_scenario_mode"
         for item in assumptions["unsupported"].values()
     )
+    scenario_book = result["structuredContent"]["scenarioBook"]
+    assert "validation_warnings" not in scenario_book
+    assert scenario_book["summary"]["book_status"] == "blocked"
+    assert scenario_book["book"]["guided_refinement"]["status"] == "blocked"
     assert client.calls == []
 
 
@@ -1234,6 +1238,47 @@ def test_recalculate_returns_compact_valuation_audit_packet_metadata():
     assert "Full JSON is in structuredContent." in visible_text
 
 
+def test_recalculate_returns_compact_scenario_book_with_market_diagnostics():
+    payload = _valuation_payload()
+    payload["assumptionTransparency"]["marketImpliedExpectations"] = {
+        "revenueGrowth": {"modelValue": 7.0, "impliedValue": 11.5, "solved": True}
+    }
+    payload["assumptionTransparency"]["pricedInExpectations"] = {
+        "frontier": [{"operatingMargin": 42.0, "impliedRevenueGrowth": 11.5}],
+        "scenarios": [{"headline": "Higher growth needed to justify market price"}],
+        "grid": [{"growth": 10.0, "margin": 42.0}],
+    }
+    client = FakeClient(payload)
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "MSFT",
+            "overrides": {
+                "request_policy": {"mode": "autonomous_researched"},
+                "revenue_growth": 0.09,
+                "evidence_packet": _valid_evidence_packet(),
+            },
+        },
+    )
+
+    assert result["isError"] is False
+    scenario_book = result["structuredContent"]["scenarioBook"]
+    assert scenario_book["reference"].startswith("scenario_book:")
+    assert scenario_book["summary"]["main_scenario_type"] == "evidence_constrained_base"
+    assert scenario_book["book"]["schema_version"] == "scenario_book.v1"
+    assert scenario_book["book"]["main_scenario_id"] == "evidence_base"
+    assert [scenario["type"] for scenario in scenario_book["book"]["scenarios"]] == ["evidence_constrained_base"]
+    assert scenario_book["book"]["scenarios"][0]["assumptions"]["mapped"]["compoundAnnualGrowth2_5"] == 9.0
+    assert scenario_book["book"]["diagnostics"][0]["visibility"] == "diagnostic_only"
+    assert scenario_book["book"]["diagnostics"][0]["evidence_status"] == "not_evidence"
+    assert scenario_book["book"]["internal_references"]["mechanical_baseline"]["visibility"] == "internal_only"
+    visible_text = result["content"][0]["text"]
+    assert "scenario_book.v1" not in visible_text
+    assert "mechanical_baseline" not in visible_text
+
+
 def test_recalculate_audit_packet_preserves_unsupported_fields_when_blocked():
     client = FakeClient()
     registry = MCPToolRegistry(client)
@@ -1288,6 +1333,10 @@ def test_recalculate_audit_packet_records_guided_refinement_bypass():
         "bypass_reason": "quick valuation requested",
         "user_judgment": None,
     }
+    scenario_book = result["structuredContent"]["scenarioBook"]
+    assert scenario_book["summary"]["book_status"] == "completed_with_bypass"
+    assert scenario_book["summary"]["guided_refinement_status"] == "bypassed"
+    assert [scenario["type"] for scenario in scenario_book["book"]["scenarios"]] == ["evidence_constrained_base"]
 
 
 def test_recalculate_audit_packet_records_user_refined_scenario_case():
@@ -1318,6 +1367,13 @@ def test_recalculate_audit_packet_records_user_refined_scenario_case():
     assert audit["summary"]["guided_refinement_status"] == "completed"
     assert audit["packet"]["guided_refinement"]["user_judgment"] == user_judgment
     assert audit["packet"]["assumption_buckets"]["mapped"]["operatingMarginNextYear"] == 39.0
+    scenario_book = result["structuredContent"]["scenarioBook"]
+    assert "validation_warnings" not in scenario_book
+    assert scenario_book["summary"]["main_scenario_type"] == "user_refined_scenario"
+    assert scenario_book["book"]["main_scenario_id"] == "user_refined"
+    assert scenario_book["book"]["guided_refinement"]["final_recalculate_reference"] == "recalculate_payload:0"
+    assert scenario_book["book"]["scenarios"][0]["source"] == "guided_user_judgment"
+    assert scenario_book["book"]["scenarios"][0]["assumptions"]["metadata"]["user_judgment"] == user_judgment
 
 
 def test_recalculate_blocks_autonomous_changes_without_evidence_packet():
@@ -1623,6 +1679,13 @@ def test_recalculate_maps_governed_rd_capitalization_only_for_explicit_scenario(
     }
     assert audit_accounting["governed_scenarios"][0]["topic"] == "rd_capitalization"
     assert audit_accounting["unsupported"] == {}
+    scenario_book = result["structuredContent"]["scenarioBook"]
+    assert scenario_book["summary"]["main_scenario_type"] == "explicit_scenario"
+    assert scenario_book["book"]["scenarios"][0]["type"] == "explicit_scenario"
+    assert scenario_book["book"]["scenarios"][0]["source"] == "explicit_user_request"
+    assert scenario_book["book"]["scenarios"][0]["accounting_claims_status"]["rdCapitalization"]["status"] == (
+        "governed_scenario_supported"
+    )
 
 
 def test_recalculate_rejects_invalid_rd_capitalization_before_service_call():

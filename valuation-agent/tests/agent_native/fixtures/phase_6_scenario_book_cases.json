@@ -1,0 +1,79 @@
+{
+  "purpose": "phase_6_scenario_book_acceptance",
+  "cases": [
+    {
+      "case_id": "default_guided",
+      "expected_status": "completed",
+      "main_scenario_type": "user_refined_scenario",
+      "guided_refinement_status": "completed",
+      "scenario_types": ["evidence_constrained_base", "user_refined_scenario"],
+      "diagnostic_types": ["market_implied_diagnostic"],
+      "mechanical_baseline_visibility": "internal_only",
+      "market_implied_visibility": "diagnostic_only",
+      "segment_economics_status": "revenue_only_segments"
+    },
+    {
+      "case_id": "use_defaults",
+      "expected_status": "completed",
+      "main_scenario_type": "user_refined_scenario",
+      "guided_refinement_status": "completed",
+      "completion_mode": "use_defaults",
+      "scenario_types": ["evidence_constrained_base", "user_refined_scenario"],
+      "mechanical_baseline_visibility": "internal_only",
+      "market_implied_visibility": "diagnostic_only",
+      "segment_economics_status": "revenue_only_segments"
+    },
+    {
+      "case_id": "quick_bypass",
+      "expected_status": "completed_with_bypass",
+      "main_scenario_type": "evidence_constrained_base",
+      "guided_refinement_status": "bypassed",
+      "scenario_types": ["evidence_constrained_base"],
+      "mechanical_baseline_visibility": "internal_only",
+      "market_implied_visibility": "diagnostic_only",
+      "segment_economics_status": "revenue_only_segments"
+    },
+    {
+      "case_id": "insufficient_evidence",
+      "expected_status": "insufficient_evidence",
+      "main_scenario_type": null,
+      "guided_refinement_status": "not_started",
+      "scenario_types": [],
+      "mechanical_baseline_visibility": "internal_only",
+      "market_implied_visibility": "diagnostic_only",
+      "segment_economics_status": "segment_evidence_insufficient"
+    },
+    {
+      "case_id": "market_implied_diagnostic",
+      "expected_status": "completed",
+      "main_scenario_type": "evidence_constrained_base",
+      "guided_refinement_status": "not_started",
+      "scenario_types": ["evidence_constrained_base"],
+      "diagnostic_types": ["market_implied_diagnostic", "priced_in_diagnostic"],
+      "mechanical_baseline_visibility": "internal_only",
+      "market_implied_visibility": "diagnostic_only",
+      "segment_economics_status": "revenue_only_segments"
+    },
+    {
+      "case_id": "explicit_scenario",
+      "expected_status": "completed",
+      "main_scenario_type": "explicit_scenario",
+      "guided_refinement_status": "bypassed",
+      "scenario_types": ["evidence_constrained_base", "explicit_scenario"],
+      "mechanical_baseline_visibility": "internal_only",
+      "market_implied_visibility": "diagnostic_only",
+      "segment_economics_status": "revenue_only_segments"
+    },
+    {
+      "case_id": "multi_segment",
+      "expected_status": "completed",
+      "main_scenario_type": "user_refined_scenario",
+      "guided_refinement_status": "completed",
+      "scenario_types": ["evidence_constrained_base", "user_refined_scenario"],
+      "mechanical_baseline_visibility": "internal_only",
+      "market_implied_visibility": "diagnostic_only",
+      "segment_economics_status": "partial_economics",
+      "segment_limitations": ["Search, YouTube, subscriptions, devices, and Other Bets are not over-modeled."]
+    }
+  ]
+}

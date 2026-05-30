@@ -955,7 +955,9 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 String policy = resolveRequestPolicyMode(overrides);
                 return Boolean.TRUE.equals(overrides.getResearchedBaselineMode())
                                 || POLICY_AUTONOMOUS_RESEARCHED.equals(policy)
-                                || POLICY_USER_REFINED_SCENARIO.equals(policy);
+                                || POLICY_USER_REFINED_SCENARIO.equals(policy)
+                                || (POLICY_EXPLICIT_SCENARIO.equals(policy)
+                                                && Boolean.TRUE.equals(overrides.getIsExpensesCapitalize()));
         }
 
         private void applyBaselineUseTransparency(
