@@ -26,6 +26,7 @@ Each subagent must return only a compact result:
       "source_title": "string",
       "source_url": "string",
       "source_date": "YYYY-MM-DD|unknown",
+      "status": "checked|retrieved|used|not_used|missing|unavailable|not_applicable",
       "source_type": "filing|annual_report|earnings|presentation|transcript|company_news|macro|segment",
       "used": true
     }
@@ -73,6 +74,7 @@ For each item used in assumption judgment, preserve:
 - `source_title`: page, filing, release, or article title.
 - `source_url`: direct URL.
 - `source_date`: release, filing, publication, or presentation date; use `unknown` only when no date is available.
+- `status`: checked, retrieved, used, not_used, missing, unavailable, or not_applicable.
 - `evidence_type`: `filing`, `earnings`, `company_news`, `macro`, or `segment`.
 - `driver`: `revenue_growth`, `operating_margin`, `reinvestment_sales_to_capital`, `risk_wacc`, `terminal_value_mature_state`, or `accounting_adjustments`.
 - `direction`: `supports higher assumption`, `supports lower assumption`, or `neutral/mixed`.

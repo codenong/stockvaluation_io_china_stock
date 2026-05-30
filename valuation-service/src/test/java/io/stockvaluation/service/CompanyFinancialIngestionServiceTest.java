@@ -139,7 +139,7 @@ class CompanyFinancialIngestionServiceTest {
         assertEquals("yahoo_normalized", result.sourceProvenance().getSourceClass());
         assertEquals("yfinance-http", result.sourceProvenance().getProvider());
         assertEquals(currentYear + "-03-31", result.sourceProvenance().getSourceDate());
-        assertEquals("not_checked_by_service", result.sourceProvenance().getCrossCheckStatus());
+        assertEquals("company_report_check_pending", result.sourceProvenance().getCrossCheckStatus());
     }
 
     private static IncomeStatementSnapshot income(

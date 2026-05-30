@@ -9,6 +9,11 @@ from .security import sanitize_for_agent
 
 SOURCE_CLASSES = {"primary_filing", "yahoo_normalized", "company_ir", "agent_researched"}
 RETRIEVAL_STATUSES = {"retrieved", "missing", "unavailable", "fallback", "not_checked"}
+NON_US_YAHOO_CROSS_CHECK_STATUSES = {
+    "company_report_check_pending",
+    "company_report_cross_checked",
+    "company_report_unavailable",
+}
 RESEARCHED_RUN_MODES = {"full_researched", "autonomous_researched", "researched_baseline"}
 STALE_SOURCE_DAYS = 550
 
@@ -38,6 +43,16 @@ def validate_source_provenance_packet(packet: Any) -> dict[str, Any]:
     validation_warnings = _required_packet_warnings(packet) + _core_metadata_warnings(core)
     if _is_non_us_yahoo_researched(packet, core) and not str(core.get("cross_check_status") or "").strip():
         validation_warnings.append("core_financials.cross_check_status is required for non-US Yahoo-normalized researched valuations.")
+    elif _is_non_us_yahoo_researched(packet, core) and str(core.get("cross_check_status") or "").strip() not in NON_US_YAHOO_CROSS_CHECK_STATUSES:
+        validation_warnings.append(
+            "core_financials.cross_check_status must be company_report_check_pending, company_report_cross_checked, or company_report_unavailable for non-US Yahoo-normalized researched valuations."
+        )
+    if _is_non_us_yahoo_researched(packet, core) and str(core.get("retrieval_status") or "").strip() != "retrieved":
+        for key in ("source_date", "period_end"):
+            if not _is_iso_date(str(core.get(key) or "")):
+                validation_warnings.append(
+                    f"core_financials.{key} must be YYYY-MM-DD for non-US Yahoo-normalized researched valuations."
+                )
     normalized_core = _normalize_core_financials(core)
     policy_warnings: list[str] = []
     status = "valid_source_provenance"
@@ -95,8 +110,11 @@ def _core_metadata_warnings(core: dict[str, Any]) -> list[str]:
     warnings: list[str] = []
     source_class = str(core.get("source_class") or "").strip()
     retrieval_status = str(core.get("retrieval_status") or "").strip()
+    source_policy_status = str(core.get("source_policy_status") or "").strip()
     if source_class not in SOURCE_CLASSES:
         warnings.append("core_financials.source_class must be primary_filing, yahoo_normalized, company_ir, or agent_researched.")
+    if source_policy_status == "primary_filing_used" and source_class != "primary_filing":
+        warnings.append("core_financials.source_policy_status cannot be primary_filing_used unless source_class is primary_filing.")
     if not str(core.get("provider") or "").strip():
         warnings.append("core_financials.provider is required.")
     if retrieval_status not in RETRIEVAL_STATUSES:
@@ -116,6 +134,7 @@ def _normalize_core_financials(core: dict[str, Any]) -> dict[str, Any]:
         "period_end": str(core.get("period_end") or "").strip(),
         "retrieval_status": str(core.get("retrieval_status") or "").strip(),
         "cross_check_status": str(core.get("cross_check_status") or "").strip(),
+        "source_policy_status": str(core.get("source_policy_status") or "").strip(),
         "primary_source_expected": bool(core.get("primary_source_expected")),
         "primary_source_available": bool(core.get("primary_source_available")),
     }

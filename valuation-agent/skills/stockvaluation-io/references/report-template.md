@@ -1,14 +1,27 @@
 # Educational Valuation Report Template
 
-Use this structure after the full researched valuation workflow completes. Write the report from MCP JSON, evidence packet, segment discovery, `assumption_judgment`, baseline plausibility, guided-refinement `user_judgment` when present, recalculation output, and effective assumptions.
+Use this structure after the full researched valuation workflow completes. Write the report from MCP JSON, the valuation audit packet, evidence packet, segment discovery, `assumption_judgment`, baseline plausibility, guided-refinement `user_judgment` when present, recalculation output, and effective assumptions.
 
 Do not print raw `assumption_judgment` JSON by default. Summarize it in prose and tables. Do not invent missing values. If MCP/service output does not return a value, say unavailable or omit the table.
+
+Do not print raw `valuation_audit_packet` JSON by default. Summarize the packet status, packet reference, final case type, rejected evidence, unsupported fields, guided-refinement status, and data-quality limitations in prose or compact tables. Keep mechanical baseline value/detail out of user-facing output unless the user explicitly asks for audit/debug detail.
 
 The user-refined scenario is the main scenario when guided refinement was completed. The mechanical baseline is internal scaffolding by default: do not include mechanical baseline value as a primary valuation case in the main report. Keep mechanical baseline detail available only in the explicit audit/debug section.
 
 ## Educational-Use Framing
 
 This report is for educational use only and is not financial advice. It explains one local DCF model output and the assumptions that drive it. The result should be read as a scenario, not an instruction.
+
+## Valuation Audit Packet Summary
+
+Use `structuredContent.auditPacket.summary` when returned. State the final case type before presenting any valuation result:
+
+- `evidence_constrained_no_change`: evidence was valid or reviewable, but no governed model change was accepted.
+- `evidence_constrained_governed_recalculation`: governed evidence supported a supported recalculation.
+- `user_refined_scenario`: bounded user judgment created the main scenario; user answers are not external evidence.
+- `insufficient_researched_evidence`: the run did not earn a user-facing valuation case.
+
+Include the packet reference and a compact status summary. Do not present `mechanical_baseline` as a final case type, visible scenario, or report case. If the audit packet says `insufficient_researched_evidence`, stop or explain the insufficiency without showing the mechanical baseline value.
 
 ## Valuation Snapshot
 
@@ -45,8 +58,8 @@ Use `structuredContent.provenance` and `valuation.assumptionTransparency.sourceP
 | Provider |  |
 | Source date / period end |  |
 | Retrieval status |  |
-| Source policy status | `valid_source_provenance`, `primary_source_missing_fallback`, `yahoo_normalized_with_cross_check_status`, `stale_source_date`, or `missing_source_date` |
-| Cross-check status | `company_report_cross_checked`, `company_report_check_pending`, `not_checked_by_service`, `not_applicable`, or other returned status |
+| Source policy status | `valid_source_provenance`, `primary_filing_used`, `primary_source_missing_fallback`, `yahoo_normalized_with_cross_check_status`, `stale_source_date`, or `missing_source_date` |
+| Cross-check status | `company_report_cross_checked`, `company_report_check_pending`, `company_report_unavailable`, `not_applicable`, or other returned status |
 | Material warnings |  |
 
 For US researched valuations, prefer SEC/XBRL, company facts, or filing-derived primary financial data when returned. If the output shows `primary_source_missing_fallback`, say the run used Yahoo-normalized financials as a classified fallback and do not imply the core financials are primary-source backed.

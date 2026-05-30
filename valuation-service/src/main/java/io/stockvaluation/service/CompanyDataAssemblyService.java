@@ -13,6 +13,9 @@ import io.stockvaluation.dto.FinancialDataDTO;
 import io.stockvaluation.dto.GrowthDto;
 import io.stockvaluation.exception.InsufficientFinancialDataException;
 import io.stockvaluation.provider.DataProvider;
+import io.stockvaluation.provider.FinancialSnapshotProvider;
+import io.stockvaluation.provider.PrimaryFilingDataProvider;
+import io.stockvaluation.provider.SourceProvenance;
 import io.stockvaluation.repository.CostOfCapitalRepository;
 import io.stockvaluation.repository.CountryEquityRepository;
 import io.stockvaluation.repository.IndustryAveragesGlobalRepository;
@@ -27,6 +30,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -55,15 +59,36 @@ public class CompanyDataAssemblyService {
     private final CompanyDataMapper companyDataMapper;
     private final CompanyFinancialIngestionService companyFinancialIngestionService;
     private final ValuationAssumptionProperties valuationAssumptionProperties;
+    private final PrimaryFilingDataProvider primaryFilingDataProvider;
 
     public CompanyDataDTO assembleCompanyData(String ticker) {
+        return assembleCompanyData(ticker, false);
+    }
+
+    public CompanyDataDTO assembleCompanyData(String ticker, boolean researchedSourcePolicy) {
         Map<String, Object> basicInfoMap = dataProvider.getCompanyInfo(ticker);
         BasicInfoDataDTO basicInfoDataDTO = companyDataMapper.mapBasicInfo(ticker, basicInfoMap);
+        SourceSelection sourceSelection = selectSource(ticker, basicInfoDataDTO, researchedSourcePolicy);
         CompanyFinancialIngestionService.FinancialIngestionData ingestionData =
-                companyFinancialIngestionService.ingest(ticker, basicInfoMap);
+                sourceSelection.useDefaultProviderCall()
+                        ? companyFinancialIngestionService.ingest(ticker, basicInfoMap)
+                        : companyFinancialIngestionService.ingest(ticker, basicInfoMap, sourceSelection.financialDataProvider());
 
         FinancialDataDTO financialDataDTO = ingestionData.financialDataDTO();
-        financialDataDTO.setSourceProvenance(ingestionData.sourceProvenance());
+        SourceProvenance sourceProvenance = ingestionData.sourceProvenance();
+        if (sourceSelection.primaryProviderSelected()) {
+            CompanyFinancialIngestionService.FinancialIngestionData normalizedIngestion =
+                    companyFinancialIngestionService.ingest(ticker, basicInfoMap, dataProvider);
+            sourceProvenance = applyPrimaryFilingReconciliation(
+                    sourceProvenance,
+                    normalizedIngestion.financialDataDTO(),
+                    ingestionData.financialDataDTO());
+        } else if (sourceSelection.primaryProviderUnavailable()) {
+            sourceProvenance = applyPrimarySourceMissingFallback(sourceProvenance);
+        } else if (sourceSelection.nonUsYahooResearchPath()) {
+            sourceProvenance = applyNonUsYahooCrossCheckStatus(sourceProvenance);
+        }
+        financialDataDTO.setSourceProvenance(sourceProvenance);
         List<Double> historicalRevenue = ingestionData.historicalRevenue();
         List<Double> historicalMargins = ingestionData.historicalMargins();
         Double taxProvision = ingestionData.taxProvision();
@@ -271,6 +296,176 @@ public class CompanyDataAssemblyService {
         return companyDataDTO;
     }
 
+    private SourceSelection selectSource(
+            String ticker,
+            BasicInfoDataDTO basicInfoDataDTO,
+            boolean researchedSourcePolicy) {
+        if (!researchedSourcePolicy || basicInfoDataDTO == null) {
+            return SourceSelection.defaultProvider(dataProvider);
+        }
+        boolean usCompany = "United States".equalsIgnoreCase(basicInfoDataDTO.getCountryOfIncorporation());
+        if (!usCompany) {
+            return SourceSelection.nonUsYahoo(dataProvider);
+        }
+        if (primaryFilingDataProvider.hasPrimaryFinancials(ticker)) {
+            return SourceSelection.primaryFiling(primaryFilingDataProvider);
+        }
+        return SourceSelection.primaryUnavailable(dataProvider);
+    }
+
+    private static SourceProvenance applyPrimarySourceMissingFallback(SourceProvenance sourceProvenance) {
+        if (sourceProvenance == null) {
+            sourceProvenance = SourceProvenance.yahooNormalized("unknown", null);
+        } else {
+            sourceProvenance = copySourceProvenance(sourceProvenance);
+        }
+        sourceProvenance.setSourcePolicyStatus("primary_source_missing_fallback");
+        sourceProvenance.setCrossCheckStatus(normalizeCrossCheckStatus(sourceProvenance.getCrossCheckStatus()));
+        List<String> warnings = new ArrayList<>(safeWarnings(sourceProvenance));
+        warnings.add(
+                "US researched valuation is using Yahoo-normalized financials because the primary filing provider returned unavailable.");
+        sourceProvenance.setWarnings(dedupe(warnings));
+        return sourceProvenance;
+    }
+
+    private static SourceProvenance applyNonUsYahooCrossCheckStatus(SourceProvenance sourceProvenance) {
+        if (sourceProvenance == null) {
+            sourceProvenance = SourceProvenance.yahooNormalized("unknown", null);
+        } else {
+            sourceProvenance = copySourceProvenance(sourceProvenance);
+        }
+        sourceProvenance.setSourcePolicyStatus("yahoo_normalized_with_cross_check_status");
+        sourceProvenance.setCrossCheckStatus(normalizeCrossCheckStatus(sourceProvenance.getCrossCheckStatus()));
+        List<String> warnings = new ArrayList<>(safeWarnings(sourceProvenance));
+        warnings.add(
+                "Non-US researched valuation may use Yahoo-normalized financials when company-report cross-check status is explicit.");
+        sourceProvenance.setWarnings(dedupe(warnings));
+        return sourceProvenance;
+    }
+
+    private static SourceProvenance applyPrimaryFilingReconciliation(
+            SourceProvenance sourceProvenance,
+            FinancialDataDTO normalizedFinancials,
+            FinancialDataDTO filingFinancials) {
+        if (sourceProvenance == null) {
+            sourceProvenance = SourceProvenance.primaryFiling("unknown", null);
+        } else {
+            sourceProvenance = copySourceProvenance(sourceProvenance);
+        }
+        sourceProvenance.setSourcePolicyStatus("primary_filing_used");
+        sourceProvenance.setCrossCheckStatus("not_applicable");
+        List<SourceProvenance.DataQualityWarning> warnings =
+                new ArrayList<>(sourceProvenance.getDataQualityWarnings() == null
+                        ? List.of()
+                        : sourceProvenance.getDataQualityWarnings());
+        addMismatchWarning(warnings, "revenue", normalizedFinancials.getRevenueTTM(),
+                filingFinancials.getRevenueTTM(), sourceProvenance);
+        addMismatchWarning(warnings, "operating_income", normalizedFinancials.getOperatingIncomeTTM(),
+                filingFinancials.getOperatingIncomeTTM(), sourceProvenance);
+        addMismatchWarning(warnings, "cash_and_marketable_securities", normalizedFinancials.getCashAndMarkablTTM(),
+                filingFinancials.getCashAndMarkablTTM(), sourceProvenance);
+        addMismatchWarning(warnings, "debt", normalizedFinancials.getBookValueDebtTTM(),
+                filingFinancials.getBookValueDebtTTM(), sourceProvenance);
+        addMismatchWarning(warnings, "shares_outstanding", normalizedFinancials.getNoOfShareOutstanding(),
+                filingFinancials.getNoOfShareOutstanding(), sourceProvenance);
+        sourceProvenance.setDataQualityWarnings(dedupeDataQualityWarnings(warnings));
+        return sourceProvenance;
+    }
+
+    private static void addMismatchWarning(
+            List<SourceProvenance.DataQualityWarning> warnings,
+            String field,
+            Double normalizedValue,
+            Double filingValue,
+            SourceProvenance sourceProvenance) {
+        if (normalizedValue == null || filingValue == null) {
+            return;
+        }
+        double threshold = 0.05;
+        double denominator = Math.max(Math.abs(filingValue), 1.0);
+        double differencePct = Math.abs(normalizedValue - filingValue) / denominator;
+        if (differencePct <= threshold) {
+            return;
+        }
+        warnings.add(new SourceProvenance.DataQualityWarning(
+                field,
+                "material_mismatch",
+                normalizedValue,
+                filingValue,
+                round4(differencePct),
+                threshold,
+                sourceProvenance.getSourceClass(),
+                sourceProvenance.getSourceDate()));
+    }
+
+    private static String normalizeCrossCheckStatus(String status) {
+        if (status == null
+                || status.isBlank()
+                || "not_checked_by_service".equals(status)
+                || "not_checked".equals(status)) {
+            return "company_report_check_pending";
+        }
+        if ("company_report_checked".equals(status)) {
+            return "company_report_cross_checked";
+        }
+        return status;
+    }
+
+    private static List<String> safeWarnings(SourceProvenance sourceProvenance) {
+        return sourceProvenance.getWarnings() == null ? List.of() : sourceProvenance.getWarnings();
+    }
+
+    private static List<String> dedupe(List<String> values) {
+        return values.stream()
+                .filter(Objects::nonNull)
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .toList();
+    }
+
+    private static SourceProvenance copySourceProvenance(SourceProvenance source) {
+        SourceProvenance copy = new SourceProvenance(
+                source.getSourceClass(),
+                source.getProvider(),
+                source.getSourceDate(),
+                source.getPeriodEnd(),
+                source.getRetrievalStatus(),
+                source.getCrossCheckStatus(),
+                source.getSourcePolicyStatus(),
+                source.getWarnings() == null ? new ArrayList<>() : new ArrayList<>(source.getWarnings()));
+        copy.setDataQualityWarnings(source.getDataQualityWarnings() == null
+                ? new ArrayList<>()
+                : new ArrayList<>(source.getDataQualityWarnings()));
+        return copy;
+    }
+
+    private static List<SourceProvenance.DataQualityWarning> dedupeDataQualityWarnings(
+            List<SourceProvenance.DataQualityWarning> warnings) {
+        List<SourceProvenance.DataQualityWarning> deduped = new ArrayList<>();
+        List<String> seen = new ArrayList<>();
+        for (SourceProvenance.DataQualityWarning warning : warnings) {
+            if (warning == null) {
+                continue;
+            }
+            String key = warning.getField() + "|"
+                    + warning.getStatus() + "|"
+                    + warning.getNormalizedValue() + "|"
+                    + warning.getFilingValue() + "|"
+                    + warning.getSourceClass() + "|"
+                    + warning.getSourceDate();
+            if (seen.contains(key)) {
+                continue;
+            }
+            seen.add(key);
+            deduped.add(warning);
+        }
+        return deduped;
+    }
+
+    private static double round4(double value) {
+        return Math.round(value * 10_000.0) / 10_000.0;
+    }
+
     private double resolveBaselineRiskFreeRate() {
         String baselineCurrencyCode = valuationAssumptionProperties.getBaselineRiskFreeCurrencyCode();
         if (baselineCurrencyCode == null || baselineCurrencyCode.isBlank()) {
@@ -300,5 +495,29 @@ public class CompanyDataAssemblyService {
             return Math.max(salesToCapitalFirstPhase / 2, salesToCapital);
         }
         return salesToCapital;
+    }
+
+    private record SourceSelection(
+            FinancialSnapshotProvider financialDataProvider,
+            boolean useDefaultProviderCall,
+            boolean primaryProviderSelected,
+            boolean primaryProviderUnavailable,
+            boolean nonUsYahooResearchPath) {
+
+        static SourceSelection defaultProvider(DataProvider provider) {
+            return new SourceSelection(provider, true, false, false, false);
+        }
+
+        static SourceSelection primaryFiling(FinancialSnapshotProvider provider) {
+            return new SourceSelection(provider, false, true, false, false);
+        }
+
+        static SourceSelection primaryUnavailable(DataProvider provider) {
+            return new SourceSelection(provider, false, false, true, false);
+        }
+
+        static SourceSelection nonUsYahoo(DataProvider provider) {
+            return new SourceSelection(provider, false, false, false, true);
+        }
     }
 }

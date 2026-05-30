@@ -88,7 +88,7 @@ class YFinanceDataProviderTest {
         assertEquals("yfinance-http", snapshot.sourceProvenance().getProvider());
         assertEquals("2024-01-01", snapshot.sourceProvenance().getPeriodEnd());
         assertEquals("retrieved", snapshot.sourceProvenance().getRetrievalStatus());
-        assertEquals("not_checked_by_service", snapshot.sourceProvenance().getCrossCheckStatus());
+        assertEquals("company_report_check_pending", snapshot.sourceProvenance().getCrossCheckStatus());
     }
 
     @Test

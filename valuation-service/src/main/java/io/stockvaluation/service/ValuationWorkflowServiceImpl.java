@@ -95,7 +95,9 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         boolean enableDCFAnalysis) {
 
                 // Step 1: Fetch company baseline data from Yahoo Finance
-                CompanyDataDTO companyDataDTO = commonService.getCompanyDataFromProvider(ticker);
+                CompanyDataDTO companyDataDTO = requiresResearchedSourcePolicy(overrides)
+                                ? commonService.getCompanyDataFromProvider(ticker, overrides)
+                                : commonService.getCompanyDataFromProvider(ticker);
                 String growthAnchorRegion = MarketRegionResolver
                                 .resolveGrowthAnchorRegion(companyDataDTO.getBasicInfoDataDTO());
 
@@ -484,6 +486,9 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 source.getCrossCheckStatus(),
                                 source.getSourcePolicyStatus(),
                                 source.getWarnings() == null ? new ArrayList<>() : new ArrayList<>(source.getWarnings()));
+                provenance.setDataQualityWarnings(source.getDataQualityWarnings() == null
+                                ? new ArrayList<>()
+                                : new ArrayList<>(source.getDataQualityWarnings()));
                 List<String> warnings = provenance.getWarnings() == null
                                 ? new ArrayList<>()
                                 : new ArrayList<>(provenance.getWarnings());
@@ -498,15 +503,39 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
 
                 if (yahooNormalized && researchedMode && usCompany) {
                         provenance.setSourcePolicyStatus("primary_source_missing_fallback");
-                        warnings.add("US researched valuation is using Yahoo-normalized financials because primary filing data is missing or unavailable.");
-                } else if (yahooNormalized && researchedMode) {
+                        if (provenance.getCrossCheckStatus() == null
+                                        || provenance.getCrossCheckStatus().isBlank()
+                                        || "not_checked_by_service".equals(provenance.getCrossCheckStatus())
+                                        || "not_checked".equals(provenance.getCrossCheckStatus())) {
+                                provenance.setCrossCheckStatus("company_report_check_pending");
+                        }
+                        warnings.add("US researched valuation is using Yahoo-normalized financials because primary filing data was unavailable or not returned.");
+                } else if (yahooNormalized && researchedMode && !usCompany) {
                         provenance.setSourcePolicyStatus("yahoo_normalized_with_cross_check_status");
+                        if (provenance.getCrossCheckStatus() == null
+                                        || provenance.getCrossCheckStatus().isBlank()
+                                        || "not_checked_by_service".equals(provenance.getCrossCheckStatus())
+                                        || "not_checked".equals(provenance.getCrossCheckStatus())) {
+                                provenance.setCrossCheckStatus("company_report_check_pending");
+                        } else if ("company_report_checked".equals(provenance.getCrossCheckStatus())) {
+                                provenance.setCrossCheckStatus("company_report_cross_checked");
+                        }
                         warnings.add("Non-US researched valuation may use Yahoo-normalized financials when company-report cross-check status is explicit.");
                 } else if (provenance.getSourcePolicyStatus() == null || provenance.getSourcePolicyStatus().isBlank()) {
                         provenance.setSourcePolicyStatus("source_provenance_returned");
                 }
                 provenance.setWarnings(dedupeStrings(warnings));
                 return provenance;
+        }
+
+        private boolean requiresResearchedSourcePolicy(FinancialDataInput overrides) {
+                if (overrides == null) {
+                        return false;
+                }
+                String policy = resolveRequestPolicyMode(overrides);
+                return Boolean.TRUE.equals(overrides.getResearchedBaselineMode())
+                                || POLICY_AUTONOMOUS_RESEARCHED.equals(policy)
+                                || POLICY_USER_REFINED_SCENARIO.equals(policy);
         }
 
         private void applyBaselineUseTransparency(

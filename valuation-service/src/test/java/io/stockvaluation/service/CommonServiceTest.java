@@ -79,13 +79,13 @@ class CommonServiceTest {
         mockData.setBasicInfoDataDTO(basicInfo);
         mockData.setFinancialDataDTO(financialData);
 
-        when(companyDataAssemblyService.assembleCompanyData(ticker)).thenReturn(mockData);
+        when(companyDataAssemblyService.assembleCompanyData(ticker, false)).thenReturn(mockData);
 
         CompanyDataDTO result = commonService.getCompanyDataFromProvider(ticker);
 
         assertNotNull(result);
         assertEquals(mockData, result);
-        verify(companyDataAssemblyService, times(1)).assembleCompanyData(ticker);
+        verify(companyDataAssemblyService, times(1)).assembleCompanyData(ticker, false);
     }
 
     @Test

@@ -244,8 +244,10 @@ class ValuationWorkflowServiceImplTest {
         void getValuation_usResearchedModeAddsMissingPrimarySourceProvenanceWarning() {
                 ValuationWorkflowServiceImpl workflow = workflow();
                 CompanyDataDTO companyData = companyData();
-                companyData.getFinancialDataDTO()
-                                .setSourceProvenance(SourceProvenance.yahooNormalized("yfinance-http", "2025-06-30"));
+                SourceProvenance provenance = SourceProvenance.yahooNormalized("yfinance-http", "2025-06-30");
+                provenance.setSourcePolicyStatus("primary_source_missing_fallback");
+                provenance.setWarnings(List.of("US researched valuation is using Yahoo-normalized financials because the primary filing provider returned unavailable."));
+                companyData.getFinancialDataDTO().setSourceProvenance(provenance);
                 ValuationTemplate template = fcffTemplate();
                 FinancialDataInput overrides = new FinancialDataInput();
                 overrides.setResearchedBaselineMode(true);
@@ -261,6 +263,62 @@ class ValuationWorkflowServiceImplTest {
                                 result.getAssumptionTransparency().getSourceProvenance().getSourcePolicyStatus());
                 assertTrue(result.getAssumptionTransparency().getSourceProvenance().getWarnings().stream()
                                 .anyMatch(warning -> warning.contains("US researched valuation")));
+        }
+
+        @Test
+        void getValuation_usResearchedModeDoesNotPreserveYahooAsPrimaryFilingUsed() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                SourceProvenance provenance = SourceProvenance.yahooNormalized("yfinance-http", "2025-06-30");
+                provenance.setSourcePolicyStatus("primary_filing_used");
+                companyData.getFinancialDataDTO().setSourceProvenance(provenance);
+                ValuationTemplate template = fcffTemplate();
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setResearchedBaselineMode(true);
+                overrides.setRequestPolicyMode("autonomous_researched");
+                stubHappyPath(companyData, template, valuationOutput(100.0, 100.0), valuationOutput(100.0, 100.0));
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides);
+
+                SourceProvenance output = result.getAssumptionTransparency().getSourceProvenance();
+                assertEquals("yahoo_normalized", output.getSourceClass());
+                assertEquals("primary_source_missing_fallback", output.getSourcePolicyStatus());
+                assertTrue(output.getWarnings().stream()
+                                .anyMatch(warning -> warning.contains("Yahoo-normalized financials")));
+        }
+
+        @Test
+        void getValuation_preservesMaterialSourceMismatchWarningsInTransparency() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                SourceProvenance provenance = SourceProvenance.yahooNormalized("yfinance-http", "2025-06-30");
+                provenance.setSourcePolicyStatus("primary_source_missing_fallback");
+                provenance.setDataQualityWarnings(List.of(new SourceProvenance.DataQualityWarning(
+                                "revenue",
+                                "material_mismatch",
+                                100.0,
+                                112.0,
+                                0.1071,
+                                0.05,
+                                "primary_filing",
+                                "2025-06-30")));
+                companyData.getFinancialDataDTO().setSourceProvenance(provenance);
+                ValuationTemplate template = fcffTemplate();
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setResearchedBaselineMode(true);
+                overrides.setRequestPolicyMode("autonomous_researched");
+                stubHappyPath(companyData, template, valuationOutput(100.0, 100.0), valuationOutput(100.0, 100.0));
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides);
+
+                List<SourceProvenance.DataQualityWarning> warnings = result.getAssumptionTransparency()
+                                .getSourceProvenance()
+                                .getDataQualityWarnings();
+                assertEquals(1, warnings.size());
+                assertEquals("revenue", warnings.get(0).getField());
+                assertEquals("material_mismatch", warnings.get(0).getStatus());
+                assertEquals(100.0, warnings.get(0).getNormalizedValue());
+                assertEquals(112.0, warnings.get(0).getFilingValue());
         }
 
         @Test
@@ -282,7 +340,7 @@ class ValuationWorkflowServiceImplTest {
                                 result.getAssumptionTransparency().getSourceProvenance().getSourceClass());
                 assertEquals("yahoo_normalized_with_cross_check_status",
                                 result.getAssumptionTransparency().getSourceProvenance().getSourcePolicyStatus());
-                assertEquals("not_checked_by_service",
+                assertEquals("company_report_check_pending",
                                 result.getAssumptionTransparency().getSourceProvenance().getCrossCheckStatus());
         }
 
@@ -634,7 +692,7 @@ class ValuationWorkflowServiceImplTest {
                 forcedTemplate.setProjectionYears(15);
                 forcedTemplate.setArrayLength(17);
 
-                when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
+                lenient().when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
                 when(valuationTemplateService.determineTemplate(nullable(FinancialDataInput.class), eq(companyData)))
                                 .thenReturn(firstPassTemplate);
                 when(valuationTemplateService.withGrowthPattern(eq(firstPassTemplate), eq(GrowthPattern.THREE_STAGE), anyString()))
@@ -752,7 +810,7 @@ class ValuationWorkflowServiceImplTest {
                 FinancialDataInput overrides = new FinancialDataInput();
                 overrides.setGrowthPatternOverride(GrowthPattern.STABLE);
 
-                when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
+                lenient().when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
                 when(valuationTemplateService.determineTemplate(eq(overrides), eq(companyData))).thenReturn(template);
                 when(growthAnchorService.getAnchorByYahooIndustry(anyString(), anyString()))
                                 .thenReturn(Optional.empty());
@@ -795,7 +853,7 @@ class ValuationWorkflowServiceImplTest {
                 FinancialDataInput overrides = new FinancialDataInput();
                 overrides.setResearchedBaselineMode(true);
 
-                when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
+                when(commonService.getCompanyDataFromProvider("AAPL", overrides)).thenReturn(companyData);
                 when(valuationTemplateService.determineTemplate(eq(overrides), eq(companyData))).thenReturn(template);
                 when(growthAnchorService.getAnchorByYahooIndustry(anyString(), anyString()))
                                 .thenReturn(Optional.empty());
@@ -991,7 +1049,9 @@ class ValuationWorkflowServiceImplTest {
                         ValuationTemplate template,
                         ValuationOutputDTO initial,
                         ValuationOutputDTO refined) {
-                when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
+                lenient().when(commonService.getCompanyDataFromProvider("AAPL")).thenReturn(companyData);
+                lenient().when(commonService.getCompanyDataFromProvider(eq("AAPL"), any(FinancialDataInput.class)))
+                                .thenReturn(companyData);
                 when(valuationTemplateService.determineTemplate(nullable(FinancialDataInput.class), eq(companyData))).thenReturn(template);
                 lenient().when(valuationTemplateService.withGrowthPattern(any(ValuationTemplate.class), any(GrowthPattern.class), anyString()))
                                 .thenReturn(template);

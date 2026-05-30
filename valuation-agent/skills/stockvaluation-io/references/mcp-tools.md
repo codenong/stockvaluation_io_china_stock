@@ -2,6 +2,8 @@
 
 All StockValuation tools return full MCP `structuredContent` with JSON. Read `structuredContent` first. The visible text block is intentionally compact for CLI clients and is not a serialized copy of the full structured payload.
 
+When returned, `auditPacket` contains a `valuation_audit_packet.v1` packet reference, compact packet summary, and redacted machine-readable packet. Use it for reproducibility and report writing. Do not copy raw packet JSON into the visible report. The visible text block remains compact and must not expose the internal mechanical baseline value.
+
 ## `stockvaluation.health`
 
 Checks the local MCP adapter and valuation service.
@@ -147,6 +149,14 @@ Input:
       "scenario_label": "user-refined scenario",
       "answers": []
     },
+    "baseline_plausibility": {
+      "status": "accepted",
+      "unsupported_blockers": []
+    },
+    "assumption_judgment": {
+      "status": "governed_recalculation_supported",
+      "assumptions_left_unchanged": []
+    },
     "evidence_used": [
       {
         "claim": "string",
@@ -198,6 +208,9 @@ Supported override keys:
 - `evidence_used`
 - `evidence_packet`
 - `user_judgment`
+- `baseline_plausibility`
+- `assumption_judgment`
+- `guided_refinement`
 
 Request policy modes:
 
@@ -239,6 +252,9 @@ The response separates:
 - `assumptions.effective`: what the service actually used.
 - `assumptions.metadata`: rationale, evidence, and validated EvidencePacket metadata preserved for auditability but not sent to the valuation service.
 - `baseline`: live baseline quality/use-status contract after validation or rejection.
+- `auditPacket`: `reference`, compact `summary`, and redacted `packet` using schema `valuation_audit_packet.v1`. The packet preserves EvidencePacket status, rejected evidence, segment validation, baseline plausibility, assumption judgment, requested/mapped/unsupported/metadata/effective buckets, recalculate payload status, guided-refinement status, final case type, data-quality limitations, and audit-safe MCP call references.
+
+Allowed audit final case types are `evidence_constrained_no_change`, `evidence_constrained_governed_recalculation`, `user_refined_scenario`, and `insufficient_researched_evidence`. Mechanical baseline is internal-only and is not a user-facing final case, visible scenario, visible report case, or visible MCP text output.
 
 Do not pass debt, cash, share count, market price, option value, fair value, target price, terminal value, equity value, upside/downside, direct market-price calibration, or other direct valuation-output fields.
 

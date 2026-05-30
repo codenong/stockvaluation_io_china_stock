@@ -39,6 +39,7 @@ def _packet(**overrides):
                 "source_title": "FY annual report",
                 "source_url": "https://example.com/msft-annual-report",
                 "source_date": "2026-06-30",
+                "status": "checked",
                 "source_type": "annual_report",
                 "used": True,
             }
@@ -242,8 +243,54 @@ def test_validate_evidence_packet_fails_closed_for_weak_mixed_or_undated_governe
         "undated_governed_change",
     ]
     assert result["validation_warnings"] == [
-        "No governed evidence accepted; weak, mixed, or undated evidence is report context only."
+        "No governed evidence accepted; weak, mixed, stale, or undated evidence is report context only."
     ]
+
+
+def test_validate_evidence_packet_fails_closed_for_stale_governed_evidence():
+    result = validate_evidence_packet(
+        _packet(
+            as_of_date="2026-05-29",
+            evidence_items=[
+                _evidence_item(source_date="2023-01-01"),
+            ],
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["status"] == "valid_no_governed_change"
+    assert result["governed_evidence"] == []
+    assert result["rejected_evidence"][0]["status"] == "stale_governed_change"
+    assert "stale" in result["rejected_evidence"][0]["reason"].lower()
+    assert result["validation_warnings"] == [
+        "No governed evidence accepted; weak, mixed, stale, or undated evidence is report context only."
+    ]
+
+
+def test_validate_evidence_packet_fails_closed_for_conflicting_governed_evidence_same_driver():
+    result = validate_evidence_packet(
+        _packet(
+            evidence_items=[
+                _evidence_item(
+                    evidence_summary="Cloud revenue grew faster than company revenue.",
+                    direction="supports higher assumption",
+                ),
+                _evidence_item(
+                    evidence_summary="Management guided to slower cloud growth next year.",
+                    direction="supports lower assumption",
+                ),
+            ],
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["status"] == "valid_no_governed_change"
+    assert result["governed_evidence"] == []
+    assert [item["status"] for item in result["rejected_evidence"]] == [
+        "conflicting_governed_evidence",
+        "conflicting_governed_evidence",
+    ]
+    assert all(item["item"]["driver"] == "revenue_growth" for item in result["rejected_evidence"])
 
 
 def test_validate_evidence_packet_preserves_source_family_status_without_source_count_gate():
@@ -299,6 +346,52 @@ def test_validate_evidence_packet_requires_direct_source_family_metadata_for_che
     assert result["status"] == "invalid_packet"
     assert result["validation_warnings"] == [
         "source_families[0] checked status requires direct source_url and source_date."
+    ]
+
+
+def test_validate_evidence_packet_rejects_unknown_source_family_and_status():
+    result = validate_evidence_packet(
+        _packet(
+            source_families=[
+                {
+                    "family": "social_media_threads",
+                    "status": "skimmed",
+                    "source_title": "Message board thread",
+                    "source_url": "https://example.com/thread",
+                    "source_date": "2026-05-01",
+                }
+            ]
+        )
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "invalid_packet"
+    assert result["validation_warnings"] == [
+        "source_families[0].family is unsupported.",
+        "source_families[0].status is unsupported.",
+    ]
+
+
+def test_validate_evidence_packet_rejects_sources_checked_without_direct_reference_date_and_status():
+    result = validate_evidence_packet(
+        _packet(
+            sources_checked=[
+                {
+                    "source_title": "Search results",
+                    "source_url": "https://www.google.com/search?q=MSFT+10-K",
+                    "source_type": "annual_report",
+                    "used": True,
+                }
+            ]
+        )
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "invalid_packet"
+    assert result["validation_warnings"] == [
+        "sources_checked[0] requires a direct source_url or source_reference.",
+        "sources_checked[0].source_date must be YYYY-MM-DD or unknown.",
+        "sources_checked[0].status is required.",
     ]
 
 

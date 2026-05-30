@@ -213,6 +213,34 @@ def test_report_template_summarizes_researched_judgment_without_raw_json_dump():
     assert "| assumption | baseline | researched change | effective | rationale |" in lower
 
 
+def test_report_template_summarizes_audit_packet_without_mechanical_baseline_value():
+    template = (bundled_skill_dir() / "references" / "report-template.md").read_text(encoding="utf-8")
+    lower = template.lower()
+
+    assert "valuation audit packet" in lower
+    assert "final case type" in lower
+    assert "do not print raw `valuation_audit_packet` json" in lower
+    assert "evidence_constrained_no_change" in lower
+    assert "evidence_constrained_governed_recalculation" in lower
+    assert "user_refined_scenario" in lower
+    assert "insufficient_researched_evidence" in lower
+    assert "mechanical baseline value" in lower
+    assert "not financial advice" in lower
+
+
+def test_mcp_reference_documents_compact_audit_packet_metadata():
+    reference = (bundled_skill_dir() / "references" / "mcp-tools.md").read_text(encoding="utf-8")
+    lower = reference.lower()
+
+    assert "`auditpacket`" in lower
+    assert "valuation_audit_packet.v1" in lower
+    assert "packet reference" in lower
+    assert "compact packet summary" in lower
+    assert "visible text block" in lower
+    assert "baseline_plausibility" in lower
+    assert "assumption_judgment" in lower
+
+
 def test_researched_acceptance_matrix_covers_global_non_financial_workflow_behavior():
     matrix = json.loads(ACCEPTANCE_MATRIX.read_text(encoding="utf-8"))
     companies = matrix["companies"]

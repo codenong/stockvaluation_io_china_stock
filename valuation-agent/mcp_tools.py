@@ -11,6 +11,7 @@ from . import __version__
 from .evidence_packet import validate_evidence_packet
 from .security import sanitize_for_agent
 from .segment_discovery import parse_revenue_weight, sanitize_segment_package
+from .valuation_audit_packet import build_valuation_audit_packet, valuation_audit_packet_metadata
 from .service_client import (
     DEFAULT_SERVICE_URL,
     NonJsonServiceResponse,
@@ -54,7 +55,16 @@ REQUEST_POLICY_MODES = {
     "researched_baseline",
 }
 
-RECALCULATE_METADATA_FIELDS = {"rationale", "evidence_used", "evidence_packet", "request_policy", "user_judgment"}
+RECALCULATE_METADATA_FIELDS = {
+    "rationale",
+    "evidence_used",
+    "evidence_packet",
+    "request_policy",
+    "user_judgment",
+    "baseline_plausibility",
+    "assumption_judgment",
+    "guided_refinement",
+}
 AUTONOMOUS_RESEARCHED_FIELDS = {"revenue_growth", "operating_margin", "sales_to_capital", "segments", "sector_overrides"}
 USER_REFINED_SCENARIO_FIELDS = {
     "revenue_growth",
@@ -191,7 +201,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                     **ticker_property,
                     "overrides": {
                         "type": "object",
-                        "description": "Supported keys: revenue_growth, operating_margin_next_year, operating_margin/target_operating_margin, margin_convergence_year, sales_to_capital, sales_to_capital_years_1_to_5, sales_to_capital_years_6_to_10, segments, sector_overrides, wacc, terminal_growth, tax_rate, growth_pattern_override, request_policy, rationale, evidence_used, evidence_packet, user_judgment.",
+                        "description": "Supported keys: revenue_growth, operating_margin_next_year, operating_margin/target_operating_margin, margin_convergence_year, sales_to_capital, sales_to_capital_years_1_to_5, sales_to_capital_years_6_to_10, segments, sector_overrides, wacc, terminal_growth, tax_rate, growth_pattern_override, request_policy, rationale, evidence_used, evidence_packet, user_judgment, baseline_plausibility, assumption_judgment, guided_refinement.",
                         "additionalProperties": True,
                     },
                 },
@@ -322,13 +332,21 @@ class MCPToolRegistry:
         if metadata:
             assumption_meta["metadata"] = metadata
         if unsupported:
-            return error_payload(
+            blocked_baseline = blocked_baseline_contract(unsupported)
+            payload = error_payload(
                 tool,
                 "UNSUPPORTED_OVERRIDES",
                 "One or more override fields are not governed by the MCP contract.",
                 "unsupported_overrides",
-                extra={"ticker": ticker, "assumptions": assumption_meta, "baseline": blocked_baseline_contract(unsupported)},
+                extra={"ticker": ticker, "assumptions": assumption_meta, "baseline": blocked_baseline},
             )
+            attach_valuation_audit_packet(
+                payload,
+                ticker=ticker,
+                assumption_meta=assumption_meta,
+                recalculate_status="blocked_pre_service",
+            )
+            return payload
         try:
             valuation = self.service_client.value_ticker(ticker, mapped)
             assumption_meta["effective"] = effective_assumptions(valuation)
@@ -342,10 +360,22 @@ class MCPToolRegistry:
                 },
             )
             payload["assumptions"] = assumption_meta
+            attach_valuation_audit_packet(
+                payload,
+                ticker=ticker,
+                assumption_meta=assumption_meta,
+                recalculate_status="executed",
+            )
             return payload
         except ValuationServiceError as exc:
             payload = service_exception_payload(tool, exc, ticker=ticker)
             payload["assumptions"] = assumption_meta
+            attach_valuation_audit_packet(
+                payload,
+                ticker=ticker,
+                assumption_meta=assumption_meta,
+                recalculate_status="service_error",
+            )
             return payload
 
     def _get_assumptions(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -575,6 +605,7 @@ def map_recalculate_overrides(requested: dict[str, Any]) -> tuple[dict[str, Any]
 
 def evidence_packet_metadata(validation: dict[str, Any]) -> dict[str, Any]:
     return {
+        "ok": validation.get("ok"),
         "status": validation.get("status"),
         "sanitized_packet": validation.get("sanitized_packet", {}),
         "governed_evidence": validation.get("governed_evidence", []),
@@ -1176,6 +1207,211 @@ def effective_assumptions(valuation: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def attach_valuation_audit_packet(
+    payload: dict[str, Any],
+    *,
+    ticker: str,
+    assumption_meta: dict[str, Any],
+    recalculate_status: str,
+) -> None:
+    metadata = _dict(assumption_meta.get("metadata"))
+    requested = _dict(assumption_meta.get("requested"))
+    mapped = _dict(assumption_meta.get("mapped"))
+    unsupported = _dict(assumption_meta.get("unsupported"))
+    effective = _dict(assumption_meta.get("effective"))
+    evidence_packet = _dict(metadata.get("evidence_packet")) or missing_evidence_packet_audit_result(unsupported)
+    baseline = _dict(payload.get("baseline"))
+    dcf = _dict(payload.get("dcf"))
+    company = _string_or_none(dcf.get("companyName")) or ticker
+    request_policy = _dict(metadata.get("request_policy")) or _dict(requested.get("request_policy"))
+    run_mode = _string_or_none(request_policy.get("mode")) or "recalculate"
+    final_case_type = derive_final_case_type(assumption_meta)
+    audit_validation = build_valuation_audit_packet(
+        ticker=ticker,
+        company=company,
+        run_mode=run_mode,
+        evidence_packet=evidence_packet,
+        segment_validation=segment_validation_from_baseline(baseline),
+        baseline_plausibility=_dict(metadata.get("baseline_plausibility"))
+        or default_baseline_plausibility(baseline),
+        assumption_judgment=_dict(metadata.get("assumption_judgment")) or default_assumption_judgment(),
+        recalculate_payloads=[
+            {
+                "kind": run_mode,
+                "requested": requested,
+                "mapped": mapped,
+                "unsupported": unsupported,
+                "metadata": metadata,
+                "effective": effective,
+                "status": recalculate_status,
+            }
+        ],
+        assumption_buckets={
+            "requested": requested,
+            "mapped": mapped,
+            "unsupported": unsupported,
+            "metadata": metadata,
+            "effective": effective,
+        },
+        guided_refinement=guided_refinement_status(requested, metadata, run_mode),
+        final_case_type=final_case_type,
+        final_report_inputs={
+            "final_case_type": final_case_type,
+            "educational_use_only": True,
+            "not_financial_advice": True,
+            "summary": final_case_summary(final_case_type),
+        },
+        data_quality_limitations=data_quality_limitations(payload),
+        mcp_call_references=[
+            {
+                "tool": payload.get("tool") or "stockvaluation.recalculate",
+                "ticker": ticker,
+                "status": "ok" if payload.get("ok") else "error",
+                "service_call_status": recalculate_status,
+            }
+        ],
+        internal_state=mechanical_baseline_internal_state(baseline),
+    )
+    payload["auditPacket"] = valuation_audit_packet_metadata(audit_validation)
+    if not audit_validation.get("ok"):
+        payload["auditPacket"]["validation_warnings"] = audit_validation.get("validation_warnings", [])
+
+
+def missing_evidence_packet_audit_result(unsupported: dict[str, Any]) -> dict[str, Any]:
+    evidence_blocker = _dict(unsupported.get("evidence_packet"))
+    status = _string_or_none(evidence_blocker.get("status")) or "missing_evidence_packet"
+    blockers = [evidence_blocker] if evidence_blocker else []
+    return {
+        "ok": False,
+        "status": status,
+        "sanitized_packet": {},
+        "governed_evidence": [],
+        "report_only_evidence": [],
+        "rejected_evidence": [],
+        "source_family_status": [],
+        "validation_warnings": ["EvidencePacket was not provided to the recalculate audit boundary."],
+        "unsupported_blockers": blockers,
+    }
+
+
+def segment_validation_from_baseline(baseline: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "baseline_quality": baseline.get("baselineQuality") or "not_calculated",
+        "baseline_use_status": baseline.get("baselineUseStatus") or "unknown",
+        "segment_aware": bool(baseline.get("segmentAware")),
+        "segment_count": _int_or_zero(baseline.get("segmentCount")),
+        "segment_coverage_pct": _number_or_none(baseline.get("segmentCoveragePct")) or 0.0,
+        "mapped_industries": baseline.get("mappedIndustries") or [],
+        "validation_warnings": baseline.get("baselineWarnings") or [],
+    }
+
+
+def default_baseline_plausibility(baseline: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": "not_provided",
+        "baseline_use_status": baseline.get("baselineUseStatus") or "unknown",
+        "unsupported_blockers": baseline.get("unsupportedBaselineDrivers") or [],
+    }
+
+
+def default_assumption_judgment() -> dict[str, Any]:
+    return {
+        "status": "not_provided",
+        "assumptions_left_unchanged": [],
+    }
+
+
+def guided_refinement_status(
+    requested: dict[str, Any],
+    metadata: dict[str, Any],
+    run_mode: str,
+) -> dict[str, Any]:
+    explicit = _dict(metadata.get("guided_refinement"))
+    if explicit:
+        return explicit
+    user_judgment = metadata.get("user_judgment")
+    if run_mode == "user_refined_scenario" or user_judgment is not None:
+        return {
+            "status": "completed",
+            "bypass_reason": None,
+            "user_judgment": user_judgment,
+        }
+    request_policy = _dict(metadata.get("request_policy")) or _dict(requested.get("request_policy"))
+    bypass_reason = _string_or_none(request_policy.get("guided_refinement_bypass_reason")) or _string_or_none(
+        request_policy.get("bypass_reason")
+    )
+    bypass_status = _string_or_none(request_policy.get("guided_refinement"))
+    if bypass_reason or bypass_status == "bypassed" or bool(request_policy.get("guided_refinement_bypassed")):
+        return {
+            "status": "bypassed",
+            "bypass_reason": bypass_reason or "guided refinement bypassed by request",
+            "user_judgment": None,
+        }
+    return {
+        "status": "not_started",
+        "bypass_reason": None,
+        "user_judgment": None,
+    }
+
+
+def derive_final_case_type(assumption_meta: dict[str, Any]) -> str:
+    metadata = _dict(assumption_meta.get("metadata"))
+    mapped = _dict(assumption_meta.get("mapped"))
+    unsupported = _dict(assumption_meta.get("unsupported"))
+    request_policy = _dict(metadata.get("request_policy")) or _dict(_dict(assumption_meta.get("requested")).get("request_policy"))
+    request_mode = _string_or_none(request_policy.get("mode")) or _string_or_none(mapped.get("requestPolicyMode"))
+    if request_mode == "user_refined_scenario":
+        return "user_refined_scenario"
+    if unsupported:
+        return "insufficient_researched_evidence"
+    if request_mode == "autonomous_researched":
+        if has_governed_recalculate_change(mapped):
+            return "evidence_constrained_governed_recalculation"
+        return "evidence_constrained_no_change"
+    return "evidence_constrained_no_change"
+
+
+def has_governed_recalculate_change(mapped: dict[str, Any]) -> bool:
+    governed_fields = {
+        "compoundAnnualGrowth2_5",
+        "targetPreTaxOperatingMargin",
+        "salesToCapitalYears1To5",
+        "salesToCapitalYears6To10",
+        "sectorOverrides",
+    }
+    return any(field in mapped for field in governed_fields)
+
+
+def final_case_summary(final_case_type: str) -> str:
+    return {
+        "evidence_constrained_no_change": "Evidence-constrained no-change case; no governed recalculation inputs were accepted.",
+        "evidence_constrained_governed_recalculation": "Evidence-constrained governed recalculation.",
+        "user_refined_scenario": "User-refined scenario based on bounded user judgment, not external evidence.",
+        "insufficient_researched_evidence": "Insufficient researched evidence for a user-facing valuation case.",
+    }[final_case_type]
+
+
+def data_quality_limitations(payload: dict[str, Any]) -> list[Any]:
+    limitations: list[Any] = []
+    limitations.extend(payload.get("warnings") or [])
+    baseline = _dict(payload.get("baseline"))
+    limitations.extend(baseline.get("baselineWarnings") or [])
+    provenance = _dict(payload.get("provenance"))
+    limitations.extend(provenance.get("warnings") or [])
+    limitations.extend(provenance.get("dataQualityWarnings") or [])
+    return limitations
+
+
+def mechanical_baseline_internal_state(baseline: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "mechanical_baseline": {
+            "visibility": "internal_only",
+            "baseline_quality": baseline.get("baselineQuality") or "not_calculated",
+            "baseline_use_status": baseline.get("baselineUseStatus") or "unknown",
+        }
+    }
+
+
 def extract_growth_anchor(valuation: dict[str, Any]) -> dict[str, Any]:
     transparency = _dict(valuation.get("assumptionTransparency"))
     anchor = _dict(transparency.get("growthAnchor") or valuation.get("growthSkillContext"))
@@ -1216,6 +1452,7 @@ def extract_source_provenance(valuation: dict[str, Any]) -> dict[str, Any]:
         "crossCheckStatus": source.get("crossCheckStatus"),
         "sourcePolicyStatus": source.get("sourcePolicyStatus"),
         "warnings": _string_list(source.get("warnings")),
+        "dataQualityWarnings": _data_quality_warning_list(source.get("dataQualityWarnings")),
     }
 
 
@@ -1535,15 +1772,16 @@ def compact_text_content(payload: dict[str, Any], is_error: bool) -> str:
         market_price = compact_number(dcf.get("marketPrice"))
         baseline = _dict(payload.get("baseline"))
         baseline_status = _string_or_none(baseline.get("baselineUseStatus"))
+        hide_visible_values = hide_visible_dcf_values(payload, tool, baseline_status)
         summary = f"{subject}: ok."
         if company_name:
             summary += f" {company_name}."
-        if estimated_value is not None:
+        if estimated_value is not None and not hide_visible_values:
             value_text = f" Estimated value/share {estimated_value}"
             if currency:
                 value_text += f" {currency}"
             summary += value_text + "."
-        if market_price is not None:
+        if market_price is not None and not hide_visible_values:
             price_text = f" Market price {market_price}"
             if currency:
                 price_text += f" {currency}"
@@ -1579,6 +1817,15 @@ def compact_text_content(payload: dict[str, Any], is_error: bool) -> str:
         return f"{subject}: ok. {category}: {message} Full JSON is in structuredContent."
 
     return f"{subject}: ok.{policy_text} Full JSON is in structuredContent."
+
+
+def hide_visible_dcf_values(payload: dict[str, Any], tool: str, baseline_status: str | None) -> bool:
+    audit_summary = _dict(_dict(payload.get("auditPacket")).get("summary"))
+    final_case_type = _string_or_none(audit_summary.get("final_case_type"))
+    if final_case_type == "insufficient_researched_evidence":
+        return True
+    internal_baseline_statuses = {"mechanical_only", "segment_evidence_insufficient", "challenged_baseline"}
+    return tool == "stockvaluation.value_ticker" and baseline_status in internal_baseline_statuses
 
 
 def compact_number(value: Any) -> str | None:
@@ -1631,6 +1878,27 @@ def _issue_list(value: Any) -> list[dict[str, str]]:
             }
         )
     return issues
+
+
+def _data_quality_warning_list(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    warnings: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        warning = {
+            "field": _string_or_none(item.get("field")),
+            "status": _string_or_none(item.get("status")),
+            "normalizedValue": _number_or_none(item.get("normalizedValue")),
+            "filingValue": _number_or_none(item.get("filingValue")),
+            "differencePct": _number_or_none(item.get("differencePct")),
+            "thresholdPct": _number_or_none(item.get("thresholdPct")),
+            "sourceClass": _string_or_none(item.get("sourceClass")),
+            "sourceDate": _string_or_none(item.get("sourceDate")),
+        }
+        warnings.append({key: value for key, value in warning.items() if value is not None})
+    return warnings
 
 
 def _dict(value: Any) -> dict[str, Any]:

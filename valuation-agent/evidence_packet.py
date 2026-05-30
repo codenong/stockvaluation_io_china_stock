@@ -20,6 +20,45 @@ REPORT_ONLY_DRIVERS = {
 }
 SUPPORTED_DRIVERS = GOVERNED_DRIVERS | REPORT_ONLY_DRIVERS
 GOVERNED_ACTION = "governed assumption change"
+STALE_EVIDENCE_DAYS = 550
+SUPPORTED_SOURCE_FAMILIES = {
+    "annual_report",
+    "quarterly_report_or_earnings_release",
+    "investor_presentation_or_transcript",
+    "segment_disclosure",
+    "material_news",
+    "macro_risk",
+    "filings_annual_report_research",
+    "earnings_ir_research",
+    "latest_news_research",
+    "segment_evidence_research",
+    "macro_risk_research",
+}
+SUPPORTED_SOURCE_FAMILY_STATUSES = {
+    "checked",
+    "missing",
+    "unavailable",
+    "not_applicable",
+}
+SUPPORTED_SOURCES_CHECKED_STATUSES = {
+    "checked",
+    "retrieved",
+    "used",
+    "not_used",
+    "missing",
+    "unavailable",
+    "not_applicable",
+}
+SUPPORTED_SOURCE_TYPES = {
+    "filing",
+    "annual_report",
+    "earnings",
+    "presentation",
+    "transcript",
+    "company_news",
+    "macro",
+    "segment",
+}
 GENERIC_SOURCE_PHRASES = {
     "10-k found",
     "earnings release found",
@@ -40,7 +79,11 @@ def validate_evidence_packet(packet: Any) -> dict[str, Any]:
         )
 
     sanitized_packet = sanitize_for_agent(packet)
-    packet_warnings = _packet_validation_warnings(packet) + _source_family_validation_warnings(packet)
+    packet_warnings = (
+        _packet_validation_warnings(packet)
+        + _source_family_validation_warnings(packet)
+        + _sources_checked_validation_warnings(packet)
+    )
     validation_warnings = list(packet_warnings)
     source_family_status = [
         _sanitize_source_family(item)
@@ -76,7 +119,7 @@ def validate_evidence_packet(packet: Any) -> dict[str, Any]:
         if rejection is not None:
             rejected_evidence.append({"item": sanitized_item, **rejection})
             continue
-        strength_rejection = _governed_strength_rejection(sanitized_item)
+        strength_rejection = _governed_strength_rejection(packet, sanitized_item)
         if strength_rejection is not None:
             rejected_evidence.append({"item": sanitized_item, **strength_rejection})
             continue
@@ -104,6 +147,9 @@ def validate_evidence_packet(packet: Any) -> dict[str, Any]:
                 }
             )
 
+    governed_evidence, conflict_rejections = _reject_conflicting_governed_evidence(governed_evidence)
+    rejected_evidence.extend(conflict_rejections)
+
     fatal_rejected_statuses = {
         "missing_required_evidence_field",
         "generic_source_presence",
@@ -115,7 +161,7 @@ def validate_evidence_packet(packet: Any) -> dict[str, Any]:
     fatal_rejected = any(item["status"] in fatal_rejected_statuses for item in rejected_evidence)
     if not governed_evidence and any(_is_soft_no_change_rejection(item) for item in rejected_evidence):
         validation_warnings.append(
-            "No governed evidence accepted; weak, mixed, or undated evidence is report context only."
+            "No governed evidence accepted; weak, mixed, stale, or undated evidence is report context only."
         )
     ok = not packet_warnings and not fatal_rejected and not unsupported_blockers
     status = "valid_governed_evidence" if governed_evidence else "valid_no_governed_change"
@@ -167,12 +213,49 @@ def _source_family_validation_warnings(packet: dict[str, Any]) -> list[str]:
         if not family or not status:
             warnings.append(f"source_families[{index}] requires family and status.")
             continue
+        if family not in SUPPORTED_SOURCE_FAMILIES:
+            warnings.append(f"source_families[{index}].family is unsupported.")
+        if status not in SUPPORTED_SOURCE_FAMILY_STATUSES:
+            warnings.append(f"source_families[{index}].status is unsupported.")
         if status == "checked" and (
             not _is_valid_source_url(source_url) or not _is_valid_source_date(source_date, allow_unknown=False)
         ):
             warnings.append(
                 f"source_families[{index}] checked status requires direct source_url and source_date."
             )
+    return warnings
+
+
+def _sources_checked_validation_warnings(packet: dict[str, Any]) -> list[str]:
+    raw_sources = packet.get("sources_checked")
+    if not isinstance(raw_sources, list):
+        return []
+
+    warnings: list[str] = []
+    for index, raw in enumerate(raw_sources):
+        if not isinstance(raw, dict):
+            warnings.append(f"sources_checked[{index}] must be a JSON object.")
+            continue
+        source_url = str(raw.get("source_url") or "").strip()
+        source_reference = str(raw.get("source_reference") or raw.get("reference") or "").strip()
+        source_date = str(raw.get("source_date") or "").strip()
+        status = str(raw.get("status") or raw.get("source_status") or "").strip().lower()
+        source_type = str(raw.get("source_type") or raw.get("type") or "").strip()
+
+        if source_url:
+            if not _is_valid_source_url(source_url):
+                warnings.append(f"sources_checked[{index}] requires a direct source_url or source_reference.")
+        elif not source_reference:
+            warnings.append(f"sources_checked[{index}] requires a direct source_url or source_reference.")
+
+        if not _is_valid_source_date(source_date):
+            warnings.append(f"sources_checked[{index}].source_date must be YYYY-MM-DD or unknown.")
+        if not status:
+            warnings.append(f"sources_checked[{index}].status is required.")
+        elif status not in SUPPORTED_SOURCES_CHECKED_STATUSES:
+            warnings.append(f"sources_checked[{index}].status is unsupported.")
+        if source_type and source_type not in SUPPORTED_SOURCE_TYPES:
+            warnings.append(f"sources_checked[{index}].source_type is unsupported.")
     return warnings
 
 
@@ -288,7 +371,7 @@ def _is_valid_source_date(value: str, *, allow_unknown: bool = True) -> bool:
     return len(value) == 10
 
 
-def _governed_strength_rejection(item: dict[str, Any]) -> dict[str, str] | None:
+def _governed_strength_rejection(packet: dict[str, Any], item: dict[str, Any]) -> dict[str, str] | None:
     if item["model_action"] != GOVERNED_ACTION or not item["allowed_to_affect_autonomous_recalculation"]:
         return None
     if item["driver"] not in GOVERNED_DRIVERS:
@@ -308,15 +391,77 @@ def _governed_strength_rejection(item: dict[str, Any]) -> dict[str, str] | None:
             "status": "undated_governed_change",
             "reason": "Evidence with unknown source date cannot govern autonomous recalculation.",
         }
+    if _is_stale_evidence_date(packet, item):
+        return {
+            "status": "stale_governed_change",
+            "reason": "Stale evidence cannot govern autonomous recalculation.",
+        }
     return None
 
 
 def _is_soft_no_change_rejection(item: dict[str, Any]) -> bool:
     return item.get("status") in {
+        "conflicting_governed_evidence",
         "low_confidence_governed_change",
         "mixed_governed_change",
+        "stale_governed_change",
         "undated_governed_change",
     }
+
+
+def _reject_conflicting_governed_evidence(
+    governed_evidence: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    directions_by_driver: dict[str, set[str]] = {}
+    for item in governed_evidence:
+        driver = str(item.get("driver") or "")
+        direction = _direction_bucket(str(item.get("direction") or ""))
+        directions_by_driver.setdefault(driver, set()).add(direction)
+
+    conflicted_drivers = {
+        driver
+        for driver, directions in directions_by_driver.items()
+        if "higher" in directions and "lower" in directions
+    }
+    if not conflicted_drivers:
+        return governed_evidence, []
+
+    accepted: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    for item in governed_evidence:
+        if item.get("driver") not in conflicted_drivers:
+            accepted.append(item)
+            continue
+        rejected.append(
+            {
+                "item": item,
+                "status": "conflicting_governed_evidence",
+                "reason": "Conflicting evidence for the same driver cannot govern autonomous recalculation.",
+            }
+        )
+    return accepted, rejected
+
+
+def _direction_bucket(direction: str) -> str:
+    normalized = direction.lower()
+    if "higher" in normalized:
+        return "higher"
+    if "lower" in normalized:
+        return "lower"
+    return normalized.strip()
+
+
+def _is_stale_evidence_date(packet: dict[str, Any], item: dict[str, Any]) -> bool:
+    as_of_raw = str(packet.get("as_of_date") or "").strip()
+    source_date_raw = str(item.get("source_date") or "").strip()
+    if not as_of_raw:
+        return False
+    try:
+        as_of = date.fromisoformat(as_of_raw)
+        source_date = date.fromisoformat(source_date_raw)
+    except ValueError:
+        return False
+    return (as_of - source_date).days > STALE_EVIDENCE_DAYS
 
 
 def _is_generic_source_presence(text: str) -> bool:

@@ -123,6 +123,61 @@ def test_non_us_yahoo_normalized_financials_are_allowed_with_cross_check_status(
     ]
 
 
+def test_non_us_yahoo_normalized_financials_reject_weak_service_cross_check_status():
+    result = validate_source_provenance_packet(
+        {
+            "ticker": "SAP.DE",
+            "company": "SAP SE",
+            "country": "Germany",
+            "run_mode": "full_researched",
+            "as_of_date": "2026-05-29",
+            "core_financials": {
+                "source_class": "yahoo_normalized",
+                "provider": "Yahoo Finance via local yfinance service",
+                "source_date": "2025-12-31",
+                "period_end": "2025-12-31",
+                "retrieval_status": "retrieved",
+                "primary_source_expected": False,
+                "primary_source_available": False,
+                "cross_check_status": "not_checked_by_service",
+            },
+        }
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "invalid_packet"
+    assert result["validation_warnings"] == [
+        "core_financials.cross_check_status must be company_report_check_pending, company_report_cross_checked, or company_report_unavailable for non-US Yahoo-normalized researched valuations."
+    ]
+
+
+def test_non_us_yahoo_normalized_financials_require_source_date_and_period_even_for_fallback_status():
+    result = validate_source_provenance_packet(
+        {
+            "ticker": "SAP.DE",
+            "company": "SAP SE",
+            "country": "Germany",
+            "run_mode": "full_researched",
+            "as_of_date": "2026-05-29",
+            "core_financials": {
+                "source_class": "yahoo_normalized",
+                "provider": "Yahoo Finance via local yfinance service",
+                "retrieval_status": "fallback",
+                "primary_source_expected": False,
+                "primary_source_available": False,
+                "cross_check_status": "company_report_check_pending",
+            },
+        }
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "invalid_packet"
+    assert result["validation_warnings"] == [
+        "core_financials.source_date must be YYYY-MM-DD for non-US Yahoo-normalized researched valuations.",
+        "core_financials.period_end must be YYYY-MM-DD for non-US Yahoo-normalized researched valuations.",
+    ]
+
+
 def test_material_yahoo_vs_company_report_difference_emits_reconciliation_warning():
     result = validate_source_provenance_packet(
         {
@@ -195,6 +250,35 @@ def test_us_researched_run_rejects_yahoo_when_primary_source_is_available():
     assert result["core_financials"]["source_policy_status"] == "primary_source_available_not_used"
     assert result["policy_warnings"] == [
         "US researched valuation has primary filing data available; Yahoo-normalized data cannot be treated as the preferred source."
+    ]
+
+
+def test_source_provenance_rejects_yahoo_normalized_primary_filing_policy_label():
+    result = validate_source_provenance_packet(
+        {
+            "ticker": "MSFT",
+            "company": "Microsoft Corporation",
+            "country": "United States",
+            "run_mode": "full_researched",
+            "as_of_date": "2026-05-29",
+            "core_financials": {
+                "source_class": "yahoo_normalized",
+                "provider": "Yahoo Finance via local yfinance service",
+                "source_date": "2025-06-30",
+                "period_end": "2025-06-30",
+                "retrieval_status": "retrieved",
+                "source_policy_status": "primary_filing_used",
+                "primary_source_expected": True,
+                "primary_source_available": False,
+                "cross_check_status": "not_checked",
+            },
+        }
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "invalid_packet"
+    assert result["validation_warnings"] == [
+        "core_financials.source_policy_status cannot be primary_filing_used unless source_class is primary_filing."
     ]
 
 

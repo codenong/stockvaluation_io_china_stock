@@ -87,11 +87,22 @@ public class CommonService {
     private final SegmentWeightedParameterService segmentWeightedParameterService;
 
     public CompanyDataDTO getCompanyDataFromProvider(String ticker) {
+        return getCompanyDataFromProvider(ticker, false);
+    }
 
+    public CompanyDataDTO getCompanyDataFromProvider(String ticker, FinancialDataInput overrides) {
+        boolean researchedSourcePolicy = overrides != null
+                && (Boolean.TRUE.equals(overrides.getResearchedBaselineMode())
+                || "autonomous_researched".equals(overrides.getRequestPolicyMode())
+                || "user_refined_scenario".equals(overrides.getRequestPolicyMode()));
+        return getCompanyDataFromProvider(ticker, researchedSourcePolicy);
+    }
+
+    private CompanyDataDTO getCompanyDataFromProvider(String ticker, boolean researchedSourcePolicy) {
         if (Objects.nonNull(basicAndFinancialMap) && !basicAndFinancialMap.isEmpty()) {
             basicAndFinancialMap.clear();
         }
-        CompanyDataDTO companyDataDTO = companyDataAssemblyService.assembleCompanyData(ticker);
+        CompanyDataDTO companyDataDTO = companyDataAssemblyService.assembleCompanyData(ticker, researchedSourcePolicy);
         BasicInfoDataDTO basicInfoDataDTO = companyDataDTO.getBasicInfoDataDTO();
         FinancialDataDTO financialDataDTO = companyDataDTO.getFinancialDataDTO();
 

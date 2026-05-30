@@ -41,7 +41,7 @@ import java.time.ZoneOffset;
  * <li>{@code BloombergDataProvider}</li>
  * </ul>
  */
-public interface DataProvider {
+public interface DataProvider extends FinancialSnapshotProvider {
 
     /**
      * Get full company data for valuation.

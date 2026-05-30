@@ -3,6 +3,7 @@ package io.stockvaluation.service;
 import io.stockvaluation.dto.FinancialDataDTO;
 import io.stockvaluation.provider.BalanceSheetSnapshot;
 import io.stockvaluation.provider.DataProvider;
+import io.stockvaluation.provider.FinancialSnapshotProvider;
 import io.stockvaluation.provider.IncomeStatementSnapshot;
 import io.stockvaluation.provider.SourceProvenance;
 import lombok.RequiredArgsConstructor;
@@ -28,10 +29,14 @@ public class CompanyFinancialIngestionService {
     private final DataProvider dataProvider;
 
     public FinancialIngestionData ingest(String ticker, Map<String, Object> basicInfoMap) {
+        return ingest(ticker, basicInfoMap, dataProvider);
+    }
+
+    public FinancialIngestionData ingest(String ticker, Map<String, Object> basicInfoMap, FinancialSnapshotProvider financialDataProvider) {
         Map<String, IncomeStatementSnapshot> quarterlyIncomeSnapshots =
-                dataProvider.getIncomeStatementSnapshots(ticker, "quarterly");
+                financialDataProvider.getIncomeStatementSnapshots(ticker, "quarterly");
         Map<String, IncomeStatementSnapshot> yearlyIncomeSnapshots =
-                dataProvider.getIncomeStatementSnapshots(ticker, "yearly");
+                financialDataProvider.getIncomeStatementSnapshots(ticker, "yearly");
 
         Map<String, IncomeStatementSnapshot> recentQuarterlyIncome = getMostRecentPeriods(quarterlyIncomeSnapshots, 4);
         double totalRevenueTTM = calculateTotal(recentQuarterlyIncome, IncomeStatementSnapshot::totalRevenue);
@@ -82,7 +87,7 @@ public class CompanyFinancialIngestionService {
         Double preTaxIncome = previousYearIncomeSnapshot.pretaxIncome();
 
         Map<String, BalanceSheetSnapshot> quarterlyBalanceSnapshots =
-                dataProvider.getBalanceSheetSnapshots(ticker, "quarterly");
+                financialDataProvider.getBalanceSheetSnapshots(ticker, "quarterly");
         BalanceSheetSnapshot mostRecentQuarterlyBalance =
                 getMostRecentSnapshot(quarterlyBalanceSnapshots, BalanceSheetSnapshot.empty());
 
@@ -92,7 +97,7 @@ public class CompanyFinancialIngestionService {
         Double numberOfShareOutStanding = mostRecentQuarterlyBalance.sharesOutstanding();
 
         Map<String, BalanceSheetSnapshot> yearlyBalanceSnapshots =
-                dataProvider.getBalanceSheetSnapshots(ticker, "yearly");
+                financialDataProvider.getBalanceSheetSnapshots(ticker, "yearly");
         BalanceSheetSnapshot recentYearlyBalanceSnapshot =
                 findSnapshotByYear(yearlyBalanceSnapshots, targetYears(1, 2, 3),
                         snapshot -> true,

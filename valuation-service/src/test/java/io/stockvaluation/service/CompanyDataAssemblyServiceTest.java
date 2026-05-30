@@ -10,6 +10,7 @@ import io.stockvaluation.dto.BasicInfoDataDTO;
 import io.stockvaluation.dto.CompanyDataDTO;
 import io.stockvaluation.dto.FinancialDataDTO;
 import io.stockvaluation.provider.DataProvider;
+import io.stockvaluation.provider.PrimaryFilingDataProvider;
 import io.stockvaluation.provider.SourceProvenance;
 import io.stockvaluation.repository.CostOfCapitalRepository;
 import io.stockvaluation.repository.CountryEquityRepository;
@@ -67,6 +68,8 @@ class CompanyDataAssemblyServiceTest {
     private CompanyFinancialIngestionService companyFinancialIngestionService;
     @Mock
     private ValuationAssumptionProperties valuationAssumptionProperties;
+    @Mock
+    private PrimaryFilingDataProvider primaryFilingDataProvider;
 
     @InjectMocks
     private CompanyDataAssemblyService companyDataAssemblyService;
@@ -215,6 +218,139 @@ class CompanyDataAssemblyServiceTest {
     }
 
     @Test
+    void assembleCompanyData_researchedUsCompanyUsesPrimaryFilingProviderWhenAvailable() {
+        String ticker = "AAPL";
+        Map<String, Object> basicInfoMap = usBasicInfoMap(ticker);
+        when(dataProvider.getCompanyInfo(ticker)).thenReturn(basicInfoMap);
+        when(companyDataMapper.mapBasicInfo(ticker, basicInfoMap)).thenReturn(usBasicInfo());
+        when(primaryFilingDataProvider.hasPrimaryFinancials(ticker)).thenReturn(true);
+
+        FinancialDataDTO primaryFinancials = financials(112.0, 30.0, 52.0, 22.0, 10.0);
+        CompanyFinancialIngestionService.FinancialIngestionData primaryIngestion =
+                ingestion(primaryFinancials, SourceProvenance.primaryFiling("sec-xbrl-fixture", "2025-09-30"));
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, primaryFilingDataProvider))
+                .thenReturn(primaryIngestion);
+
+        FinancialDataDTO yahooFinancials = financials(100.0, 30.0, 52.0, 22.0, 10.0);
+        CompanyFinancialIngestionService.FinancialIngestionData yahooIngestion =
+                ingestion(yahooFinancials, SourceProvenance.yahooNormalized("yfinance-http", "2025-09-30"));
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, dataProvider))
+                .thenReturn(yahooIngestion);
+
+        stubUsValuationInputs();
+
+        CompanyDataDTO result = companyDataAssemblyService.assembleCompanyData(ticker, true);
+
+        SourceProvenance provenance = result.getFinancialDataDTO().getSourceProvenance();
+        assertEquals("primary_filing", provenance.getSourceClass());
+        assertEquals("primary_filing_used", provenance.getSourcePolicyStatus());
+        assertEquals("sec-xbrl-fixture", provenance.getProvider());
+        assertEquals(1, provenance.getDataQualityWarnings().size());
+        assertEquals("revenue", provenance.getDataQualityWarnings().get(0).getField());
+        assertEquals("material_mismatch", provenance.getDataQualityWarnings().get(0).getStatus());
+        assertEquals(100.0, provenance.getDataQualityWarnings().get(0).getNormalizedValue());
+        assertEquals(112.0, provenance.getDataQualityWarnings().get(0).getFilingValue());
+    }
+
+    @Test
+    void assembleCompanyData_researchedUsPrimaryFilingWarningsDoNotAccumulateAcrossRuns() {
+        String ticker = "AAPL";
+        Map<String, Object> basicInfoMap = usBasicInfoMap(ticker);
+        when(dataProvider.getCompanyInfo(ticker)).thenReturn(basicInfoMap);
+        when(companyDataMapper.mapBasicInfo(ticker, basicInfoMap)).thenReturn(usBasicInfo());
+        when(primaryFilingDataProvider.hasPrimaryFinancials(ticker)).thenReturn(true);
+
+        FinancialDataDTO primaryFinancials = financials(112.0, 30.0, 52.0, 22.0, 10.0);
+        CompanyFinancialIngestionService.FinancialIngestionData primaryIngestion =
+                ingestion(primaryFinancials, SourceProvenance.primaryFiling("sec-xbrl-fixture", "2025-09-30"));
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, primaryFilingDataProvider))
+                .thenReturn(primaryIngestion);
+
+        FinancialDataDTO yahooFinancials = financials(100.0, 30.0, 52.0, 22.0, 10.0);
+        CompanyFinancialIngestionService.FinancialIngestionData yahooIngestion =
+                ingestion(yahooFinancials, SourceProvenance.yahooNormalized("yfinance-http", "2025-09-30"));
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, dataProvider))
+                .thenReturn(yahooIngestion);
+
+        stubUsValuationInputs();
+
+        CompanyDataDTO first = companyDataAssemblyService.assembleCompanyData(ticker, true);
+        CompanyDataDTO second = companyDataAssemblyService.assembleCompanyData(ticker, true);
+
+        assertEquals(1, first.getFinancialDataDTO().getSourceProvenance().getDataQualityWarnings().size());
+        assertEquals(1, second.getFinancialDataDTO().getSourceProvenance().getDataQualityWarnings().size());
+        assertEquals("revenue",
+                second.getFinancialDataDTO().getSourceProvenance().getDataQualityWarnings().get(0).getField());
+    }
+
+    @Test
+    void assembleCompanyData_researchedUsCompanyUsesExplicitFallbackOnlyAfterPrimaryProviderUnavailable() {
+        String ticker = "AAPL";
+        Map<String, Object> basicInfoMap = usBasicInfoMap(ticker);
+        when(dataProvider.getCompanyInfo(ticker)).thenReturn(basicInfoMap);
+        when(companyDataMapper.mapBasicInfo(ticker, basicInfoMap)).thenReturn(usBasicInfo());
+        when(primaryFilingDataProvider.hasPrimaryFinancials(ticker)).thenReturn(false);
+
+        CompanyFinancialIngestionService.FinancialIngestionData yahooIngestion =
+                ingestion(financials(100.0, 24.0, 50.0, 20.0, 10.0),
+                        SourceProvenance.yahooNormalized("yfinance-http", "2025-09-30"));
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, dataProvider))
+                .thenReturn(yahooIngestion);
+
+        stubUsValuationInputs();
+
+        CompanyDataDTO result = companyDataAssemblyService.assembleCompanyData(ticker, true);
+
+        SourceProvenance provenance = result.getFinancialDataDTO().getSourceProvenance();
+        assertEquals("yahoo_normalized", provenance.getSourceClass());
+        assertEquals("primary_source_missing_fallback", provenance.getSourcePolicyStatus());
+        assertEquals("company_report_check_pending", provenance.getCrossCheckStatus());
+        assertTrue(provenance.getWarnings().stream()
+                .anyMatch(warning -> warning.contains("primary filing provider returned unavailable")));
+    }
+
+    @Test
+    void assembleCompanyData_researchedNonUsCompanyUsesExplicitCompanyReportPendingStatus() {
+        String ticker = "SAP.DE";
+        Map<String, Object> basicInfoMap = new HashMap<>();
+        basicInfoMap.put("currency", "EUR");
+        basicInfoMap.put("financialCurrency", "EUR");
+        when(dataProvider.getCompanyInfo(ticker)).thenReturn(basicInfoMap);
+
+        BasicInfoDataDTO basicInfoDataDTO = new BasicInfoDataDTO();
+        basicInfoDataDTO.setCountryOfIncorporation("Germany");
+        basicInfoDataDTO.setCurrency("EUR");
+        basicInfoDataDTO.setIndustryGlobal("Software");
+        basicInfoDataDTO.setMarketCap(1000000000L);
+        basicInfoDataDTO.setFirstTradeDateEpochUtc(1600000000);
+        when(companyDataMapper.mapBasicInfo(ticker, basicInfoMap)).thenReturn(basicInfoDataDTO);
+
+        CompanyFinancialIngestionService.FinancialIngestionData yahooIngestion =
+                ingestion(financials(100.0, 24.0, 50.0, 20.0, 10.0),
+                        SourceProvenance.yahooNormalized("yfinance-http", "2025-12-31"));
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, dataProvider))
+                .thenReturn(yahooIngestion);
+
+        when(countryEquityRepository.findCorporateTaxRateByCountry("Germany")).thenReturn(Optional.of(30.0));
+        when(dataProvider.getRevenueEstimate(ticker, "yearly")).thenReturn(new HashMap<>());
+        SectorMapping sectorMapping = new SectorMapping();
+        sectorMapping.setIndustryAsPerExcel("Software");
+        when(sectorMappingRepository.findByIndustryName("Software")).thenReturn(sectorMapping);
+        IndustryAveragesGlobal avgGlo = new IndustryAveragesGlobal();
+        avgGlo.setPreTaxOperatingMargin(20.0);
+        avgGlo.setAnnualAverageRevenueGrowth(5.0);
+        when(industryAvgGloRepository.findByIndustryName("Software")).thenReturn(avgGlo);
+        when(industryAvgGloRepository.findSalesToCapitalByIndustryName("Software")).thenReturn(Optional.of(1.2));
+        when(costOfCapitalRepository.findCostOfCapitalByRegion(anyString())).thenReturn(Optional.of(new CostOfCapital()));
+
+        CompanyDataDTO result = companyDataAssemblyService.assembleCompanyData(ticker, true);
+
+        SourceProvenance provenance = result.getFinancialDataDTO().getSourceProvenance();
+        assertEquals("yahoo_normalized_with_cross_check_status", provenance.getSourcePolicyStatus());
+        assertEquals("company_report_check_pending", provenance.getCrossCheckStatus());
+    }
+
+    @Test
     void testAssembleCompanyData_CurrencyConversion() throws Exception {
         String ticker = "SOME_TICKER";
 
@@ -337,5 +473,85 @@ class CompanyDataAssemblyServiceTest {
         assertEquals(19.0, result.getFinancialDataDTO().getMarginalTaxRate(), 0.01);
         assertEquals(1.2, result.getCompanyDriveDataDTO().getSalesToCapitalYears1To5(), 0.01);
         assertEquals(1.2, result.getCompanyDriveDataDTO().getSalesToCapitalYears6To10(), 0.01);
+    }
+
+    private static Map<String, Object> usBasicInfoMap(String ticker) {
+        Map<String, Object> basicInfoMap = new HashMap<>();
+        basicInfoMap.put("ticker", ticker);
+        basicInfoMap.put("currency", "USD");
+        basicInfoMap.put("financialCurrency", "USD");
+        return basicInfoMap;
+    }
+
+    private static BasicInfoDataDTO usBasicInfo() {
+        BasicInfoDataDTO basicInfoDataDTO = new BasicInfoDataDTO();
+        basicInfoDataDTO.setCountryOfIncorporation("United States");
+        basicInfoDataDTO.setCurrency("USD");
+        basicInfoDataDTO.setIndustryGlobal("Technology");
+        basicInfoDataDTO.setTimeZoneFullName("America/New_York");
+        basicInfoDataDTO.setMarketCap(1000000000L);
+        basicInfoDataDTO.setFirstTradeDateEpochUtc(1600000000);
+        return basicInfoDataDTO;
+    }
+
+    private static FinancialDataDTO financials(
+            double revenue,
+            double operatingIncome,
+            double cash,
+            double debt,
+            double shares) {
+        FinancialDataDTO financialDataDTO = new FinancialDataDTO();
+        financialDataDTO.setStockPrice(150.0);
+        financialDataDTO.setRevenueTTM(revenue);
+        financialDataDTO.setRevenueLTM(revenue);
+        financialDataDTO.setOperatingIncomeTTM(operatingIncome);
+        financialDataDTO.setOperatingIncomeLTM(operatingIncome);
+        financialDataDTO.setCashAndMarkablTTM(cash);
+        financialDataDTO.setCashAndMarkablLTM(cash);
+        financialDataDTO.setBookValueDebtTTM(debt);
+        financialDataDTO.setBookValueDebtLTM(debt);
+        financialDataDTO.setNoOfShareOutstanding(shares);
+        financialDataDTO.setResearchAndDevelopmentMap(Map.of("currentR&D-0", 4.0));
+        return financialDataDTO;
+    }
+
+    private static CompanyFinancialIngestionService.FinancialIngestionData ingestion(
+            FinancialDataDTO financials,
+            SourceProvenance provenance) {
+        return new CompanyFinancialIngestionService.FinancialIngestionData(
+                financials,
+                List.of(90.0, 95.0, 100.0),
+                List.of(0.20, 0.22, 0.24),
+                5.0,
+                25.0,
+                provenance);
+    }
+
+    private void stubUsValuationInputs() {
+        when(countryEquityRepository.findCorporateTaxRateByCountry("United States")).thenReturn(Optional.of(21.0));
+        when(dataProvider.getRevenueEstimate(anyString(), eq("yearly"))).thenReturn(new HashMap<>());
+
+        SectorMapping sectorMapping = new SectorMapping();
+        sectorMapping.setIndustryAsPerExcel("Technology");
+        when(sectorMappingRepository.findByIndustryName("Technology")).thenReturn(sectorMapping);
+        when(industryAvgUSRepository.findSalesToCapitalByIndustryName("Technology")).thenReturn(Optional.of(1.5));
+
+        IndustryAveragesUS avgUS = new IndustryAveragesUS();
+        avgUS.setPreTaxOperatingMargin(25.0);
+        avgUS.setAnnualAverageRevenueGrowth(8.0);
+        when(industryAvgUSRepository.findByIndustryName("Technology")).thenReturn(avgUS);
+
+        InputStatDistribution inputStat = new InputStatDistribution();
+        inputStat.setPreTaxOperatingMarginFirstQuartile(10.0);
+        inputStat.setPreTaxOperatingMarginMedian(20.0);
+        inputStat.setPreTaxOperatingMarginThirdQuartile(30.0);
+        inputStat.setSalesToInvestedCapitalThirdQuartile(2.0);
+        when(inputStatRepository.findFirstByIndustryGroupOrderByIdAsc("Technology"))
+                .thenReturn(Optional.of(inputStat));
+
+        CostOfCapital costOfCapital = new CostOfCapital();
+        costOfCapital.setMedian("0.08");
+        costOfCapital.setThirdQuartile("0.10");
+        when(costOfCapitalRepository.findCostOfCapitalByRegion("US")).thenReturn(Optional.of(costOfCapital));
     }
 }

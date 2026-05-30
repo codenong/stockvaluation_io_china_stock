@@ -1,0 +1,47 @@
+{
+  "purpose": "phase_2_valuation_audit_packet_acceptance",
+  "cases": [
+    {
+      "name": "full_researched_governed_recalculation",
+      "final_case_type": "evidence_constrained_governed_recalculation",
+      "evidence_status": "valid_governed_evidence",
+      "guided_refinement_status": "not_started",
+      "recalculate_status": "executed",
+      "unsupported_fields": []
+    },
+    {
+      "name": "evidence_constrained_no_change",
+      "final_case_type": "evidence_constrained_no_change",
+      "evidence_status": "valid_no_governed_change",
+      "guided_refinement_status": "not_started",
+      "recalculate_status": "executed",
+      "unsupported_fields": []
+    },
+    {
+      "name": "quick_no_questions_bypass",
+      "final_case_type": "evidence_constrained_no_change",
+      "evidence_status": "valid_no_governed_change",
+      "guided_refinement_status": "bypassed",
+      "recalculate_status": "executed",
+      "unsupported_fields": []
+    },
+    {
+      "name": "rejected_evidence_preserved",
+      "final_case_type": "insufficient_researched_evidence",
+      "evidence_status": "invalid_packet",
+      "guided_refinement_status": "not_started",
+      "recalculate_status": "blocked_pre_service",
+      "rejected_evidence_status": "generic_source_presence",
+      "unsupported_fields": ["evidence_packet"]
+    },
+    {
+      "name": "mechanical_only_insufficient_evidence",
+      "final_case_type": "insufficient_researched_evidence",
+      "evidence_status": "missing_evidence_packet",
+      "guided_refinement_status": "not_started",
+      "recalculate_status": "blocked_pre_service",
+      "mechanical_baseline_visibility": "internal_only",
+      "unsupported_fields": ["evidence_packet"]
+    }
+  ]
+}
