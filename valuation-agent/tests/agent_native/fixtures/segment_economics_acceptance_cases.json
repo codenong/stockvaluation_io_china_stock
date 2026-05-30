@@ -1,0 +1,455 @@
+{
+  "purpose": "phase_4_segment_economics_acceptance_not_valuation_baselines",
+  "cases": [
+    {
+      "name": "alphabet_partial_disclosure",
+      "artifact": {
+        "schema_version": "segment_economics.v1",
+        "ticker": "GOOGL",
+        "company": "Alphabet Inc.",
+        "run_mode": "full_researched",
+        "segments": [
+          {
+            "segment_name": "Google Services",
+            "sector_key": "advertising-agencies",
+            "mapped_industry": "Advertising",
+            "mapping_confidence": "high",
+            "revenue_share": 0.86,
+            "source_name": "FY 2025 Form 10-K segment note",
+            "source_url": "https://example.com/alphabet-2025-10k",
+            "source_date": "2026-02-05",
+            "source_class": "primary_filing",
+            "provider": "sec-filing",
+            "retrieval_status": "retrieved",
+            "disclosure_level": "reportable_segment"
+          },
+          {
+            "segment_name": "Google Cloud",
+            "sector_key": "software-infrastructure",
+            "mapped_industry": "Software (System & Application)",
+            "mapping_confidence": "high",
+            "revenue_share": 0.12,
+            "source_name": "FY 2025 Form 10-K segment note",
+            "source_url": "https://example.com/alphabet-2025-10k",
+            "source_date": "2026-02-05",
+            "source_class": "primary_filing",
+            "provider": "sec-filing",
+            "retrieval_status": "retrieved",
+            "disclosure_level": "reportable_segment",
+            "drivers": {
+              "margin": {
+                "evidence_ref": {
+                  "driver": "operating_margin",
+                  "source_url": "https://example.com/alphabet-2025-10k",
+                  "source_date": "2026-02-05"
+                },
+                "source_class": "primary_filing",
+                "provider": "sec-filing",
+                "retrieval_status": "retrieved",
+                "disclosure_level": "reportable_segment",
+                "model_action": "governed_sector_override",
+                "sector_override": {
+                  "sector_key": "software-infrastructure",
+                  "parameter": "operating_margin",
+                  "value": 16.0,
+                  "unit": "percent",
+                  "adjustment_type": "absolute",
+                  "timeframe": "both"
+                }
+              }
+            }
+          },
+          {
+            "segment_name": "Other Bets",
+            "sector_key": "software-application",
+            "mapped_industry": "Software (System & Application)",
+            "mapping_confidence": "medium",
+            "revenue_share": 0.02,
+            "source_name": "FY 2025 Form 10-K segment note",
+            "source_url": "https://example.com/alphabet-2025-10k",
+            "source_date": "2026-02-05",
+            "source_class": "primary_filing",
+            "provider": "sec-filing",
+            "retrieval_status": "retrieved",
+            "disclosure_level": "reportable_segment"
+          }
+        ],
+        "report_only_facts": [
+          {
+            "segment_name": "Search and other",
+            "driver": "growth",
+            "disclosure_level": "product_business_line",
+            "status": "report_only",
+            "fact": "Search is disclosed within Google Services and does not have separate accepted segment economics."
+          },
+          {
+            "segment_name": "YouTube",
+            "driver": "margin",
+            "disclosure_level": "product_business_line",
+            "status": "report_only",
+            "fact": "YouTube revenue context is useful narrative but not accepted as a standalone margin override."
+          }
+        ],
+        "evidence_packet": {
+          "ticker": "GOOGL",
+          "company": "Alphabet Inc.",
+          "run_mode": "full_researched",
+          "source_families": [
+            {
+              "family": "segment_disclosure",
+              "status": "checked",
+              "source_title": "FY 2025 Form 10-K segment note",
+              "source_url": "https://example.com/alphabet-2025-10k",
+              "source_date": "2026-02-05"
+            }
+          ],
+          "sources_checked": [
+            {
+              "source_title": "FY 2025 Form 10-K segment note",
+              "source_url": "https://example.com/alphabet-2025-10k",
+              "source_date": "2026-02-05",
+              "status": "checked",
+              "source_type": "segment",
+              "used": true
+            }
+          ],
+          "evidence_items": [
+            {
+              "driver": "operating_margin",
+              "source_title": "FY 2025 Form 10-K segment note",
+              "source_url": "https://example.com/alphabet-2025-10k",
+              "source_date": "2026-02-05",
+              "evidence_summary": "Google Cloud operating income improved relative to prior-year disclosed segment results.",
+              "direction": "supports higher assumption",
+              "confidence": "high",
+              "assumption_implication": "Supports a governed Cloud margin override while sub-business margins remain unavailable.",
+              "allowed_to_affect_autonomous_recalculation": true,
+              "model_action": "governed assumption change"
+            }
+          ],
+          "conflicts_or_uncertainties": [],
+          "data_gaps": []
+        }
+      },
+      "expected": {
+        "status": "partial_economics",
+        "quality": "partial_economics",
+        "sector_override_count": 1,
+        "report_only_fact_count": 2,
+        "limitations_include": "Sub-business"
+      }
+    },
+    {
+      "name": "strong_multi_segment_governed_overrides",
+      "artifact": {
+        "schema_version": "segment_economics.v1",
+        "ticker": "DEMO",
+        "company": "Demo Multi Segment Co.",
+        "run_mode": "full_researched",
+        "segments": [
+          {
+            "segment_name": "Cloud software",
+            "sector_key": "software-infrastructure",
+            "mapped_industry": "Software (System & Application)",
+            "mapping_confidence": "high",
+            "revenue_share": 0.6,
+            "source_name": "FY annual report segment note",
+            "source_url": "https://example.com/demo-annual-report",
+            "source_date": "2026-03-01",
+            "source_class": "primary_filing",
+            "provider": "company-filing",
+            "retrieval_status": "retrieved",
+            "disclosure_level": "reportable_segment",
+            "drivers": {
+              "growth": {
+                "evidence_ref": {
+                  "driver": "revenue_growth",
+                  "source_url": "https://example.com/demo-annual-report",
+                  "source_date": "2026-03-01"
+                },
+                "source_class": "primary_filing",
+                "provider": "company-filing",
+                "retrieval_status": "retrieved",
+                "disclosure_level": "reportable_segment",
+                "model_action": "governed_sector_override",
+                "sector_override": {
+                  "sector_key": "software-infrastructure",
+                  "parameter": "revenue_growth",
+                  "value": 12.0,
+                  "unit": "percent",
+                  "adjustment_type": "absolute",
+                  "timeframe": "years_1_to_5"
+                }
+              },
+              "margin": {
+                "evidence_ref": {
+                  "driver": "operating_margin",
+                  "source_url": "https://example.com/demo-annual-report",
+                  "source_date": "2026-03-01"
+                },
+                "source_class": "primary_filing",
+                "provider": "company-filing",
+                "retrieval_status": "retrieved",
+                "disclosure_level": "reportable_segment",
+                "model_action": "governed_sector_override",
+                "sector_override": {
+                  "sector_key": "software-infrastructure",
+                  "parameter": "operating_margin",
+                  "value": 30.0,
+                  "unit": "percent",
+                  "adjustment_type": "absolute",
+                  "timeframe": "both"
+                }
+              },
+              "reinvestment_intensity": {
+                "evidence_ref": {
+                  "driver": "reinvestment_sales_to_capital",
+                  "source_url": "https://example.com/demo-annual-report",
+                  "source_date": "2026-03-01"
+                },
+                "source_class": "primary_filing",
+                "provider": "company-filing",
+                "retrieval_status": "retrieved",
+                "disclosure_level": "reportable_segment",
+                "reinvestment_basis": "sales_to_capital",
+                "model_action": "governed_sector_override",
+                "sector_override": {
+                  "sector_key": "software-infrastructure",
+                  "parameter": "sales_to_capital",
+                  "value": 3.0,
+                  "unit": "x",
+                  "adjustment_type": "absolute",
+                  "timeframe": "both"
+                }
+              }
+            }
+          },
+          {
+            "segment_name": "Devices",
+            "sector_key": "consumer-electronics",
+            "mapped_industry": "Electronics (Consumer & Office)",
+            "mapping_confidence": "high",
+            "revenue_share": 0.4,
+            "source_name": "FY annual report segment note",
+            "source_url": "https://example.com/demo-annual-report",
+            "source_date": "2026-03-01",
+            "source_class": "primary_filing",
+            "provider": "company-filing",
+            "retrieval_status": "retrieved",
+            "disclosure_level": "reportable_segment",
+            "drivers": {
+              "growth": {
+                "evidence_ref": {
+                  "driver": "revenue_growth",
+                  "source_url": "https://example.com/demo-annual-report",
+                  "source_date": "2026-03-01"
+                },
+                "source_class": "primary_filing",
+                "provider": "company-filing",
+                "retrieval_status": "retrieved",
+                "disclosure_level": "reportable_segment",
+                "model_action": "governed_sector_override",
+                "sector_override": {
+                  "sector_key": "consumer-electronics",
+                  "parameter": "revenue_growth",
+                  "value": 4.0,
+                  "unit": "percent",
+                  "adjustment_type": "absolute",
+                  "timeframe": "years_1_to_5"
+                }
+              },
+              "margin": {
+                "evidence_ref": {
+                  "driver": "operating_margin",
+                  "source_url": "https://example.com/demo-annual-report",
+                  "source_date": "2026-03-01"
+                },
+                "source_class": "primary_filing",
+                "provider": "company-filing",
+                "retrieval_status": "retrieved",
+                "disclosure_level": "reportable_segment",
+                "model_action": "governed_sector_override",
+                "sector_override": {
+                  "sector_key": "consumer-electronics",
+                  "parameter": "operating_margin",
+                  "value": 18.0,
+                  "unit": "percent",
+                  "adjustment_type": "absolute",
+                  "timeframe": "both"
+                }
+              },
+              "reinvestment_intensity": {
+                "evidence_ref": {
+                  "driver": "reinvestment_sales_to_capital",
+                  "source_url": "https://example.com/demo-annual-report",
+                  "source_date": "2026-03-01"
+                },
+                "source_class": "primary_filing",
+                "provider": "company-filing",
+                "retrieval_status": "retrieved",
+                "disclosure_level": "reportable_segment",
+                "reinvestment_basis": "asset_intensity",
+                "model_action": "governed_sector_override",
+                "sector_override": {
+                  "sector_key": "consumer-electronics",
+                  "parameter": "sales_to_capital",
+                  "value": 1.6,
+                  "unit": "x",
+                  "adjustment_type": "absolute",
+                  "timeframe": "both"
+                }
+              }
+            }
+          }
+        ],
+        "evidence_packet": {
+          "ticker": "DEMO",
+          "company": "Demo Multi Segment Co.",
+          "run_mode": "full_researched",
+          "source_families": [
+            {
+              "family": "segment_disclosure",
+              "status": "checked",
+              "source_title": "FY annual report segment note",
+              "source_url": "https://example.com/demo-annual-report",
+              "source_date": "2026-03-01"
+            }
+          ],
+          "sources_checked": [
+            {
+              "source_title": "FY annual report segment note",
+              "source_url": "https://example.com/demo-annual-report",
+              "source_date": "2026-03-01",
+              "status": "checked",
+              "source_type": "segment",
+              "used": true
+            }
+          ],
+          "evidence_items": [
+            {
+              "driver": "revenue_growth",
+              "source_title": "FY annual report segment note",
+              "source_url": "https://example.com/demo-annual-report",
+              "source_date": "2026-03-01",
+              "evidence_summary": "Segment revenue growth differs materially by business line.",
+              "direction": "supports higher assumption",
+              "confidence": "high",
+              "assumption_implication": "Supports governed sector revenue-growth overrides.",
+              "allowed_to_affect_autonomous_recalculation": true,
+              "model_action": "governed assumption change"
+            },
+            {
+              "driver": "operating_margin",
+              "source_title": "FY annual report segment note",
+              "source_url": "https://example.com/demo-annual-report",
+              "source_date": "2026-03-01",
+              "evidence_summary": "Segment operating margins are disclosed and differ materially by business line.",
+              "direction": "supports higher assumption",
+              "confidence": "high",
+              "assumption_implication": "Supports governed sector margin overrides.",
+              "allowed_to_affect_autonomous_recalculation": true,
+              "model_action": "governed assumption change"
+            },
+            {
+              "driver": "reinvestment_sales_to_capital",
+              "source_title": "FY annual report segment note",
+              "source_url": "https://example.com/demo-annual-report",
+              "source_date": "2026-03-01",
+              "evidence_summary": "Segment capital intensity disclosures support different sales-to-capital settings.",
+              "direction": "supports lower assumption",
+              "confidence": "high",
+              "assumption_implication": "Supports governed sector sales-to-capital overrides.",
+              "allowed_to_affect_autonomous_recalculation": true,
+              "model_action": "governed assumption change"
+            }
+          ],
+          "conflicts_or_uncertainties": [],
+          "data_gaps": []
+        }
+      },
+      "expected": {
+        "status": "validated_full_economics",
+        "quality": "validated_full_economics",
+        "sector_override_count": 6,
+        "report_only_fact_count": 0
+      }
+    },
+    {
+      "name": "revenue_only_segments",
+      "artifact": {
+        "schema_version": "segment_economics.v1",
+        "ticker": "REV",
+        "company": "Revenue Only Co.",
+        "run_mode": "full_researched",
+        "segments": [
+          {
+            "segment_name": "Core",
+            "sector_key": "software-application",
+            "mapped_industry": "Software (System & Application)",
+            "mapping_confidence": "high",
+            "revenue_share": 1.0,
+            "source_name": "FY annual report",
+            "source_url": "https://example.com/rev-annual-report",
+            "source_date": "2026-03-01",
+            "source_class": "primary_filing",
+            "provider": "company-filing",
+            "retrieval_status": "retrieved",
+            "disclosure_level": "reportable_segment"
+          }
+        ]
+      },
+      "expected": {
+        "status": "revenue_only_segments",
+        "quality": "revenue_only_segments",
+        "sector_override_count": 0,
+        "report_only_fact_count": 0
+      }
+    },
+    {
+      "name": "low_confidence_mapping_blocked",
+      "artifact": {
+        "schema_version": "segment_economics.v1",
+        "ticker": "MAP",
+        "company": "Mapping Blocked Co.",
+        "run_mode": "full_researched",
+        "segments": [
+          {
+            "segment_name": "Europe",
+            "mapped_industry": "Retail",
+            "mapping_confidence": "low",
+            "revenue_share": 1.0,
+            "source_name": "FY annual report",
+            "source_url": "https://example.com/map-annual-report",
+            "source_date": "2026-03-01",
+            "source_class": "primary_filing",
+            "provider": "company-filing",
+            "retrieval_status": "retrieved",
+            "disclosure_level": "geography"
+          }
+        ]
+      },
+      "expected": {
+        "status": "segment_mapping_blocked",
+        "quality": "segment_mapping_blocked",
+        "sector_override_count": 0,
+        "report_only_fact_count": 0
+      }
+    },
+    {
+      "name": "single_segment_simple",
+      "artifact": {
+        "schema_version": "segment_economics.v1",
+        "ticker": "ONE",
+        "company": "Single Segment Co.",
+        "run_mode": "full_researched",
+        "segments": []
+      },
+      "expected": {
+        "status": "single_segment_or_no_segment_economics",
+        "quality": "insufficient_evidence",
+        "sector_override_count": 0,
+        "report_only_fact_count": 0
+      }
+    }
+  ]
+}

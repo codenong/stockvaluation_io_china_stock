@@ -125,6 +125,58 @@ def _valid_evidence_packet(**item_overrides):
     }
 
 
+def _valid_segment_economics_artifact():
+    return {
+        "schema_version": "segment_economics.v1",
+        "ticker": "MSFT",
+        "company": "Microsoft Corporation",
+        "run_mode": "full_researched",
+        "segments": [
+            {
+                "segment_name": "Cloud software",
+                "sector_key": "software-infrastructure",
+                "mapped_industry": "Software (System & Application)",
+                "mapping_confidence": "high",
+                "revenue_share": 1.0,
+                "source_name": "FY annual report segment note",
+                "source_url": "https://example.com/msft-annual-report",
+                "source_date": "2026-06-30",
+                "source_class": "primary_filing",
+                "provider": "sec-filing",
+                "retrieval_status": "retrieved",
+                "disclosure_level": "reportable_segment",
+                "drivers": {
+                    "margin": {
+                        "evidence_ref": {
+                            "driver": "operating_margin",
+                            "source_url": "https://example.com/msft-annual-report",
+                            "source_date": "2026-06-30",
+                        },
+                        "source_class": "primary_filing",
+                        "provider": "sec-filing",
+                        "retrieval_status": "retrieved",
+                        "disclosure_level": "reportable_segment",
+                        "model_action": "governed_sector_override",
+                        "sector_override": {
+                            "sector_key": "software-infrastructure",
+                            "parameter": "operating_margin",
+                            "value": 36.0,
+                            "unit": "percent",
+                            "adjustment_type": "absolute",
+                            "timeframe": "both",
+                        },
+                    }
+                },
+            }
+        ],
+        "evidence_packet": _valid_evidence_packet(
+            driver="operating_margin",
+            evidence_summary="Cloud segment operating income expanded year over year.",
+            assumption_implication="Supports a governed Cloud margin override.",
+        ),
+    }
+
+
 def test_mcp_tools_list_has_required_stockvaluation_contracts():
     registry = MCPToolRegistry(FakeClient())
 
@@ -648,8 +700,8 @@ def test_recalculate_accepts_segment_payloads_without_collapsing_assumption_buck
     segments = [
         {
             "segment_name": "Cloud software",
-            "sector": "Cloud software",
-            "mapped_industry": "Software",
+            "sector_key": "software-infrastructure",
+            "mapped_industry": "Software (System & Application)",
             "components": ["Azure", "Server products"],
             "mapping_score": 0.92,
             "mapping_confidence": "high",
@@ -662,8 +714,8 @@ def test_recalculate_accepts_segment_payloads_without_collapsing_assumption_buck
         },
         {
             "segment_name": "Devices",
-            "sector": "Consumer electronics",
-            "mapped_industry": "Electronics",
+            "sector_key": "consumer-electronics",
+            "mapped_industry": "Electronics (Consumer & Office)",
             "components": ["Surface", "Xbox"],
             "mapping_score": 0.78,
             "mapping_confidence": "medium",
@@ -691,11 +743,13 @@ def test_recalculate_accepts_segment_payloads_without_collapsing_assumption_buck
     assert assumptions["requested"]["segments"] == segments
     first_segment = assumptions["mapped"]["segments"]["segments"][0]
     assert first_segment["revenueShare"] == 0.525
-    assert first_segment["industry"] == "Software"
+    assert first_segment["sector"] == "software-infrastructure"
+    assert first_segment["industry"] == "Software (System & Application)"
     assert first_segment["sourceName"] == "FY annual report"
     assert first_segment["sourceDate"] == "2026-06-30"
     assert first_segment["sourceUrl"] == "https://example.com/msft-annual-report"
-    assert first_segment["operatingMargin"] == 43.0
+    assert "operatingMargin" not in first_segment
+    assert any("Segment operating margin is report-only" in warning for warning in first_segment["validationWarnings"])
     assert assumptions["unsupported"] == {}
     assert assumptions["effective"]["revenue_growth"] == 7.0
     assert client.calls[0][1]["segments"] == assumptions["mapped"]["segments"]
@@ -764,12 +818,76 @@ def test_recalculate_blocks_segment_package_when_mapping_confidence_is_low():
     assert client.calls == []
 
 
+def test_recalculate_blocks_weighted_segments_without_service_sector_key():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "MSFT",
+            "overrides": {
+                "segments": [
+                    {
+                        "segment_name": "Cloud software",
+                        "mapped_industry": "Software (System & Application)",
+                        "mapping_confidence": "high",
+                        "revenue_share": 1.0,
+                        "source_name": "FY annual report",
+                        "source_date": "2026-06-30",
+                        "source_url": "https://example.com/msft-annual-report",
+                    }
+                ]
+            },
+        },
+    )
+
+    assert result["isError"] is True
+    assumptions = result["structuredContent"]["assumptions"]
+    assert assumptions["unsupported"]["segments"]["reason"] == "segment_mapping_blocked"
+    assert "sector_key" in assumptions["unsupported"]["segments"]["message"]
+    assert client.calls == []
+
+
+def test_recalculate_blocks_direct_geographic_segments_without_operating_segment_rationale():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "COST",
+            "overrides": {
+                "segments": [
+                    {
+                        "segment_name": "United States",
+                        "sector_key": "discount-stores",
+                        "mapped_industry": "Retail (General)",
+                        "mapping_confidence": "high",
+                        "revenue_share": 1.0,
+                        "source_name": "FY annual report",
+                        "source_date": "2026-10-10",
+                        "source_url": "https://example.com/cost-annual-report",
+                        "disclosure_level": "geography",
+                    }
+                ]
+            },
+        },
+    )
+
+    assert result["isError"] is True
+    assumptions = result["structuredContent"]["assumptions"]
+    assert assumptions["unsupported"]["segments"]["reason"] == "segment_mapping_blocked"
+    assert "Geographic disclosure" in assumptions["unsupported"]["segments"]["message"]
+    assert client.calls == []
+
+
 def test_recalculate_accepts_sector_override_instructions():
     client = FakeClient()
     registry = MCPToolRegistry(client)
     sector_overrides = [
         {
-            "sector": "Cloud software",
+            "sector_key": "software-infrastructure",
             "parameter": "revenue_growth",
             "value": 12.0,
             "unit": "percent",
@@ -795,13 +913,136 @@ def test_recalculate_accepts_sector_override_instructions():
     assert assumptions["unsupported"] == {}
     mapped = assumptions["mapped"]["sectorOverrides"][0]
     assert mapped == {
-        "sectorName": "Cloud software",
+        "sectorName": "software-infrastructure",
         "parameterType": "revenue_growth",
         "value": 12.0,
         "adjustmentType": "absolute",
         "timeframe": "years_1_to_5",
     }
     assert client.calls[0][1]["sectorOverrides"] == assumptions["mapped"]["sectorOverrides"]
+
+
+def test_recalculate_maps_valid_segment_economics_without_leaking_artifact_to_service():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+    segment_economics = _valid_segment_economics_artifact()
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "MSFT",
+            "overrides": {
+                "request_policy": {"mode": "autonomous_researched"},
+                "segment_economics": segment_economics,
+            },
+        },
+    )
+
+    assert result["isError"] is False
+    assumptions = result["structuredContent"]["assumptions"]
+    assert assumptions["requested"]["segment_economics"] == segment_economics
+    assert assumptions["metadata"]["segment_economics"]["status"] == "partial_economics"
+    assert assumptions["mapped"]["segments"]["segments"][0]["revenueShare"] == 1.0
+    assert assumptions["mapped"]["segments"]["segments"][0]["sector"] == "software-infrastructure"
+    assert assumptions["mapped"]["segments"]["segments"][0]["industry"] == "Software (System & Application)"
+    assert assumptions["mapped"]["sectorOverrides"][0] == {
+        "sectorName": "software-infrastructure",
+        "parameterType": "operating_margin",
+        "value": 36.0,
+        "adjustmentType": "absolute",
+        "timeframe": "both",
+    }
+    assert "segment_economics" not in client.calls[0][1]
+    assert client.calls[0][1]["segments"] == assumptions["mapped"]["segments"]
+    assert client.calls[0][1]["sectorOverrides"] == assumptions["mapped"]["sectorOverrides"]
+
+
+def test_recalculate_blocks_segment_economics_without_service_sector_key_before_service_call():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+    segment_economics = _valid_segment_economics_artifact()
+    segment_economics["segments"][0].pop("sector_key")
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "MSFT",
+            "overrides": {
+                "request_policy": {"mode": "autonomous_researched"},
+                "segment_economics": segment_economics,
+            },
+        },
+    )
+
+    assert result["isError"] is True
+    assumptions = result["structuredContent"]["assumptions"]
+    assert assumptions["unsupported"]["segment_economics"]["status"] == "segment_mapping_blocked"
+    assert "sector_key" in assumptions["unsupported"]["segment_economics"]["message"]
+    assert client.calls == []
+
+
+def test_recalculate_blocks_geographic_segment_economics_before_service_call():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+    segment_economics = _valid_segment_economics_artifact()
+    segment_economics["ticker"] = "COST"
+    segment_economics["company"] = "Costco Wholesale Corporation"
+    segment_economics["segments"][0]["segment_name"] = "United States"
+    segment_economics["segments"][0]["sector_key"] = "discount-stores"
+    segment_economics["segments"][0]["mapped_industry"] = "Retail (Grocery and Food)"
+    segment_economics["segments"][0]["disclosure_level"] = "geography"
+    segment_economics["segments"][0].pop("drivers")
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "COST",
+            "overrides": {
+                "request_policy": {"mode": "autonomous_researched"},
+                "segment_economics": segment_economics,
+            },
+        },
+    )
+
+    assert result["isError"] is True
+    assumptions = result["structuredContent"]["assumptions"]
+    assert assumptions["unsupported"]["segment_economics"]["status"] == "segment_mapping_blocked"
+    assert "Geographic disclosure" in assumptions["unsupported"]["segment_economics"]["message"]
+    assert client.calls == []
+
+
+def test_recalculate_blocks_rejected_segment_economics_before_service_call():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+    segment_economics = _valid_segment_economics_artifact()
+    segment_economics["evidence_packet"] = _valid_evidence_packet(
+        driver="operating_margin",
+        evidence_summary="10-K found",
+        assumption_implication="Generic source presence cannot support a segment margin change.",
+    )
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "MSFT",
+            "overrides": {
+                "request_policy": {"mode": "autonomous_researched"},
+                "segment_economics": segment_economics,
+            },
+        },
+    )
+
+    assert result["isError"] is True
+    assumptions = result["structuredContent"]["assumptions"]
+    assert assumptions["unsupported"]["segment_economics"]["status"] == "blocked_by_rejected_segment_economics"
+    assert assumptions["metadata"]["segment_economics"]["rejected_economics"][0]["status"] == "missing_governed_evidence"
+    assert (
+        assumptions["metadata"]["segment_economics"]["metadata"]["evidence_packet"]["rejected_evidence"][0]["status"]
+        == "generic_source_presence"
+    )
+    assert "segments" not in assumptions["mapped"]
+    assert "sectorOverrides" not in assumptions["mapped"]
+    assert client.calls == []
 
 
 def test_recalculate_accepts_supported_growth_pattern_override():

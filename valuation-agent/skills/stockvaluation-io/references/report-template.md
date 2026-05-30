@@ -199,9 +199,17 @@ Do not cite search snippets as evidence. Do not count "10-K found", "earnings re
 
 Summarize reportable or business segments from official sources. If revenue shares, margins, or growth rates are not disclosed, say unavailable.
 
+State `segment_economics_quality` when a SegmentEconomics artifact is returned: `validated_full_economics`, `partial_economics`, `revenue_only_segments`, `segment_evidence_insufficient`, or `segment_mapping_blocked`. Reconcile that artifact status against returned service baseline fields: SegmentEconomics acceptance is not effective unless `baseline.segmentAware` is true and `baseline.baselineUseStatus` confirms `validated_segment_weighted`. Do not describe a revenue-only segment package as fully segment-modeled. Show per-driver segment status so revenue mix, growth, margin, and reinvestment intensity are visibly separate.
+
 | Segment | Disclosure | Source | Source date | Mapped industry | Mapping confidence | Driver affected | Use in model |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 |  |  |  |  |  |  |  |  |
+
+| Segment | Revenue mix | Growth | Margin | Reinvestment intensity | Segment economics quality | Limitation |
+| --- | --- | --- | --- | --- | --- | --- |
+|  | model-supported, report-only, unavailable, or blocked | model-supported, report-only, unavailable, or blocked | model-supported, report-only, unavailable, or blocked | model-supported, report-only, unavailable, or blocked |  |  |
+
+Revenue-only segment evidence cannot support growth, margin, or reinvestment changes. Product or sub-business facts such as Search, YouTube, subscriptions, devices, or Other Bets are report-only unless directly sourced and accepted for that specific driver.
 
 ## Assumption Judgment Summary
 

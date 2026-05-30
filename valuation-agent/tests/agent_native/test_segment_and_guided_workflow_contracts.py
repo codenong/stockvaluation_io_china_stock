@@ -45,6 +45,36 @@ def test_segment_aware_workflow_docs_define_public_acceptance_contract():
     assert "market-implied diagnostics" in report
 
 
+def test_report_references_require_segment_economics_quality_and_no_overclaiming():
+    segment_quality = _reference("segment-quality.md").lower()
+    mcp = _reference("mcp-tools.md").lower()
+    report = _reference("report-template.md").lower()
+
+    for phrase in [
+        "segment_economics_quality",
+        "validated_full_economics",
+        "partial_economics",
+        "revenue_only_segments",
+        "per-driver segment status",
+    ]:
+        assert phrase in segment_quality
+        assert phrase in report
+
+    for driver in ["revenue mix", "growth", "margin", "reinvestment intensity"]:
+        assert driver in segment_quality
+        assert driver in report
+
+    assert "revenue-only segment evidence cannot support growth, margin, or reinvestment changes" in segment_quality
+    assert "sector_key" in segment_quality
+    assert "baselineusestatus" in segment_quality
+    assert "blank url/date references are rejected" in segment_quality
+    assert "baseline.segmentaware" in report
+    assert "validated_segment_weighted" in report
+    assert "do not describe a revenue-only segment package as fully segment-modeled" in report
+    assert "`segment_economics`" in mcp
+    assert "yahoo_industry_key" in mcp
+
+
 def test_guided_refinement_reference_defines_bounded_user_judgment_flow():
     reference = _reference("guided-valuation-refinement.md")
     lower = reference.lower()

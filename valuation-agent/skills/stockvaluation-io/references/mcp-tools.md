@@ -115,8 +115,8 @@ Input:
     "segments": [
       {
         "segment_name": "Cloud software",
-        "sector": "Cloud software",
-        "mapped_industry": "Software",
+        "sector_key": "software-infrastructure",
+        "mapped_industry": "Software (System & Application)",
         "components": ["Azure"],
         "mapping_score": 0.9,
         "mapping_confidence": "high",
@@ -130,7 +130,7 @@ Input:
     ],
     "sector_overrides": [
       {
-        "sector": "Cloud software",
+        "sector_key": "software-infrastructure",
         "parameter": "revenue_growth",
         "value": 12.0,
         "unit": "percent",
@@ -202,6 +202,7 @@ Supported override keys:
 - `tax_rate`
 - `segments`
 - `sector_overrides`
+- `segment_economics`
 - `growth_pattern_override`
 - `request_policy`
 - `rationale`
@@ -219,7 +220,11 @@ Request policy modes:
 - `user_refined_scenario`: bounded user-judgment scenario after guided refinement. User answers are scenario inputs, not evidence.
 - `explicit_scenario`: user explicitly requests a scenario outside the default guided flow.
 
-`segments` may be a list or an object with a `segments` list. Segment package fields required for baseline use are segment name, revenue weight or revenue amount, source name, source date, source URL or reference, mapped industry, mapping confidence, and validation warnings. Revenue weights may be decimals that sum near `1.0` or percentages that sum near `100`; MCP maps them to service decimal weights. Segment names without revenue weights, generic source presence, missing source metadata, low mapping confidence, or less than 80% mapped coverage are rejected from segment weighting and reported as unsupported.
+`segments` may be a list or an object with a `segments` list. Segment package fields required for baseline use are segment name, revenue weight or revenue amount, source name, source date, source URL or reference, service sector key, mapped industry display label, mapping confidence, and validation warnings. Use `sector_key` or `yahoo_industry_key` for the valuation-service sector mapping key, for example `software-infrastructure` or `advertising-agencies`; `mapped_industry` is display/context only. Revenue weights may be decimals that sum near `1.0` or percentages that sum near `100`; MCP maps them to service decimal weights. Segment names without revenue weights, generic source presence, missing source metadata, low mapping confidence, missing service sector keys, geography-only disclosure without explicit operating-segment basis, or less than 80% mapped coverage are rejected from segment weighting and reported as unsupported.
+
+`segment_economics` is a validated SegmentEconomics artifact. MCP validates it agent-side, maps accepted revenue mix into the existing `segments` payload, maps governed segment growth, margin, or reinvestment decisions into `sector_overrides`, and preserves rejected/report-only economics in metadata. MCP does not send the raw `segment_economics` artifact to the valuation service. SegmentEconomics acceptance is not the effective baseline by itself; after recalculation, rely on the returned `baseline.segmentAware` and `baseline.baselineUseStatus` to say whether the service actually used a segment-weighted baseline.
+
+Driver-specific SegmentEconomics entries must reference accepted EvidencePacket evidence by exact driver, `source_url`, and `source_date`. Blank URL/date references are not wildcards.
 
 Baseline quality values:
 

@@ -11,6 +11,7 @@ from . import __version__
 from .evidence_packet import validate_evidence_packet
 from .security import sanitize_for_agent
 from .segment_discovery import parse_revenue_weight, sanitize_segment_package
+from .segment_economics import validate_segment_economics
 from .valuation_audit_packet import build_valuation_audit_packet, valuation_audit_packet_metadata
 from .service_client import (
     DEFAULT_SERVICE_URL,
@@ -43,6 +44,7 @@ SUPPORTED_OVERRIDE_FIELDS = {
     "tax_rate",
     "segments",
     "sector_overrides",
+    "segment_economics",
     "growth_pattern_override",
 }
 
@@ -54,6 +56,16 @@ REQUEST_POLICY_MODES = {
     "researched_autonomous",
     "researched_baseline",
 }
+SEGMENT_SERVICE_SECTOR_KEY_FIELDS = (
+    "sector_key",
+    "sectorKey",
+    "yahoo_industry_key",
+    "yahooIndustryKey",
+    "service_sector_key",
+    "serviceSectorKey",
+    "service_sector",
+    "serviceSector",
+)
 
 RECALCULATE_METADATA_FIELDS = {
     "rationale",
@@ -201,7 +213,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                     **ticker_property,
                     "overrides": {
                         "type": "object",
-                        "description": "Supported keys: revenue_growth, operating_margin_next_year, operating_margin/target_operating_margin, margin_convergence_year, sales_to_capital, sales_to_capital_years_1_to_5, sales_to_capital_years_6_to_10, segments, sector_overrides, wacc, terminal_growth, tax_rate, growth_pattern_override, request_policy, rationale, evidence_used, evidence_packet, user_judgment, baseline_plausibility, assumption_judgment, guided_refinement.",
+                        "description": "Supported keys: revenue_growth, operating_margin_next_year, operating_margin/target_operating_margin, margin_convergence_year, sales_to_capital, sales_to_capital_years_1_to_5, sales_to_capital_years_6_to_10, segments, sector_overrides, segment_economics, wacc, terminal_growth, tax_rate, growth_pattern_override, request_policy, rationale, evidence_used, evidence_packet, user_judgment, baseline_plausibility, assumption_judgment, guided_refinement.",
                         "additionalProperties": True,
                     },
                 },
@@ -471,6 +483,29 @@ def map_recalculate_overrides(requested: dict[str, Any]) -> tuple[dict[str, Any]
             if not validation["ok"]:
                 unsupported[key] = evidence_packet_unsupported(validation)
             continue
+        if key == "segment_economics":
+            validation = validate_segment_economics(value)
+            metadata[key] = segment_economics_metadata(validation)
+            if not validation["ok"]:
+                unsupported[key] = segment_economics_unsupported(validation)
+                continue
+            accepted = _dict(validation.get("accepted_mcp_inputs"))
+            if accepted.get("segments") is not None:
+                segments, segment_error = map_segments(accepted.get("segments"))
+                if segment_error is not None:
+                    unsupported[key] = {"value": segment_economics_metadata(validation), **segment_error}
+                    continue
+                mapped["segments"] = segments
+            if accepted.get("sector_overrides"):
+                sector_overrides = map_sector_overrides(accepted.get("sector_overrides"))
+                if sector_overrides is None:
+                    unsupported[key] = {
+                        "value": segment_economics_metadata(validation),
+                        "reason": "invalid_segment_economics_sector_overrides",
+                    }
+                    continue
+                mapped["sectorOverrides"] = sector_overrides
+            continue
         if key in RECALCULATE_METADATA_FIELDS:
             metadata[key] = sanitize_for_agent(value)
             continue
@@ -626,6 +661,39 @@ def evidence_packet_unsupported(validation: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def segment_economics_metadata(validation: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "ok": validation.get("ok"),
+        "status": validation.get("status"),
+        "quality": validation.get("quality"),
+        "accepted_mcp_inputs": validation.get("accepted_mcp_inputs", {}),
+        "segment_decisions": validation.get("segment_decisions", []),
+        "report_only_facts": validation.get("report_only_facts", []),
+        "rejected_economics": validation.get("rejected_economics", []),
+        "unsupported": validation.get("unsupported", []),
+        "metadata": validation.get("metadata", {}),
+        "validation_warnings": validation.get("validation_warnings", []),
+        "limitations": validation.get("limitations", []),
+    }
+
+
+def segment_economics_unsupported(validation: dict[str, Any]) -> dict[str, Any]:
+    details = "; ".join(
+        str(item)
+        for item in [
+            *validation.get("limitations", []),
+            *validation.get("validation_warnings", []),
+        ]
+        if str(item).strip()
+    )
+    return {
+        "value": segment_economics_metadata(validation),
+        "status": validation.get("status") or "invalid_segment_economics",
+        "reason": "invalid_segment_economics",
+        "message": details or "SegmentEconomics validation failed; rejected segment economics cannot govern recalculation.",
+    }
+
+
 def evidence_packet_required_for_requested_changes(
     requested: dict[str, Any],
     validation: dict[str, Any] | None,
@@ -738,6 +806,9 @@ def map_segments(value: Any) -> tuple[dict[str, Any] | None, dict[str, str] | No
             "reason": str(validation["baseline_quality"]),
             "message": "; ".join(str(warning) for warning in warnings) or "segment package did not pass validation.",
         }
+    mapping_error = segment_service_mapping_error(raw_segments, validation["segments"])
+    if mapping_error is not None:
+        return None, {"reason": "segment_mapping_blocked", "message": mapping_error}
 
     segments: list[dict[str, Any]] = []
     for raw in raw_segments:
@@ -745,7 +816,19 @@ def map_segments(value: Any) -> tuple[dict[str, Any] | None, dict[str, str] | No
             return None, {"reason": "invalid_segments", "message": "each segment must be a JSON object."}
         segment: dict[str, Any] = {}
         segment_name = _string_or_none(_first_present(raw.get("segment_name"), raw.get("segmentName"), raw.get("name")))
-        sector = _string_or_none(_first_present(raw.get("sector"), raw.get("mapped_industry"), raw.get("mappedIndustry")))
+        sector = _string_or_none(
+            _first_present(
+                raw.get("sector_key"),
+                raw.get("sectorKey"),
+                raw.get("yahoo_industry_key"),
+                raw.get("yahooIndustryKey"),
+                raw.get("service_sector_key"),
+                raw.get("serviceSectorKey"),
+                raw.get("sector"),
+                raw.get("mapped_industry"),
+                raw.get("mappedIndustry"),
+            )
+        )
         industry = _string_or_none(_first_present(raw.get("mapped_industry"), raw.get("mappedIndustry"), raw.get("industry")))
         if sector:
             segment["sector"] = sector
@@ -760,17 +843,12 @@ def map_segments(value: Any) -> tuple[dict[str, Any] | None, dict[str, str] | No
             segment["components"] = [str(item) for item in components]
         elif segment_name:
             segment["components"] = [segment_name]
-        for source_keys, target in [
-            (("mapping_score", "mappingScore"), "mappingScore"),
-            (("operating_margin", "operatingMargin"), "operatingMargin"),
-        ]:
-            raw_number = _first_present(*(raw.get(source_key) for source_key in source_keys))
-            if raw_number is None:
-                continue
-            number = _number_or_none(raw_number)
-            if number is None:
-                return None, {"reason": "invalid_segments", "message": f"{target} must be numeric when present."}
-            segment[target] = number
+        raw_mapping_score = _first_present(raw.get("mapping_score"), raw.get("mappingScore"))
+        if raw_mapping_score is not None:
+            mapping_score = _number_or_none(raw_mapping_score)
+            if mapping_score is None:
+                return None, {"reason": "invalid_segments", "message": "mappingScore must be numeric when present."}
+            segment["mappingScore"] = mapping_score
         revenue_share = parse_revenue_weight(raw)
         if revenue_share is None:
             return None, {"reason": "segment_evidence_insufficient", "message": "segment weighting requires sourced revenue weights or revenue amounts."}
@@ -785,12 +863,75 @@ def map_segments(value: Any) -> tuple[dict[str, Any] | None, dict[str, str] | No
             if text:
                 segment[target] = text
         validation_warnings = raw.get("validation_warnings") or raw.get("validationWarnings")
+        operating_margin = _first_present(raw.get("operating_margin"), raw.get("operatingMargin"))
+        if operating_margin is not None:
+            if isinstance(validation_warnings, list):
+                validation_warnings = list(validation_warnings)
+            else:
+                validation_warnings = []
+            validation_warnings.append(
+                "Segment operating margin is report-only unless provided through validated SegmentEconomics."
+            )
         if isinstance(validation_warnings, list):
             segment["validationWarnings"] = [str(item) for item in validation_warnings]
         if not segment:
             return None, {"reason": "invalid_segments", "message": "each segment must contain mapped fields."}
         segments.append(segment)
     return {"segments": segments}, None
+
+
+def segment_service_mapping_error(raw_segments: list[Any], sanitized_segments: list[dict[str, Any]]) -> str | None:
+    raw_by_name = {
+        str(raw.get("segment_name") or raw.get("segmentName") or raw.get("name") or raw.get("segment") or "").strip(): raw
+        for raw in raw_segments
+        if isinstance(raw, dict)
+    }
+    errors: list[str] = []
+    for segment in sanitized_segments:
+        segment_name = str(segment.get("segment_name") or "").strip()
+        raw = raw_by_name.get(segment_name) or {}
+        disclosure_level = str(raw.get("disclosure_level") or raw.get("disclosureLevel") or "").strip().lower()
+        if disclosure_level == "geography" and not has_operating_segment_basis(raw):
+            errors.append(
+                f"Geographic disclosure for {segment_name} cannot support segment baseline use without an explicit operating-segment basis and mapping rationale."
+            )
+        if not service_sector_key(raw):
+            errors.append(
+                f"{segment_name} requires sector_key or yahoo_industry_key for service baseline mapping; mapped_industry is display-only."
+            )
+    if not errors:
+        return None
+    return "; ".join(errors)
+
+
+def has_operating_segment_basis(raw: dict[str, Any]) -> bool:
+    basis = raw.get("operating_segment_basis")
+    if basis is None:
+        basis = raw.get("operatingSegmentBasis")
+    rationale = _string_or_none(
+        _first_present(
+            raw.get("mapping_rationale"),
+            raw.get("mappingRationale"),
+            raw.get("operating_segment_rationale"),
+            raw.get("operatingSegmentRationale"),
+        )
+    )
+    return basis is True and rationale is not None
+
+
+def service_sector_key(raw: dict[str, Any]) -> str:
+    for key in SEGMENT_SERVICE_SECTOR_KEY_FIELDS:
+        value = _string_or_none(raw.get(key))
+        if value:
+            return value
+    sector = _string_or_none(_first_present(raw.get("sector"), raw.get("sectorName")))
+    return sector if sector is not None and looks_like_service_sector_key(sector) else ""
+
+
+def looks_like_service_sector_key(value: str) -> bool:
+    if not value or value != value.lower():
+        return False
+    return all(character.isalnum() or character == "-" for character in value)
 
 
 def map_sector_overrides(value: Any) -> list[dict[str, Any]] | None:
@@ -802,7 +943,17 @@ def map_sector_overrides(value: Any) -> list[dict[str, Any]] | None:
         if not isinstance(raw, dict):
             return None
         sector_name = _string_or_none(
-            _first_present(raw.get("sector"), raw.get("sector_name"), raw.get("sectorName"))
+            _first_present(
+                raw.get("sector_key"),
+                raw.get("sectorKey"),
+                raw.get("yahoo_industry_key"),
+                raw.get("yahooIndustryKey"),
+                raw.get("service_sector_key"),
+                raw.get("serviceSectorKey"),
+                raw.get("sector"),
+                raw.get("sector_name"),
+                raw.get("sectorName"),
+            )
         )
         parameter_type = _string_or_none(
             _first_present(raw.get("parameter"), raw.get("parameter_type"), raw.get("parameterType"))
