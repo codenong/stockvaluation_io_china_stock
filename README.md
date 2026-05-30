@@ -240,7 +240,11 @@ Fully local LLM support through Ollama is not implemented by this repo today. Th
 
 ## Limits
 
-- The service depends on Yahoo Finance data.
+- The service depends on Yahoo Finance for company, market, and normalized financial data.
+- Research/news search is performed by the user's agent against public sources such as filings, investor relations pages, company newsrooms, news, and other web sources; it is not a local StockValuation data provider.
+- US researched valuations prefer a primary-filing financial path when available, but current checked-in coverage is fixture-backed rather than broad live SEC ingestion.
+- When primary filing data is unavailable for a US researched valuation, the service falls back to Yahoo-normalized financials and reports that fallback in provenance.
+- Non-US researched valuations may use Yahoo-normalized financials with explicit source-provenance and company-report cross-check caveats.
 - Valuation can fail when upstream data is missing, unsupported, stale, or low quality.
 - Historical coverage is limited.
 - Financial-sector companies are not supported.
