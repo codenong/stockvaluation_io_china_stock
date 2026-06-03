@@ -1,6 +1,6 @@
 # StockValuation.io
 
-A local-first MCP valuation workflow for people who want AI to help them think through a business, not blindly hand them a stock pick.
+A local-first AI valuation workflow for people who want help thinking through a business, not a black-box stock pick.
 
 StockValuation.io grew out of my own practice with Damodaran-style valuation. I wanted to take the structured way valuation connects story, assumptions, and numbers, and adapt it to an AI-assisted workflow where research can be accelerated but the math remains deterministic and auditable.
 
@@ -10,9 +10,9 @@ StockValuation.io grew out of my own practice with Damodaran-style valuation. I 
 
 [![GOOGL Codex Valuation Demo](docs/media/googl-codex-valuation-demo-preview.gif)](docs/media/googl-codex-valuation-demo.mp4)
 
-Real Codex CLI run valuing GOOGL with the local StockValuation.io workflow and guided default answers.
+Codex CLI run valuing GOOGL with the local StockValuation.io workflow and guided default answers.
 
-In practice, this repo installs a `stockvaluation.io` skill for Codex and Claude, exposes local MCP tools, and runs a local valuation service stack. The agent researches, explains, critiques, and asks questions. The local tools calculate. The user owns the final judgment.
+In practice, this repo installs a `stockvaluation.io` skill for Codex and Claude, exposes local valuation tools, and runs a local valuation service stack. The agent researches, explains, critiques, and asks questions. The local tools calculate. The user owns the final judgment.
 
 ## Why I built this
 
@@ -61,7 +61,7 @@ The user agent handles:
 - guided valuation questions
 - the final educational report
 
-The local MCP tools and deterministic valuation service handle:
+The local tools and deterministic valuation service handle:
 
 - baseline valuation
 - DCF math
@@ -70,7 +70,7 @@ The local MCP tools and deterministic valuation service handle:
 - reference-data status
 - effective assumptions
 - clear failure explanations
-- source policy, `sourceQualityGate` metadata, and SEC/Yahoo adapter provenance
+- source and data-quality checks
 
 The user:
 
@@ -79,19 +79,17 @@ The user:
 - decides which scenario is reasonable
 - owns the final judgment
 
-The LLM should not silently hand-calculate valuation outputs. Scenario math must come from `stockvaluation.recalculate`.
+The LLM should not silently hand-calculate valuation outputs. Scenario math must come from the local valuation tools.
 
 ## What you get
 
 - A `stockvaluation.io` skill for Codex and Claude.
-- MCP config exposing local `stockvaluation.*` tools.
-- Local Docker services: `postgres`, `yfinance`, and `valuation-service`.
-- Deterministic DCF math through `valuation-service`.
-- Structured JSON for assumptions, baseline value, recalculated scenarios, growth anchors, reference-data status, and failures.
+- Local valuation tools exposed to the user's agent.
+- Local Docker services for the valuation runtime.
+- Deterministic DCF math and scenario recalculation.
+- Structured assumptions, baseline value, growth anchors, reference-data status, and clear failures.
 - A researched workflow that stops for evidence review, then asks guided valuation questions before producing the final educational report.
 - A process designed to make assumptions visible and challengeable.
-
-MCP means Model Context Protocol. In this repo, it is the local bridge between Codex or Claude and the valuation tools.
 
 ## What this is / what this is not
 
@@ -101,7 +99,7 @@ MCP means Model Context Protocol. In this repo, it is the local bridge between C
 | A way to audit DCF assumptions | A buy/sell/hold recommendation system |
 | A Damodaran-inspired narrative-and-numbers workflow | A guaranteed fair-value engine |
 | A tool for learning, research, and critique | A replacement for your judgment |
-| An MCP toolchain for Codex / Claude-style agents | A black-box hosted stock-picking app |
+| An agent toolchain for Codex / Claude-style agents | A black-box hosted stock-picking app |
 | A way to connect business story and valuation math | A promise that the output is correct |
 | A project you can inspect, run, break, and improve | A fully local LLM stack unless local provider support is explicitly added |
 
@@ -121,24 +119,17 @@ This project is Damodaran-inspired. It is not affiliated with or endorsed by Asw
 
 The default flow is not a one-shot report.
 
-1. The agent checks local service health.
-2. The agent calls `stockvaluation.researched_baseline` for the default full researched baseline and source-policy decision.
-3. If `sourceQualityGate` requires a decision, the agent stops or labels an explicit quick/no-questions/automation/smoke-test bypass.
-4. The agent researches the company.
-5. Source-heavy research can use subagents when supported.
-6. The agent gathers and classifies driver-specific evidence.
-7. The agent stops at a human evidence review gate before guided valuation refinement.
-8. After the gate is cleared, the agent builds an evidence-constrained assumption judgment.
-9. Any DCF math must come from `stockvaluation.recalculate`, not hand calculations.
-10. The agent asks materiality-driven guided valuation questions before the final report.
-11. The guided questions include bounded modeling defaults, not investment advice.
-12. After the user answers, the agent maps those answers into a user-refined scenario, calls local MCP tools again, and writes the final educational report.
+1. The agent checks that the local valuation tools are running.
+2. The agent builds a baseline from local deterministic output.
+3. The agent researches the company and gathers evidence for the key valuation drivers.
+4. The workflow pauses so you can review the evidence before assumptions are refined.
+5. The agent asks guided valuation questions, recalculates scenarios through the local tools, and writes the final educational report.
 
 Use a quick or no-questions path only when the user explicitly asks for it.
 
 ## Quick start
 
-Docker Desktop or a compatible Docker Engine with Compose is required. The v1 local runtime is the Docker Compose stack in `docker-compose.local.yml`; no native Java/Postgres/yfinance runtime is installed or supported for v1.
+Docker Desktop or a compatible Docker Engine with Compose is required.
 
 From a local checkout:
 
@@ -152,11 +143,7 @@ Or run the installer directly from GitHub:
 curl -fsSL https://raw.githubusercontent.com/stockvaluation-io/stockvaluation_io/main/install.sh | bash -s -- setup
 ```
 
-Setup installs or updates the skill and MCP config, creates `.env` from `.env.example` if needed, checks the local environment, starts the local Docker services, and prints service status. By default it targets both Codex and Claude.
-
-If `.env` already exists, setup does not overwrite it. Do not commit `.env`.
-
-Live SEC/EDGAR primary-filing ingestion does not require an API key, but it does require a declared SEC User-Agent. To enable it, edit `.env`, replace `SEC_USER_AGENT=CHANGE_ME` with an organization/app/contact value, then restart with `./install.sh start`. If `SEC_USER_AGENT` is blank or still `CHANGE_ME`, the researched workflow uses explicit Yahoo-normalized fallback when applicable.
+Setup installs or updates the skill and local tool config, starts the Docker services, and prints service status. By default it targets both Codex and Claude.
 
 The curl installer clones the repo to `~/.local/share/stockvaluation_io` by default, then runs setup from that checkout. Set `STOCKVALUATION_INSTALL_DIR=/path/to/dir` to use a different path.
 
@@ -169,13 +156,7 @@ Useful commands:
 ./install.sh uninstall
 ```
 
-The canonical local runtime starts:
-
-- `postgres`
-- `yfinance`
-- `valuation-service`
-
-The valuation service is published on `http://localhost:8081`. In the main compose stack, `yfinance` is internal to Docker and is not published on `localhost:5000`.
+The installer runs the local valuation stack through `docker-compose.local.yml`.
 
 ## Use it from Codex or Claude
 
@@ -187,81 +168,23 @@ Value GOOGL using stockvaluation.io.
 Value META using stockvaluation.io.
 ```
 
-To make the assumption-checking step explicit:
+For the default researched flow, expect the agent to research, show you the evidence base, ask guided assumption questions, and then write the final report. The final report comes after those answers unless you explicitly ask for a quick or no-questions run.
 
-```text
-Value NVDA using stockvaluation.io.
-```
+## Local-first, not fully offline
 
-For the default researched flow, expect the agent to call `stockvaluation.researched_baseline` first, handle any source-quality gate, then research, build an evidence-constrained case, stop for evidence review, and ask guided valuation questions. The final report comes after those answers unless you explicitly ask for a quick or no-questions run.
+This repo currently targets Codex and Claude workflows.
 
-## MCP tools
+The valuation services and DCF math run on your machine. Market data, company filings, currency data, web research, and the model provider used by your agent may still be external. The repo does not provide a fully local LLM stack today.
 
-- `stockvaluation.health`
-- `stockvaluation.value_ticker`
-- `stockvaluation.researched_baseline`
-- `stockvaluation.recalculate`
-- `stockvaluation.get_assumptions`
-- `stockvaluation.get_growth_anchor`
-- `stockvaluation.get_reference_data_status`
-- `stockvaluation.explain_failure`
-
-MCP tools return structured JSON. Agents should treat them as bounded deterministic tools, not as a hidden full valuation agent.
-
-SEC/EDGAR and Yahoo are adapters into a common StockValuation financial schema. For supported SEC-covered researched valuations, the service tries SEC/EDGAR primary filing data first. Yahoo-normalized financials remain available as an explicit fallback or global normalized source, but they must not be labeled primary filing data. Source-policy statuses distinguish `primary_filing_used`, classified `sec_*_yahoo_fallback` cases, unsupported primary adapters, and company-report cross-check requirements. The returned `sourceQualityGate` is the source of truth for whether the agent should continue, retry, stop, cross-check, or label an explicit bypass.
-
-Canonical field definitions live in `valuation-service/src/main/resources/data/financial_field_definitions.json` and are mirrored in the installed skill reference. The contract covers revenue, operating income, interest, tax and pretax income, R&D, share counts, book equity, debt and lease claims, cash and marketable securities, minority interest, and stock-based compensation. Those fields support provenance, diagnostics, and audited valuation inputs; they do not imply autonomous accounting cleanup. Frozen SEC/Yahoo fixtures are test-only and are not production support logic.
-
-- `stockvaluation.health` checks the MCP adapter and local valuation service.
-- `stockvaluation.value_ticker` creates the mechanical baseline valuation.
-- `stockvaluation.researched_baseline` creates the default full researched baseline with source policy enabled and returns `sourceQualityGate` when the user must approve fallback, retry, stop, or cross-check.
-- `stockvaluation.recalculate` is used for scenario math.
-- `stockvaluation.get_assumptions` exposes effective assumptions.
-- `stockvaluation.get_growth_anchor` gives context for growth assumptions.
-- `stockvaluation.get_reference_data_status` helps users understand what external or reference data was available.
-- `stockvaluation.explain_failure` should be used when the service refuses or cannot value a company.
-
-## What runs locally?
-
-Local:
-
-- Skill files installed under the user's Codex or Claude skill directory.
-- MCP config for the local `stockvaluation` server.
-- Docker services from `docker-compose.local.yml`.
-- Postgres data in a local Docker volume.
-- DCF math in `valuation-service`.
-
-Not fully local:
-
-- US SEC primary financial data can come from public SEC EDGAR JSON APIs when `SEC_USER_AGENT` is configured.
-- Market and company data can come from Yahoo Finance.
-- Currency conversion uses the keyless Frankfurter provider by default.
-- The agent may use web research for filings, investor relations pages, news, and other public sources.
-- Hosted model providers may be used depending on the user's Codex, Claude, or agent setup.
-
-## Provider support
-
-This repo currently targets Codex and Claude skill / MCP workflows.
-
-The local valuation services run on your machine, but that does not automatically mean the full LLM workflow is local. Depending on your agent setup, research and reasoning may still use hosted model providers.
-
-The checked-in `.env.example` is for local service configuration. It does not configure OpenAI, Anthropic, Groq, Gemini, OpenRouter, Ollama, or any other model provider.
-
-Fully local LLM support through Ollama is not implemented by this repo today. The valuation service is local and deterministic; the model runtime depends on your agent configuration.
+For runtime, data-source, and tool details, see [Runtime and data details](docs/runtime-and-data-details.md).
 
 ## Limits
 
-- The service uses live SEC/EDGAR companyfacts and submissions data for supported US SEC filers when `SEC_USER_AGENT` is configured.
-- SEC access uses declared User-Agent headers, conservative rate limiting below the SEC fair-access maximum, and in-memory response caching.
-- The service still depends on Yahoo Finance for company info, market data, revenue estimates, global coverage, and normalized fallback financial data.
-- Research/news search is performed by the user's agent against public sources such as filings, investor relations pages, company newsrooms, news, and other web sources; it is not a local StockValuation data provider.
-- US researched valuations prefer live SEC primary-filing financials when supported and configured. Current live SEC mapper support is for domestic US `10-K`/`10-Q` companyfacts using supported `us-gaap` mappings.
-- ADR, 20-F, 40-F, 6-K, and IFRS filing support should not be assumed just because a company has SEC filings. Unsupported forms or taxonomies are reported as unsupported or fallback-labeled until the mapper has tested field semantics.
-- When SEC primary filing data is unavailable, incomplete, unsupported, disabled, missing a declared User-Agent, or not valuation-usable, the service falls back to Yahoo-normalized financials and reports the classified fallback in provenance.
-- Missing valuation-critical SEC facts can produce statuses such as `sec_insufficient_facts_yahoo_fallback`; missing per-share bridge data such as shares outstanding can block valuation rather than produce synthetic per-share math.
-- Non-US researched valuations may use Yahoo-normalized financials with explicit source-provenance and company-report cross-check caveats.
-- Valuation can fail when upstream data is missing, unsupported, stale, or low quality.
+- Data coverage depends on public filings, market data, and provider availability.
+- The workflow may use normalized fallback data when primary filing data is unavailable or unsupported.
+- Valuation can fail when upstream data is missing, stale, low quality, or not suitable for the model.
 - Historical coverage is limited.
+- Non-US, ADR, IFRS, and unusual filing cases may need extra source review or may be unsupported.
 - Financial-sector companies are not supported.
 - Unsupported companies should produce a clear failure, not a synthetic valuation.
 - Growth anchors and reference data are context for critique, not proof.
@@ -273,8 +196,6 @@ A clear failure is better than a fake valuation.
 
 ## Security and no-advice notes
 
-- Never commit `.env`, prompt dumps, or local runtime data.
-- Never paste real secrets into chat.
 - Local defaults are for one developer machine.
 - Do not expose local services to the internet unless you know what you are doing.
 - Reports are educational only.

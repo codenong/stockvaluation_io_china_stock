@@ -369,16 +369,34 @@ def test_recalculate_reference_does_not_autonomously_change_growth_pattern():
     assert "do not use `growth_pattern_override` autonomously" in mcp_reference
 
 
-def test_default_readme_documents_docker_only_agent_native_runtime():
+def test_default_readme_keeps_runtime_guidance_user_facing():
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     lower = readme.lower()
 
     assert "docker desktop or a compatible docker engine with compose" in lower
-    assert "no native java/postgres/yfinance runtime is installed or supported for v1" in lower
+    assert "runtime-and-data-details.md" in readme
+    assert "sourcequalitygate" not in lower
+    assert "sec_user_agent" not in readme
     assert "bullbeargpt" not in lower
     assert "angular" not in lower
     assert "sv value" not in lower
     assert "bootstrap_local_secrets.sh" not in readme
+
+
+def test_runtime_details_documents_agent_native_runtime_and_data_boundaries():
+    details = (REPO_ROOT / "docs" / "runtime-and-data-details.md").read_text(encoding="utf-8")
+    lower = details.lower()
+
+    assert "docker-compose.local.yml" in details
+    assert "postgres" in lower
+    assert "yfinance" in lower
+    assert "valuation-service" in lower
+    assert "SEC_USER_AGENT" in details
+    assert "stockvaluation.researched_baseline" in details
+    assert "sourceQualityGate" in details
+    assert "valuation-service/src/main/resources/data/financial_field_definitions.json" in details
+    assert "bullbeargpt" not in lower
+    assert "angular" not in lower
 
 
 def test_removed_legacy_product_directories_are_absent():
