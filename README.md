@@ -156,6 +156,8 @@ Setup installs or updates the skill and MCP config, creates `.env` from `.env.ex
 
 If `.env` already exists, setup does not overwrite it. Do not commit `.env`.
 
+Live SEC/EDGAR primary-filing ingestion does not require an API key, but it does require a declared SEC User-Agent. To enable it, edit `.env`, replace `SEC_USER_AGENT=CHANGE_ME` with an organization/app/contact value, then restart with `./install.sh start`. If `SEC_USER_AGENT` is blank or still `CHANGE_ME`, the researched workflow uses explicit Yahoo-normalized fallback when applicable.
+
 The curl installer clones the repo to `~/.local/share/stockvaluation_io` by default, then runs setup from that checkout. Set `STOCKVALUATION_INSTALL_DIR=/path/to/dir` to use a different path.
 
 Useful commands:
@@ -191,7 +193,7 @@ To make the assumption-checking step explicit:
 Value NVDA using stockvaluation.io.
 ```
 
-For the default researched flow, expect the agent to research first, build a mechanical baseline, build an evidence-constrained case, then stop and ask guided valuation questions. The final report comes after those answers unless you explicitly ask for a quick or no-questions run.
+For the default researched flow, expect the agent to call `stockvaluation.researched_baseline` first, handle any source-quality gate, then research, build an evidence-constrained case, stop for evidence review, and ask guided valuation questions. The final report comes after those answers unless you explicitly ask for a quick or no-questions run.
 
 ## MCP tools
 
@@ -206,7 +208,9 @@ For the default researched flow, expect the agent to research first, build a mec
 
 MCP tools return structured JSON. Agents should treat them as bounded deterministic tools, not as a hidden full valuation agent.
 
-SEC/EDGAR and Yahoo are adapters into a common StockValuation financial schema. For supported SEC-covered researched valuations, the service tries SEC/EDGAR primary filing data first. Yahoo-normalized financials remain available as an explicit fallback or global normalized source, but they must not be labeled primary filing data. Canonical field definitions live in `valuation-service/src/main/resources/data/financial_field_definitions.json` and are mirrored in the installed skill reference. Frozen SEC/Yahoo fixtures are test-only and are not production support logic.
+SEC/EDGAR and Yahoo are adapters into a common StockValuation financial schema. For supported SEC-covered researched valuations, the service tries SEC/EDGAR primary filing data first. Yahoo-normalized financials remain available as an explicit fallback or global normalized source, but they must not be labeled primary filing data. Source-policy statuses distinguish `primary_filing_used`, classified `sec_*_yahoo_fallback` cases, unsupported primary adapters, and company-report cross-check requirements. The returned `sourceQualityGate` is the source of truth for whether the agent should continue, retry, stop, cross-check, or label an explicit bypass.
+
+Canonical field definitions live in `valuation-service/src/main/resources/data/financial_field_definitions.json` and are mirrored in the installed skill reference. The contract covers revenue, operating income, interest, tax and pretax income, R&D, share counts, book equity, debt and lease claims, cash and marketable securities, minority interest, and stock-based compensation. Those fields support provenance, diagnostics, and audited valuation inputs; they do not imply autonomous accounting cleanup. Frozen SEC/Yahoo fixtures are test-only and are not production support logic.
 
 - `stockvaluation.health` checks the MCP adapter and local valuation service.
 - `stockvaluation.value_ticker` creates the mechanical baseline valuation.
@@ -251,8 +255,10 @@ Fully local LLM support through Ollama is not implemented by this repo today. Th
 - SEC access uses declared User-Agent headers, conservative rate limiting below the SEC fair-access maximum, and in-memory response caching.
 - The service still depends on Yahoo Finance for company info, market data, revenue estimates, global coverage, and normalized fallback financial data.
 - Research/news search is performed by the user's agent against public sources such as filings, investor relations pages, company newsrooms, news, and other web sources; it is not a local StockValuation data provider.
-- US researched valuations prefer live SEC primary-filing financials when supported and configured.
-- When SEC primary filing data is unavailable, incomplete, unsupported, disabled, or missing a declared User-Agent, the service falls back to Yahoo-normalized financials and reports that fallback in provenance.
+- US researched valuations prefer live SEC primary-filing financials when supported and configured. Current live SEC mapper support is for domestic US `10-K`/`10-Q` companyfacts using supported `us-gaap` mappings.
+- ADR, 20-F, 40-F, 6-K, and IFRS filing support should not be assumed just because a company has SEC filings. Unsupported forms or taxonomies are reported as unsupported or fallback-labeled until the mapper has tested field semantics.
+- When SEC primary filing data is unavailable, incomplete, unsupported, disabled, missing a declared User-Agent, or not valuation-usable, the service falls back to Yahoo-normalized financials and reports the classified fallback in provenance.
+- Missing valuation-critical SEC facts can produce statuses such as `sec_insufficient_facts_yahoo_fallback`; missing per-share bridge data such as shares outstanding can block valuation rather than produce synthetic per-share math.
 - Non-US researched valuations may use Yahoo-normalized financials with explicit source-provenance and company-report cross-check caveats.
 - Valuation can fail when upstream data is missing, unsupported, stale, or low quality.
 - Historical coverage is limited.
