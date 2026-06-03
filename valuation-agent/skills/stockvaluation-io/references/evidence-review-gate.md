@@ -6,7 +6,7 @@ The gate is a human-in-the-loop review point for the evidence base. It is not a 
 
 ## Allowed Action
 
-Show a compact Markdown evidence review before guided valuation refinement. Ask the user to approve and continue to guided questions, provide corrections, provide additional sources, or continue with caveats. If `sourceQualityGate.status = requires_user_decision`, make the source-quality gate the first visible item and ask for the allowed source-policy action explicitly. Do not present a generic `approve` prompt as sufficient for a source-quality gate. If the user explicitly requests quick valuation, no questions, skip questions, one-shot report, automation, smoke-test, or equivalent bypass language, label the evidence review bypass and guided-refinement bypass instead of fabricating a user-refined scenario.
+Show a compact Markdown evidence review before guided valuation refinement. Ask the user to approve and continue to guided questions, provide corrections, provide additional sources, or continue with caveats. If `sourceQualityGate.status = requires_user_decision`, keep the gate metadata internal and ask for the allowed source-policy action explicitly in normal prose; do not show a visible `Source quality gate` heading or table row. Do not present a generic `approve` prompt as sufficient for a source-quality gate. If the user explicitly requests quick valuation, no questions, skip questions, one-shot report, automation, smoke-test, or equivalent bypass language, label the evidence review bypass and guided-refinement bypass instead of fabricating a user-refined scenario.
 
 ## Source-Quality Gate
 
@@ -24,10 +24,9 @@ Do not ask guided valuation refinement questions before the gate is cleared. Do 
 
 The gate must show these items when available, and must explicitly say unavailable, not checked, weak, stale, conflicting, report-only, or unsupported when that is the true status:
 
-- Educational/no-advice framing.
+- No-advice framing.
 - Company and ticker.
 - Source quality summary.
-- Source quality gate, including `sourceQualityGate.status`, reason, allowed actions, fallback availability, and whether cross-check is required.
 - Sources checked, with source dates and source type.
 - Driver-specific evidence for growth, margins, reinvestment, risk, terminal value, segments, and accounting issues when available.
 - Segment evidence and segment limitations.
@@ -39,6 +38,8 @@ The gate must show these items when available, and must explicitly say unavailab
 - Unsupported topics and unsupported model fields.
 - Proposed workflow treatment and next step.
 
+Keep these labels out of the visible evidence-review display: `Source quality gate`, `Segment baseline`, `Segment-aware MCP value`, `Important caveat`, and `Caveats and data gaps`. The underlying metadata and decision rules still apply; only the front-facing labels are suppressed.
+
 ## Markdown Shape
 
 Use this readable Markdown shape or a tighter equivalent. Keep it compact enough for Codex and cloud Codex.
@@ -46,7 +47,7 @@ Use this readable Markdown shape or a tighter equivalent. Keep it compact enough
 ```text
 ### Evidence review before guided valuation refinement
 
-Educational use only. This is not financial advice. This review confirms the evidence base before scenario questions.
+(This is not financial advice.) This review confirms the evidence base before scenario questions.
 
 | Field | Summary |
 | --- | --- |
@@ -54,11 +55,10 @@ Educational use only. This is not financial advice. This review confirms the evi
 | Ticker | ... |
 | Core financial source | ... |
 | Source quality summary | ... |
-| Source quality gate | For SEC fallback: SEC primary source was expected but unavailable; choose continue_with_fallback, retry_primary_source, or stop. For non-US unsupported adapter: no supported deterministic primary-filing adapter covers this listing; choose continue after company-report cross-check, corrections/additional sources, or stop. |
 | Segment evidence status | ... |
 | Segment limitations | ... |
 | Latest news or material context | ... |
-| Material data gaps | ... |
+| Open items | ... |
 
 #### Sources checked
 
@@ -70,7 +70,7 @@ Educational use only. This is not financial advice. This review confirms the evi
 | Driver | Evidence | Source/date | Confidence | Proposed model use |
 | --- | --- | --- | --- | --- |
 
-#### Conflicts, caveats, and unsupported topics
+#### Conflicts and unsupported topics
 
 | Topic | Issue | Workflow treatment |
 | --- | --- | --- |
