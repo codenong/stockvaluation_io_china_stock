@@ -190,7 +190,7 @@ public class SecCompanyFactsMapper {
                 continue;
             }
             FactChoice debt = chooseDebt(usGaapFacts, anchor.end(), kind);
-            FactChoice shares = chooseFact(deiFacts, SHARES_OUTSTANDING_TAGS, List.of("shares"), anchor.end(), kind, true);
+            FactChoice shares = chooseSharesOutstanding(usGaapFacts, deiFacts, anchor.end(), kind);
             FactChoice minorityInterest = chooseFact(
                     usGaapFacts,
                     MINORITY_INTEREST_TAGS,
@@ -260,6 +260,18 @@ public class SecCompanyFactsMapper {
                 valueOrZero(cashOnly.value()) + valueOrZero(shortInvestments.value()),
                 latestDate(cashOnly.sourceDate(), shortInvestments.sourceDate()),
                 warnings);
+    }
+
+    private static FactChoice chooseSharesOutstanding(
+            Map<String, Object> usGaapFacts,
+            Map<String, Object> deiFacts,
+            LocalDate end,
+            PeriodKind kind) {
+        FactChoice deiShares = chooseFact(deiFacts, SHARES_OUTSTANDING_TAGS, List.of("shares"), end, kind, true);
+        if (deiShares.value() != null) {
+            return deiShares;
+        }
+        return chooseFact(usGaapFacts, SHARES_OUTSTANDING_TAGS, List.of("shares"), end, kind, true);
     }
 
     private static FactChoice chooseFact(

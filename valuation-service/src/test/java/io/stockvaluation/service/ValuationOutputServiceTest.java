@@ -5,6 +5,7 @@ import io.stockvaluation.dto.OptionValueResultDTO;
 import io.stockvaluation.dto.OverrideAssumption;
 import io.stockvaluation.dto.valuationoutput.CompanyDTO;
 import io.stockvaluation.dto.valuationoutput.FinancialDTO;
+import io.stockvaluation.exception.InsufficientFinancialDataException;
 import io.stockvaluation.form.FinancialDataInput;
 import io.stockvaluation.repository.IndustryAveragesGlobalRepository;
 import io.stockvaluation.repository.InputStatRepository;
@@ -233,5 +234,29 @@ class ValuationOutputServiceTest {
 
         assertNotNull(companyDTO);
         assertEquals(0.0, companyDTO.getProbabilityOfFailure());
+    }
+
+    @Test
+    void calculateCompanyDataRejectsMissingShareCountBeforePerShareMath() {
+        FinancialDTO financialDTO = new FinancialDTO();
+        financialDTO.setPvFcff(new Double[] { 10.0, 20.0, 0.0 });
+        financialDTO.setComulatedDiscountedFactor(new Double[] { 0.9, 0.8, 0.7 });
+        financialDTO.setArrayLength(3);
+        financialDTO.setFcff(new Double[] { 10.0, 20.0, 100.0 });
+        financialDTO.setCostOfCapital(new Double[] { 0.1, 0.1, 0.1 });
+        financialDTO.setRevenueGrowthRate(new Double[] { 0.1, 0.1, 0.05 });
+        financialDTO.setRevenues(new Double[] { 100.0, 110.0, 115.0 });
+        financialDataInput.setRiskFreeRate(4.0);
+        financialDataInput.getFinancialDataDTO().setNoOfShareOutstanding(null);
+
+        InsufficientFinancialDataException error = assertThrows(
+                InsufficientFinancialDataException.class,
+                () -> valuationOutputService.calculateCompanyData(
+                        financialDTO,
+                        financialDataInput,
+                        new OptionValueResultDTO(0.0, 0.0),
+                        new LeaseResultDTO()));
+
+        assertEquals("shares_outstanding is required for per-share valuation.", error.getMessage());
     }
 }

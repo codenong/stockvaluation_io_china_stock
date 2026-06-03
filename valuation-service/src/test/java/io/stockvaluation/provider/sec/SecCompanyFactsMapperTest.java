@@ -99,6 +99,31 @@ class SecCompanyFactsMapperTest {
     }
 
     @Test
+    void mapsUsGaapCommonStockSharesOutstandingWhenDeiShareConceptIsAbsent() {
+        SecCompanyFactsMapper mapper = new SecCompanyFactsMapper();
+        Map<String, Object> companyFacts = SecTestFixtures.json("msft_companyfacts.json");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> facts = (Map<String, Object>) companyFacts.get("facts");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> dei = (Map<String, Object>) facts.get("dei");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> usGaap = (Map<String, Object>) facts.get("us-gaap");
+        Object shares = dei.remove("EntityCommonStockSharesOutstanding");
+        usGaap.put("CommonStockSharesOutstanding", shares);
+
+        SecMappedCompanyFacts mapped = mapper.map(
+                "MSFT",
+                "0000789019",
+                companyFacts,
+                SecTestFixtures.json("msft_submissions.json"));
+
+        BalanceSheetSnapshot balance = mapped.yearlyBalance().values().iterator().next();
+        assertEquals(7430000000.0, balance.sharesOutstanding());
+        assertTrue(balance.sourceProvenance().getWarnings().stream()
+                .anyMatch(warning -> warning.contains("fallback tag us-gaap:CommonStockSharesOutstanding")));
+    }
+
+    @Test
     void returnsInsufficientFactsWhenRequiredCoreTagsAreMissing() {
         SecCompanyFactsMapper mapper = new SecCompanyFactsMapper();
         Map<String, Object> incomplete = Map.of(

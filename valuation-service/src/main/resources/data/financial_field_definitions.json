@@ -323,7 +323,8 @@
       "periodExpectations": "Instant fact at or near the latest balance sheet date.",
       "unitExpectations": "Shares.",
       "secPreferredConcepts": [
-        "dei:EntityCommonStockSharesOutstanding"
+        "dei:EntityCommonStockSharesOutstanding",
+        "us-gaap:CommonStockSharesOutstanding"
       ],
       "yahooAcceptedKeys": [
         "sharesOutstanding",

@@ -73,6 +73,7 @@ class FinancialFieldDefinitionCatalogTest {
         assertTrue(catalog.secConcepts("revenue").contains("us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"));
         assertTrue(catalog.secConcepts("total_debt").contains("us-gaap:DebtCurrentAndNoncurrent"));
         assertTrue(catalog.secConcepts("cash_and_short_term_investments").contains("us-gaap:CashCashEquivalentsAndShortTermInvestments"));
+        assertTrue(catalog.secConcepts("shares_outstanding").contains("us-gaap:CommonStockSharesOutstanding"));
         assertTrue(catalog.yahooKeys("revenue").contains("totalRevenue"));
         assertTrue(catalog.yahooKeys("operating_income").contains("operatingIncome"));
         assertTrue(catalog.yahooKeys("total_debt").contains("TotalDebt"));

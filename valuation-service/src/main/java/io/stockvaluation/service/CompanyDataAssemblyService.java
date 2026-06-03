@@ -79,22 +79,31 @@ public class CompanyDataAssemblyService {
                         ? companyFinancialIngestionService.ingest(ticker, basicInfoMap)
                         : companyFinancialIngestionService.ingest(ticker, basicInfoMap, sourceSelection.financialDataProvider());
 
-        FinancialDataDTO financialDataDTO = ingestionData.financialDataDTO();
         SourceProvenance sourceProvenance = ingestionData.sourceProvenance();
         if (sourceSelection.primaryProviderSelected()) {
             CompanyFinancialIngestionService.FinancialIngestionData normalizedIngestion =
                     companyFinancialIngestionService.ingest(ticker, basicInfoMap, dataProvider);
-            sourceProvenance = applyPrimaryFilingReconciliation(
-                    sourceProvenance,
-                    normalizedIngestion.financialDataDTO(),
-                    ingestionData.financialDataDTO(),
-                    normalizedIngestion.sourceProvenance(),
-                    basicInfoMap);
+            PrimaryFilingAvailability primaryIngestionAvailability =
+                    primaryIngestionAvailability(ingestionData, sourceProvenance);
+            if (!primaryIngestionAvailability.available()) {
+                ingestionData = normalizedIngestion;
+                sourceProvenance = applyPrimarySourceMissingFallback(
+                        normalizedIngestion.sourceProvenance(),
+                        primaryIngestionAvailability);
+            } else {
+                sourceProvenance = applyPrimaryFilingReconciliation(
+                        sourceProvenance,
+                        normalizedIngestion.financialDataDTO(),
+                        ingestionData.financialDataDTO(),
+                        normalizedIngestion.sourceProvenance(),
+                        basicInfoMap);
+            }
         } else if (sourceSelection.primaryProviderUnavailable()) {
             sourceProvenance = applyPrimarySourceMissingFallback(sourceProvenance, sourceSelection.primaryAvailability());
         } else if (sourceSelection.nonUsYahooResearchPath()) {
             sourceProvenance = applyNonUsYahooCrossCheckStatus(sourceProvenance);
         }
+        FinancialDataDTO financialDataDTO = ingestionData.financialDataDTO();
         financialDataDTO.setSourceProvenance(sourceProvenance);
         List<Double> historicalRevenue = ingestionData.historicalRevenue();
         List<Double> historicalMargins = ingestionData.historicalMargins();
@@ -301,6 +310,46 @@ public class CompanyDataAssemblyService {
         companyDataDTO.setCompanyDriveDataDTO(companyDriveDataDTO);
 
         return companyDataDTO;
+    }
+
+    private PrimaryFilingAvailability primaryIngestionAvailability(
+            CompanyFinancialIngestionService.FinancialIngestionData ingestionData,
+            SourceProvenance sourceProvenance) {
+        FinancialDataDTO financials = ingestionData != null ? ingestionData.financialDataDTO() : null;
+        List<String> warnings = new ArrayList<>();
+        if (financials == null) {
+            warnings.add("Primary filing ingestion did not return financial data.");
+        } else {
+            if (!positive(financials.getRevenueTTM())) {
+                warnings.add("Primary filing facts did not include usable current revenue.");
+            }
+            if (!positive(financials.getRevenueLTM())) {
+                warnings.add("Primary filing facts did not include usable prior annual revenue for growth calculation.");
+            }
+            if (!positive(financials.getNoOfShareOutstanding())) {
+                warnings.add("Primary filing facts did not include usable point-in-time shares outstanding.");
+            }
+        }
+        if (warnings.isEmpty()) {
+            return PrimaryFilingAvailability.available(primaryProviderName(sourceProvenance));
+        }
+        return PrimaryFilingAvailability.unavailable(
+                "insufficient_facts",
+                primaryProviderName(sourceProvenance),
+                warnings);
+    }
+
+    private String primaryProviderName(SourceProvenance sourceProvenance) {
+        if (sourceProvenance != null
+                && sourceProvenance.getProvider() != null
+                && !sourceProvenance.getProvider().isBlank()) {
+            return sourceProvenance.getProvider();
+        }
+        return primaryFilingDataProvider.getProviderName();
+    }
+
+    private static boolean positive(Double value) {
+        return value != null && Double.isFinite(value) && value > 0.0;
     }
 
     private SourceSelection selectSource(

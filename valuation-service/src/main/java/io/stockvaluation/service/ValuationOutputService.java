@@ -16,6 +16,7 @@ import io.stockvaluation.dto.valuationoutput.BaseYearComparisonDTO;
 import io.stockvaluation.dto.valuationoutput.CompanyDTO;
 import io.stockvaluation.dto.valuationoutput.FinancialDTO;
 import io.stockvaluation.dto.valuationoutput.TerminalValueDTO;
+import io.stockvaluation.exception.InsufficientFinancialDataException;
 import io.stockvaluation.form.FinancialDataInput;
 import io.stockvaluation.repository.IndustryAveragesGlobalRepository;
 import io.stockvaluation.repository.InputStatRepository;
@@ -107,7 +108,11 @@ public class ValuationOutputService {
         companyDTO.setValueOfOptions(calculateValueOfOptions(valuationInputDTO, optionValueResultDTO));
 
         companyDTO.setValueOfEquityInCommonStock(companyDTO.getValueOfEquity() - companyDTO.getValueOfOptions());
-        companyDTO.setNumberOfShares(valuationInputDTO.getFinancialDataDTO().getNoOfShareOutstanding());
+        Double numberOfShares = valuationInputDTO.getFinancialDataDTO().getNoOfShareOutstanding();
+        if (numberOfShares == null || !Double.isFinite(numberOfShares) || numberOfShares <= 0.0) {
+            throw new InsufficientFinancialDataException("shares_outstanding is required for per-share valuation.");
+        }
+        companyDTO.setNumberOfShares(numberOfShares);
         companyDTO
                 .setEstimatedValuePerShare(companyDTO.getValueOfEquityInCommonStock() / companyDTO.getNumberOfShares());
         companyDTO.setPrice(valuationInputDTO.getFinancialDataDTO().getStockPrice());

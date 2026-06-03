@@ -254,6 +254,41 @@ class CompanyDataAssemblyServiceTest {
     }
 
     @Test
+    void assembleCompanyData_researchedUsCompanyFallsBackWhenPrimaryFilingIsNotValuationUsable() {
+        String ticker = "AAPL";
+        Map<String, Object> basicInfoMap = usBasicInfoMap(ticker);
+        when(dataProvider.getCompanyInfo(ticker)).thenReturn(basicInfoMap);
+        when(companyDataMapper.mapBasicInfo(ticker, basicInfoMap)).thenReturn(usBasicInfo());
+        when(primaryFilingDataProvider.hasPrimaryFinancials(ticker)).thenReturn(true);
+
+        FinancialDataDTO primaryFinancials = financials(100.0, 30.0, 52.0, 22.0, 100.0);
+        primaryFinancials.setRevenueLTM(0.0);
+        primaryFinancials.setNoOfShareOutstanding(null);
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, primaryFilingDataProvider))
+                .thenReturn(ingestion(primaryFinancials, SourceProvenance.primaryFiling(
+                        "sec-edgar-companyfacts",
+                        "2025-09-30")));
+
+        FinancialDataDTO yahooFinancials = financials(100.0, 24.0, 50.0, 20.0, 10.0);
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, dataProvider))
+                .thenReturn(ingestion(yahooFinancials, SourceProvenance.yahooNormalized(
+                        "yfinance-http",
+                        "2025-09-30")));
+
+        stubUsValuationInputs();
+
+        CompanyDataDTO result = companyDataAssemblyService.assembleCompanyData(ticker, true);
+
+        SourceProvenance provenance = result.getFinancialDataDTO().getSourceProvenance();
+        assertEquals("yahoo_normalized", provenance.getSourceClass());
+        assertEquals("sec_insufficient_facts_yahoo_fallback", provenance.getSourcePolicyStatus());
+        assertEquals("company_report_check_pending", provenance.getCrossCheckStatus());
+        assertTrue(provenance.getWarnings().stream()
+                .anyMatch(warning -> warning.contains("prior annual revenue")));
+        assertEquals(10.0, result.getFinancialDataDTO().getNoOfShareOutstanding());
+    }
+
+    @Test
     void assembleCompanyData_researchedUsPrimaryFilingWarningsDoNotAccumulateAcrossRuns() {
         String ticker = "AAPL";
         Map<String, Object> basicInfoMap = usBasicInfoMap(ticker);

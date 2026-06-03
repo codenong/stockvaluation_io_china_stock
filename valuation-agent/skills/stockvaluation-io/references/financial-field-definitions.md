@@ -22,7 +22,7 @@ SEC and Yahoo are adapters into the same StockValuation financial schema. The se
 - `research_and_development`: duration R&D expense used for accounting-cleanup diagnostics; autonomous researched mode does not capitalize it.
 - `basic_shares`: duration average basic shares; do not mix with point-in-time shares without warning.
 - `diluted_shares`: duration average diluted shares; report dilution context but do not override share count autonomously.
-- `shares_outstanding`: point-in-time common shares used for per-share equity bridge.
+- `shares_outstanding`: point-in-time common shares used for per-share equity bridge; SEC may provide this as DEI common shares outstanding or US-GAAP common stock shares outstanding.
 - `book_equity`: point-in-time balance-sheet equity used for invested-capital and accounting context.
 - `total_debt`: point-in-time debt used in the claims bridge; direct debt overrides remain blocked in autonomous researched mode.
 - `cash_and_short_term_investments`: point-in-time cash and short-term investments used in the claims bridge; direct cash overrides remain blocked in autonomous researched mode.
