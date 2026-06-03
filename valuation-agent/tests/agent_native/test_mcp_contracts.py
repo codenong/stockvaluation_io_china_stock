@@ -222,6 +222,7 @@ def test_mcp_tools_list_has_required_stockvaluation_contracts():
     assert names == {
         "stockvaluation.health",
         "stockvaluation.value_ticker",
+        "stockvaluation.researched_baseline",
         "stockvaluation.recalculate",
         "stockvaluation.get_assumptions",
         "stockvaluation.get_growth_anchor",
@@ -353,6 +354,114 @@ def test_value_ticker_returns_structured_dcf_json_for_msft():
     assert client.calls == [("MSFT", {})]
 
 
+def test_researched_baseline_is_read_only_policy_bearing_ticker_only_tool():
+    payload = _valuation_payload()
+    payload["sourceQualityGate"] = {
+        "status": "requires_user_decision",
+        "reason": "sec_http_error_yahoo_fallback",
+        "primarySourceExpected": True,
+        "fallbackSourceAvailable": True,
+        "crossCheckRequired": True,
+        "allowedActions": ["continue_with_fallback", "retry_primary_source", "stop"],
+    }
+    client = FakeClient(payload)
+    registry = MCPToolRegistry(client)
+
+    tool = next(item for item in registry.list_tools() if item["name"] == "stockvaluation.researched_baseline")
+    assert tool["annotations"]["readOnlyHint"] is True
+    assert "overrides" not in tool["inputSchema"]["properties"]
+
+    result = registry.call("stockvaluation.researched_baseline", {"ticker": "MSFT"})
+
+    assert result["isError"] is False
+    assert client.calls == [("MSFT", {"researchedBaselineMode": True, "requestPolicyMode": "researched_baseline"})]
+    structured = result["structuredContent"]
+    assert structured["tool"] == "stockvaluation.researched_baseline"
+    assert structured["sourceQualityGate"]["reason"] == "sec_http_error_yahoo_fallback"
+    assert structured["sourceQualityGate"]["status"] == "requires_user_decision"
+    assert structured["policy"]["baselineEntrypoint"] == "researched_baseline"
+
+
+def test_mcp_preserves_service_source_quality_gate_for_value_ticker_without_research_policy():
+    payload = _valuation_payload()
+    payload["sourceQualityGate"] = {
+        "status": "not_required",
+        "reason": "primary_filing_used",
+        "primarySourceExpected": False,
+        "fallbackSourceAvailable": False,
+        "crossCheckRequired": False,
+        "allowedActions": [],
+    }
+
+    result = MCPToolRegistry(FakeClient(payload)).call("stockvaluation.value_ticker", {"ticker": "MSFT"})
+
+    assert result["structuredContent"]["sourceQualityGate"] == payload["sourceQualityGate"]
+    assert result["structuredContent"]["policy"]["baselineEntrypoint"] == "mechanical_baseline"
+
+
+def test_recalculate_preserves_source_quality_gate_in_audit_packet_and_scenario_book():
+    payload = _valuation_payload()
+    payload["sourceQualityGate"] = {
+        "status": "requires_user_decision",
+        "reason": "sec_http_error_yahoo_fallback",
+        "primarySourceExpected": True,
+        "fallbackSourceAvailable": True,
+        "crossCheckRequired": True,
+        "allowedActions": ["continue_with_fallback", "retry_primary_source", "stop"],
+    }
+    client = FakeClient(payload)
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "MSFT",
+            "overrides": {
+                "request_policy": {"mode": "user_refined_scenario"},
+                "revenue_growth": 0.08,
+            },
+        },
+    )
+
+    structured = result["structuredContent"]
+    audit_packet = structured["auditPacket"]["packet"]
+    scenario_book = structured["scenarioBook"]["book"]
+    assert audit_packet["final_report_inputs"]["source_quality_gate"] == payload["sourceQualityGate"]
+    assert scenario_book["provenance_summary"]["source_quality_gate"] == payload["sourceQualityGate"]
+
+
+def test_recalculate_preserves_explicit_source_quality_gate_bypass_from_request_policy():
+    payload = _valuation_payload()
+    client = FakeClient(payload)
+    registry = MCPToolRegistry(client)
+    gate = {
+        "status": "bypassed_by_no_questions",
+        "reason": "user_explicitly_requested_no_questions",
+        "primarySourceExpected": True,
+        "fallbackSourceAvailable": True,
+        "crossCheckRequired": True,
+        "allowedActions": [],
+    }
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "MSFT",
+            "overrides": {
+                "request_policy": {"mode": "user_refined_scenario", "source_quality_gate": gate},
+                "revenue_growth": 0.08,
+            },
+        },
+    )
+
+    structured = result["structuredContent"]
+    audit_packet = structured["auditPacket"]["packet"]
+    scenario_book = structured["scenarioBook"]["book"]
+    assert structured["sourceQualityGate"] == gate
+    assert audit_packet["final_report_inputs"]["source_quality_gate"] == gate
+    assert scenario_book["provenance_summary"]["source_quality_gate"] == gate
+
+
 def test_value_ticker_exposes_honest_single_industry_baseline_contract():
     payload = _valuation_payload()
     payload["companyName"] = "NVIDIA Corporation"
@@ -394,9 +503,9 @@ def test_value_ticker_exposes_compact_source_provenance_metadata():
         "periodEnd": "2025-06-30",
         "retrievalStatus": "retrieved",
         "crossCheckStatus": "company_report_check_pending",
-        "sourcePolicyStatus": "primary_source_missing_fallback",
+        "sourcePolicyStatus": "sec_http_error_yahoo_fallback",
         "warnings": [
-            "US researched valuation is using Yahoo-normalized financials because primary filing data is missing or unavailable."
+            "US researched valuation is using Yahoo-normalized financials because SEC primary filing data was unavailable (sec_http_error_yahoo_fallback)."
         ],
         "dataQualityWarnings": [
             {
@@ -408,6 +517,12 @@ def test_value_ticker_exposes_compact_source_provenance_metadata():
                 "thresholdPct": 0.05,
                 "sourceClass": "primary_filing",
                 "sourceDate": "2025-06-30",
+                "normalizedSourceClass": "yahoo_normalized",
+                "normalizedSourceDate": "2025-03-31",
+                "normalizedPeriodEnd": "2025-03-31",
+                "filingSourceClass": "primary_filing",
+                "filingSourceDate": "2025-06-30",
+                "filingPeriodEnd": "2025-06-30",
             }
         ],
     }
@@ -421,9 +536,9 @@ def test_value_ticker_exposes_compact_source_provenance_metadata():
         "periodEnd": "2025-06-30",
         "retrievalStatus": "retrieved",
         "crossCheckStatus": "company_report_check_pending",
-        "sourcePolicyStatus": "primary_source_missing_fallback",
+        "sourcePolicyStatus": "sec_http_error_yahoo_fallback",
         "warnings": [
-            "US researched valuation is using Yahoo-normalized financials because primary filing data is missing or unavailable."
+            "US researched valuation is using Yahoo-normalized financials because SEC primary filing data was unavailable (sec_http_error_yahoo_fallback)."
         ],
         "dataQualityWarnings": [
             {
@@ -435,12 +550,44 @@ def test_value_ticker_exposes_compact_source_provenance_metadata():
                 "thresholdPct": 0.05,
                 "sourceClass": "primary_filing",
                 "sourceDate": "2025-06-30",
+                "normalizedSourceClass": "yahoo_normalized",
+                "normalizedSourceDate": "2025-03-31",
+                "normalizedPeriodEnd": "2025-03-31",
+                "filingSourceClass": "primary_filing",
+                "filingSourceDate": "2025-06-30",
+                "filingPeriodEnd": "2025-06-30",
             }
         ],
     }
     visible_text = result["content"][0]["text"]
-    assert "primary_source_missing_fallback" in visible_text
+    assert "sec_http_error_yahoo_fallback" in visible_text
     assert len(visible_text) < 600
+
+
+def test_value_ticker_preserves_live_sec_primary_filing_provenance_metadata():
+    payload = _valuation_payload()
+    payload["assumptionTransparency"]["sourceProvenance"] = {
+        "sourceClass": "primary_filing",
+        "provider": "sec-edgar-companyfacts",
+        "sourceDate": "2026-07-30",
+        "periodEnd": "2026-06-30",
+        "retrievalStatus": "retrieved",
+        "crossCheckStatus": "not_applicable",
+        "sourcePolicyStatus": "primary_filing_used",
+        "warnings": [],
+        "dataQualityWarnings": [],
+    }
+
+    result = MCPToolRegistry(FakeClient(payload)).call("stockvaluation.value_ticker", {"ticker": "MSFT"})
+
+    provenance = result["structuredContent"]["provenance"]
+    assert provenance["sourceClass"] == "primary_filing"
+    assert provenance["provider"] == "sec-edgar-companyfacts"
+    assert provenance["sourceDate"] == "2026-07-30"
+    assert provenance["periodEnd"] == "2026-06-30"
+    assert provenance["sourcePolicyStatus"] == "primary_filing_used"
+    assert "primary_filing_used" in result["content"][0]["text"]
+    assert "sec-xbrl-fixture" not in json.dumps(result["structuredContent"])
 
 
 def test_recalculate_preserves_compact_source_provenance_metadata():
@@ -452,8 +599,8 @@ def test_recalculate_preserves_compact_source_provenance_metadata():
         "periodEnd": "2025-06-30",
         "retrievalStatus": "retrieved",
         "crossCheckStatus": "company_report_cross_checked",
-        "sourcePolicyStatus": "yahoo_normalized_with_cross_check_status",
-        "warnings": ["Company report cross-check status is explicit for Yahoo-normalized data."],
+        "sourcePolicyStatus": "primary_adapter_not_supported_yahoo_normalized",
+        "warnings": ["Company report cross-check is required for Yahoo-normalized data before researched claims."],
     }
 
     result = MCPToolRegistry(FakeClient(payload)).call(
@@ -473,12 +620,12 @@ def test_recalculate_preserves_compact_source_provenance_metadata():
         "periodEnd": "2025-06-30",
         "retrievalStatus": "retrieved",
         "crossCheckStatus": "company_report_cross_checked",
-        "sourcePolicyStatus": "yahoo_normalized_with_cross_check_status",
-        "warnings": ["Company report cross-check status is explicit for Yahoo-normalized data."],
+        "sourcePolicyStatus": "primary_adapter_not_supported_yahoo_normalized",
+        "warnings": ["Company report cross-check is required for Yahoo-normalized data before researched claims."],
         "dataQualityWarnings": [],
     }
     visible_text = result["content"][0]["text"]
-    assert "yahoo_normalized_with_cross_check_status" in visible_text
+    assert "primary_adapter_not_supported_yahoo_normalized" in visible_text
     assert len(visible_text) < 600
 
 
@@ -1803,8 +1950,8 @@ def test_report_template_requires_source_quality_summary():
     assert "source policy status" in lower
     assert "cross-check status" in lower
     assert "primary_filing_used" in lower
-    assert "primary_source_missing_fallback" in lower
-    assert "yahoo_normalized_with_cross_check_status" in lower
+    assert "sec_http_error_yahoo_fallback" in lower
+    assert "primary_adapter_not_supported_yahoo_normalized" in lower
 
 
 def test_missing_service_and_non_json_failures_have_stable_shapes():

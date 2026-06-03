@@ -571,7 +571,7 @@ class ValuationWorkflowServiceImplTest {
                 ValuationWorkflowServiceImpl workflow = workflow();
                 CompanyDataDTO companyData = companyData();
                 SourceProvenance provenance = SourceProvenance.yahooNormalized("yfinance-http", "2025-06-30");
-                provenance.setSourcePolicyStatus("primary_source_missing_fallback");
+                provenance.setSourcePolicyStatus("sec_http_error_yahoo_fallback");
                 provenance.setWarnings(List.of("US researched valuation is using Yahoo-normalized financials because the primary filing provider returned unavailable."));
                 companyData.getFinancialDataDTO().setSourceProvenance(provenance);
                 ValuationTemplate template = fcffTemplate();
@@ -585,10 +585,35 @@ class ValuationWorkflowServiceImplTest {
                 assertNotNull(result.getAssumptionTransparency().getSourceProvenance());
                 assertEquals("yahoo_normalized",
                                 result.getAssumptionTransparency().getSourceProvenance().getSourceClass());
-                assertEquals("primary_source_missing_fallback",
+                assertEquals("sec_http_error_yahoo_fallback",
                                 result.getAssumptionTransparency().getSourceProvenance().getSourcePolicyStatus());
                 assertTrue(result.getAssumptionTransparency().getSourceProvenance().getWarnings().stream()
                                 .anyMatch(warning -> warning.contains("US researched valuation")));
+        }
+
+        @Test
+        void getValuation_usResearchedFallbackAddsSourceQualityGate() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                SourceProvenance provenance = SourceProvenance.yahooNormalized("yfinance-http", "2025-06-30");
+                provenance.setSourcePolicyStatus("sec_http_error_yahoo_fallback");
+                companyData.getFinancialDataDTO().setSourceProvenance(provenance);
+                ValuationTemplate template = fcffTemplate();
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setResearchedBaselineMode(true);
+                overrides.setRequestPolicyMode("autonomous_researched");
+                stubHappyPath(companyData, template, valuationOutput(100.0, 100.0), valuationOutput(100.0, 100.0));
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides);
+
+                assertNotNull(result.getSourceQualityGate());
+                assertEquals("requires_user_decision", result.getSourceQualityGate().getStatus());
+                assertEquals("sec_http_error_yahoo_fallback", result.getSourceQualityGate().getReason());
+                assertTrue(result.getSourceQualityGate().isPrimarySourceExpected());
+                assertTrue(result.getSourceQualityGate().isFallbackSourceAvailable());
+                assertTrue(result.getSourceQualityGate().isCrossCheckRequired());
+                assertEquals(List.of("continue_with_fallback", "retry_primary_source", "stop"),
+                                result.getSourceQualityGate().getAllowedActions());
         }
 
         @Test
@@ -608,7 +633,7 @@ class ValuationWorkflowServiceImplTest {
 
                 SourceProvenance output = result.getAssumptionTransparency().getSourceProvenance();
                 assertEquals("yahoo_normalized", output.getSourceClass());
-                assertEquals("primary_source_missing_fallback", output.getSourcePolicyStatus());
+                assertEquals("sec_http_error_yahoo_fallback", output.getSourcePolicyStatus());
                 assertTrue(output.getWarnings().stream()
                                 .anyMatch(warning -> warning.contains("Yahoo-normalized financials")));
         }
@@ -618,7 +643,7 @@ class ValuationWorkflowServiceImplTest {
                 ValuationWorkflowServiceImpl workflow = workflow();
                 CompanyDataDTO companyData = companyData();
                 SourceProvenance provenance = SourceProvenance.yahooNormalized("yfinance-http", "2025-06-30");
-                provenance.setSourcePolicyStatus("primary_source_missing_fallback");
+                provenance.setSourcePolicyStatus("sec_http_error_yahoo_fallback");
                 provenance.setDataQualityWarnings(List.of(new SourceProvenance.DataQualityWarning(
                                 "revenue",
                                 "material_mismatch",
@@ -664,7 +689,7 @@ class ValuationWorkflowServiceImplTest {
 
                 assertEquals("yahoo_normalized",
                                 result.getAssumptionTransparency().getSourceProvenance().getSourceClass());
-                assertEquals("yahoo_normalized_with_cross_check_status",
+                assertEquals("primary_adapter_not_supported_yahoo_normalized",
                                 result.getAssumptionTransparency().getSourceProvenance().getSourcePolicyStatus());
                 assertEquals("company_report_check_pending",
                                 result.getAssumptionTransparency().getSourceProvenance().getCrossCheckStatus());

@@ -10,6 +10,7 @@ import io.stockvaluation.dto.BasicInfoDataDTO;
 import io.stockvaluation.dto.CompanyDataDTO;
 import io.stockvaluation.dto.FinancialDataDTO;
 import io.stockvaluation.provider.DataProvider;
+import io.stockvaluation.provider.PrimaryFilingAvailability;
 import io.stockvaluation.provider.PrimaryFilingDataProvider;
 import io.stockvaluation.provider.SourceProvenance;
 import io.stockvaluation.repository.CostOfCapitalRepository;
@@ -284,6 +285,203 @@ class CompanyDataAssemblyServiceTest {
     }
 
     @Test
+    void assembleCompanyData_reconciliationUsesFieldSpecificShareCountThreshold() {
+        String ticker = "AAPL";
+        Map<String, Object> basicInfoMap = usBasicInfoMap(ticker);
+        when(dataProvider.getCompanyInfo(ticker)).thenReturn(basicInfoMap);
+        when(companyDataMapper.mapBasicInfo(ticker, basicInfoMap)).thenReturn(usBasicInfo());
+        when(primaryFilingDataProvider.hasPrimaryFinancials(ticker)).thenReturn(true);
+
+        CompanyFinancialIngestionService.FinancialIngestionData primaryIngestion =
+                ingestion(financials(100.0, 30.0, 52.0, 22.0, 100.0),
+                        SourceProvenance.primaryFiling("sec-xbrl-fixture", "2025-09-30"));
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, primaryFilingDataProvider))
+                .thenReturn(primaryIngestion);
+
+        CompanyFinancialIngestionService.FinancialIngestionData yahooIngestion =
+                ingestion(financials(100.0, 30.0, 52.0, 22.0, 103.0),
+                        SourceProvenance.yahooNormalized("yfinance-http", "2025-09-30"));
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, dataProvider))
+                .thenReturn(yahooIngestion);
+
+        stubUsValuationInputs();
+
+        CompanyDataDTO result = companyDataAssemblyService.assembleCompanyData(ticker, true);
+
+        SourceProvenance.DataQualityWarning warning = result.getFinancialDataDTO()
+                .getSourceProvenance()
+                .getDataQualityWarnings()
+                .stream()
+                .filter(item -> "shares_outstanding".equals(item.getField()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("material_mismatch", warning.getStatus());
+        assertEquals(0.02, warning.getThresholdPct());
+    }
+
+    @Test
+    void assembleCompanyData_reconciliationWarnsWhenOperatingIncomeSignDiffers() {
+        String ticker = "AAPL";
+        Map<String, Object> basicInfoMap = usBasicInfoMap(ticker);
+        when(dataProvider.getCompanyInfo(ticker)).thenReturn(basicInfoMap);
+        when(companyDataMapper.mapBasicInfo(ticker, basicInfoMap)).thenReturn(usBasicInfo());
+        when(primaryFilingDataProvider.hasPrimaryFinancials(ticker)).thenReturn(true);
+
+        CompanyFinancialIngestionService.FinancialIngestionData primaryIngestion =
+                ingestion(financials(100.0, -1.0, 52.0, 22.0, 100.0),
+                        SourceProvenance.primaryFiling("sec-xbrl-fixture", "2025-09-30"));
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, primaryFilingDataProvider))
+                .thenReturn(primaryIngestion);
+
+        CompanyFinancialIngestionService.FinancialIngestionData yahooIngestion =
+                ingestion(financials(100.0, 1.0, 52.0, 22.0, 100.0),
+                        SourceProvenance.yahooNormalized("yfinance-http", "2025-09-30"));
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, dataProvider))
+                .thenReturn(yahooIngestion);
+
+        stubUsValuationInputs();
+
+        CompanyDataDTO result = companyDataAssemblyService.assembleCompanyData(ticker, true);
+
+        SourceProvenance.DataQualityWarning warning = result.getFinancialDataDTO()
+                .getSourceProvenance()
+                .getDataQualityWarnings()
+                .stream()
+                .filter(item -> "operating_income".equals(item.getField()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("sign_mismatch", warning.getStatus());
+    }
+
+    @Test
+    void assembleCompanyData_reconciliationWarnsWhenRdOrSbcMissingFromOneProvider() {
+        String ticker = "AAPL";
+        Map<String, Object> basicInfoMap = usBasicInfoMap(ticker);
+        when(dataProvider.getCompanyInfo(ticker)).thenReturn(basicInfoMap);
+        when(companyDataMapper.mapBasicInfo(ticker, basicInfoMap)).thenReturn(usBasicInfo());
+        when(primaryFilingDataProvider.hasPrimaryFinancials(ticker)).thenReturn(true);
+
+        FinancialDataDTO primaryFinancials = financials(100.0, 30.0, 52.0, 22.0, 100.0);
+        primaryFinancials.setResearchAndDevelopmentMap(Map.of());
+        primaryFinancials.setStockBasedCompensationTTM(null);
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, primaryFilingDataProvider))
+                .thenReturn(ingestion(primaryFinancials, SourceProvenance.primaryFiling("sec-xbrl-fixture", "2025-09-30")));
+
+        FinancialDataDTO yahooFinancials = financials(100.0, 30.0, 52.0, 22.0, 100.0);
+        yahooFinancials.setResearchAndDevelopmentMap(Map.of("currentR&D-0", 20.0));
+        yahooFinancials.setStockBasedCompensationTTM(12.0);
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, dataProvider))
+                .thenReturn(ingestion(yahooFinancials, SourceProvenance.yahooNormalized("yfinance-http", "2025-09-30")));
+
+        stubUsValuationInputs();
+
+        CompanyDataDTO result = companyDataAssemblyService.assembleCompanyData(ticker, true);
+
+        List<String> warningFields = result.getFinancialDataDTO()
+                .getSourceProvenance()
+                .getDataQualityWarnings()
+                .stream()
+                .filter(item -> "missing_present_mismatch".equals(item.getStatus()))
+                .map(SourceProvenance.DataQualityWarning::getField)
+                .toList();
+        assertTrue(warningFields.contains("research_and_development"));
+        assertTrue(warningFields.contains("stock_based_compensation"));
+    }
+
+    @Test
+    void assembleCompanyData_reconciliationWarnsWhenSourceMetadataDiffersOrIsStale() {
+        String ticker = "AAPL";
+        Map<String, Object> basicInfoMap = usBasicInfoMap(ticker);
+        basicInfoMap.put("financialCurrency", "EUR");
+        when(dataProvider.getCompanyInfo(ticker)).thenReturn(basicInfoMap);
+        when(companyDataMapper.mapBasicInfo(ticker, basicInfoMap)).thenReturn(usBasicInfo());
+        when(primaryFilingDataProvider.hasPrimaryFinancials(ticker)).thenReturn(true);
+
+        SourceProvenance primarySource = SourceProvenance.primaryFiling(
+                "sec-xbrl-fixture",
+                "2024-01-31",
+                "2023-12-31");
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, primaryFilingDataProvider))
+                .thenReturn(ingestion(financials(100.0, 30.0, 52.0, 22.0, 100.0), primarySource));
+
+        SourceProvenance yahooSource = SourceProvenance.yahooNormalized("yfinance-http", "2025-09-30");
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, dataProvider))
+                .thenReturn(ingestion(financials(100.0, 30.0, 52.0, 22.0, 100.0), yahooSource));
+
+        when(currencyRateService.convertCurrency("USD", "EUR", 150.0)).thenReturn(140.0);
+        stubUsValuationInputs();
+
+        CompanyDataDTO result = companyDataAssemblyService.assembleCompanyData(ticker, true);
+
+        List<SourceProvenance.DataQualityWarning> warnings = result.getFinancialDataDTO()
+                .getSourceProvenance()
+                .getDataQualityWarnings();
+        assertWarningStatus(warnings, "source_period", "period_mismatch");
+        assertWarningStatus(warnings, "source_date", "stale_source_date");
+        assertWarningStatus(warnings, "currency", "currency_mismatch");
+        SourceProvenance.DataQualityWarning periodWarning = warning(warnings, "source_period", "period_mismatch");
+        assertEquals("2025-09-30", periodWarning.getNormalizedPeriodEnd());
+        assertEquals("2023-12-31", periodWarning.getFilingPeriodEnd());
+    }
+
+    @Test
+    void assembleCompanyData_reconciliationWarnsWhenAverageSharesDifferFromPointInTimeShares() {
+        String ticker = "AAPL";
+        Map<String, Object> basicInfoMap = usBasicInfoMap(ticker);
+        when(dataProvider.getCompanyInfo(ticker)).thenReturn(basicInfoMap);
+        when(companyDataMapper.mapBasicInfo(ticker, basicInfoMap)).thenReturn(usBasicInfo());
+        when(primaryFilingDataProvider.hasPrimaryFinancials(ticker)).thenReturn(true);
+
+        FinancialDataDTO primaryFinancials = financials(100.0, 30.0, 52.0, 22.0, 100.0);
+        primaryFinancials.setDilutedSharesOutstanding(90.0);
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, primaryFilingDataProvider))
+                .thenReturn(ingestion(primaryFinancials, SourceProvenance.primaryFiling("sec-xbrl-fixture", "2025-09-30")));
+
+        FinancialDataDTO yahooFinancials = financials(100.0, 30.0, 52.0, 22.0, 100.0);
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, dataProvider))
+                .thenReturn(ingestion(yahooFinancials, SourceProvenance.yahooNormalized("yfinance-http", "2025-09-30")));
+
+        stubUsValuationInputs();
+
+        CompanyDataDTO result = companyDataAssemblyService.assembleCompanyData(ticker, true);
+
+        SourceProvenance.DataQualityWarning warning = warning(
+                result.getFinancialDataDTO().getSourceProvenance().getDataQualityWarnings(),
+                "shares_outstanding",
+                "average_vs_point_in_time_mismatch");
+        assertEquals(90.0, warning.getNormalizedValue());
+        assertEquals(100.0, warning.getFilingValue());
+    }
+
+    @Test
+    void assembleCompanyData_reconciliationWarnsWhenRequiredFieldsAreMissingFromBothProviders() {
+        String ticker = "AAPL";
+        Map<String, Object> basicInfoMap = usBasicInfoMap(ticker);
+        when(dataProvider.getCompanyInfo(ticker)).thenReturn(basicInfoMap);
+        when(companyDataMapper.mapBasicInfo(ticker, basicInfoMap)).thenReturn(usBasicInfo());
+        when(primaryFilingDataProvider.hasPrimaryFinancials(ticker)).thenReturn(true);
+
+        FinancialDataDTO primaryFinancials = financials(100.0, 30.0, 52.0, 22.0, 100.0);
+        primaryFinancials.setCashAndMarkablTTM(null);
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, primaryFilingDataProvider))
+                .thenReturn(ingestion(primaryFinancials, SourceProvenance.primaryFiling("sec-xbrl-fixture", "2025-09-30")));
+
+        FinancialDataDTO yahooFinancials = financials(100.0, 30.0, 52.0, 22.0, 100.0);
+        yahooFinancials.setCashAndMarkablTTM(null);
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, dataProvider))
+                .thenReturn(ingestion(yahooFinancials, SourceProvenance.yahooNormalized("yfinance-http", "2025-09-30")));
+
+        stubUsValuationInputs();
+
+        CompanyDataDTO result = companyDataAssemblyService.assembleCompanyData(ticker, true);
+
+        assertWarningStatus(
+                result.getFinancialDataDTO().getSourceProvenance().getDataQualityWarnings(),
+                "cash_and_short_term_investments",
+                "missing_required_field");
+    }
+
+    @Test
     void assembleCompanyData_researchedUsCompanyUsesExplicitFallbackOnlyAfterPrimaryProviderUnavailable() {
         String ticker = "AAPL";
         Map<String, Object> basicInfoMap = usBasicInfoMap(ticker);
@@ -303,10 +501,102 @@ class CompanyDataAssemblyServiceTest {
 
         SourceProvenance provenance = result.getFinancialDataDTO().getSourceProvenance();
         assertEquals("yahoo_normalized", provenance.getSourceClass());
-        assertEquals("primary_source_missing_fallback", provenance.getSourcePolicyStatus());
+        assertEquals("sec_http_error_yahoo_fallback", provenance.getSourcePolicyStatus());
         assertEquals("company_report_check_pending", provenance.getCrossCheckStatus());
         assertTrue(provenance.getWarnings().stream()
                 .anyMatch(warning -> warning.contains("primary filing provider returned unavailable")));
+    }
+
+    @Test
+    void assembleCompanyData_researchedUsFallbackIncludesClassifiedSecUnavailableStatus() {
+        String ticker = "MSFT";
+        Map<String, Object> basicInfoMap = usBasicInfoMap(ticker);
+        when(dataProvider.getCompanyInfo(ticker)).thenReturn(basicInfoMap);
+        when(companyDataMapper.mapBasicInfo(ticker, basicInfoMap)).thenReturn(usBasicInfo());
+        when(primaryFilingDataProvider.hasPrimaryFinancials(ticker)).thenReturn(false);
+        when(primaryFilingDataProvider.getPrimaryFinancialsAvailability(ticker))
+                .thenReturn(PrimaryFilingAvailability.unavailable(
+                        "missing_user_agent",
+                        "sec-edgar-companyfacts",
+                        List.of("SEC EDGAR provider requires SEC_USER_AGENT/provider.sec.user-agent.")));
+
+        CompanyFinancialIngestionService.FinancialIngestionData yahooIngestion =
+                ingestion(financials(100.0, 24.0, 50.0, 20.0, 10.0),
+                        SourceProvenance.yahooNormalized("yfinance-http", "2025-09-30"));
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, dataProvider))
+                .thenReturn(yahooIngestion);
+
+        stubUsValuationInputs();
+
+        CompanyDataDTO result = companyDataAssemblyService.assembleCompanyData(ticker, true);
+
+        SourceProvenance provenance = result.getFinancialDataDTO().getSourceProvenance();
+        assertEquals("sec_missing_user_agent_yahoo_fallback", provenance.getSourcePolicyStatus());
+        assertTrue(provenance.getWarnings().stream()
+                .anyMatch(warning -> warning.contains("missing_user_agent")));
+        assertTrue(provenance.getWarnings().stream()
+                .anyMatch(warning -> warning.contains("SEC_USER_AGENT")));
+    }
+
+    @Test
+    void assembleCompanyData_researchedUsHttpErrorFallbackUsesSpecificPhase9Status() {
+        String ticker = "MSFT";
+        Map<String, Object> basicInfoMap = usBasicInfoMap(ticker);
+        when(dataProvider.getCompanyInfo(ticker)).thenReturn(basicInfoMap);
+        when(companyDataMapper.mapBasicInfo(ticker, basicInfoMap)).thenReturn(usBasicInfo());
+        when(primaryFilingDataProvider.hasPrimaryFinancials(ticker)).thenReturn(false);
+        when(primaryFilingDataProvider.getPrimaryFinancialsAvailability(ticker))
+                .thenReturn(PrimaryFilingAvailability.unavailable(
+                        "http_error",
+                        "sec-edgar-companyfacts",
+                        List.of("SEC companyfacts request returned 503.")));
+
+        CompanyFinancialIngestionService.FinancialIngestionData yahooIngestion =
+                ingestion(financials(100.0, 24.0, 50.0, 20.0, 10.0),
+                        SourceProvenance.yahooNormalized("yfinance-http", "2025-09-30"));
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, dataProvider))
+                .thenReturn(yahooIngestion);
+
+        stubUsValuationInputs();
+
+        CompanyDataDTO result = companyDataAssemblyService.assembleCompanyData(ticker, true);
+
+        SourceProvenance provenance = result.getFinancialDataDTO().getSourceProvenance();
+        assertEquals("yahoo_normalized", provenance.getSourceClass());
+        assertEquals("sec_http_error_yahoo_fallback", provenance.getSourcePolicyStatus());
+        assertEquals("company_report_check_pending", provenance.getCrossCheckStatus());
+        assertTrue(provenance.getWarnings().stream()
+                .anyMatch(warning -> warning.contains("http_error")));
+    }
+
+    @Test
+    void assembleCompanyData_researchedUsUnsupportedTaxonomyUsesSpecificPhase9Status() {
+        String ticker = "ASML";
+        Map<String, Object> basicInfoMap = usBasicInfoMap(ticker);
+        when(dataProvider.getCompanyInfo(ticker)).thenReturn(basicInfoMap);
+        when(companyDataMapper.mapBasicInfo(ticker, basicInfoMap)).thenReturn(usBasicInfo());
+        when(primaryFilingDataProvider.hasPrimaryFinancials(ticker)).thenReturn(false);
+        when(primaryFilingDataProvider.getPrimaryFinancialsAvailability(ticker))
+                .thenReturn(PrimaryFilingAvailability.unavailable(
+                        "unsupported_taxonomy",
+                        "sec-edgar-companyfacts",
+                        List.of("SEC companyfacts used ifrs-full taxonomy.")));
+
+        CompanyFinancialIngestionService.FinancialIngestionData yahooIngestion =
+                ingestion(financials(100.0, 24.0, 50.0, 20.0, 10.0),
+                        SourceProvenance.yahooNormalized("yfinance-http", "2025-09-30"));
+        when(companyFinancialIngestionService.ingest(ticker, basicInfoMap, dataProvider))
+                .thenReturn(yahooIngestion);
+
+        stubUsValuationInputs();
+
+        CompanyDataDTO result = companyDataAssemblyService.assembleCompanyData(ticker, true);
+
+        SourceProvenance provenance = result.getFinancialDataDTO().getSourceProvenance();
+        assertEquals("sec_unsupported_taxonomy_yahoo_fallback", provenance.getSourcePolicyStatus());
+        assertEquals("company_report_check_pending", provenance.getCrossCheckStatus());
+        assertTrue(provenance.getWarnings().stream()
+                .anyMatch(warning -> warning.contains("unsupported_taxonomy")));
     }
 
     @Test
@@ -346,7 +636,7 @@ class CompanyDataAssemblyServiceTest {
         CompanyDataDTO result = companyDataAssemblyService.assembleCompanyData(ticker, true);
 
         SourceProvenance provenance = result.getFinancialDataDTO().getSourceProvenance();
-        assertEquals("yahoo_normalized_with_cross_check_status", provenance.getSourcePolicyStatus());
+        assertEquals("primary_adapter_not_supported_yahoo_normalized", provenance.getSourcePolicyStatus());
         assertEquals("company_report_check_pending", provenance.getCrossCheckStatus());
     }
 
@@ -525,6 +815,24 @@ class CompanyDataAssemblyServiceTest {
                 5.0,
                 25.0,
                 provenance);
+    }
+
+    private static void assertWarningStatus(
+            List<SourceProvenance.DataQualityWarning> warnings,
+            String field,
+            String status) {
+        warning(warnings, field, status);
+    }
+
+    private static SourceProvenance.DataQualityWarning warning(
+            List<SourceProvenance.DataQualityWarning> warnings,
+            String field,
+            String status) {
+        return warnings.stream()
+                .filter(item -> field.equals(item.getField()))
+                .filter(item -> status.equals(item.getStatus()))
+                .findFirst()
+                .orElseThrow();
     }
 
     private void stubUsValuationInputs() {

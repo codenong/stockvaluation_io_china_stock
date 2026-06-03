@@ -47,7 +47,7 @@ Expected output:
 
 ## `stockvaluation.value_ticker`
 
-Fetches the baseline local DCF JSON.
+Fetches the baseline local DCF JSON. This is the mechanical/default-provider baseline; do not describe core financials as SEC primary-source backed unless returned provenance says `primary_filing`. Keep `stockvaluation.value_ticker` mechanical. Use `stockvaluation.researched_baseline` for the default full researched source-policy baseline.
 
 Input:
 
@@ -65,6 +65,7 @@ Use these output sections:
 - `assumptions`: grouped assumptions and rationales.
 - `accountingAndClaims`: compact AccountingAndClaims statuses for accounting cleanup and capital-claim topics.
 - `provenance`: compact core financial source metadata and source-policy status.
+- `sourceQualityGate`: source-quality decision metadata when the workflow must stop, continue with an explicit bypass, retry, or require company-report cross-check.
 - `growthAnchor`: Damodaran growth-anchor mapping, confidence, percentile band, source date, and warnings.
 - `referenceData`: market-data and reference-data status.
 - `warnings`: service and data-quality notes.
@@ -103,9 +104,54 @@ Use these fields as report inputs, not autonomous model changes. Market-implied 
 Source provenance rules:
 
 - `primary_filing`, `yahoo_normalized`, `company_ir`, and `agent_researched` are the supported source classes.
-- For US researched valuations, prefer `primary_filing` when SEC/XBRL or filing-derived data is returned. If the tool returns `primary_source_missing_fallback`, label Yahoo-normalized financials as a fallback and do not imply primary-source support.
+- For US researched valuations, prefer `primary_filing` when SEC/EDGAR companyfacts or filing-derived data is returned. If the tool returns `sec_missing_user_agent_yahoo_fallback`, `sec_http_error_yahoo_fallback`, `sec_rate_limited_yahoo_fallback`, `sec_cik_not_found_yahoo_fallback`, `sec_unsupported_filer_yahoo_fallback`, `sec_unsupported_taxonomy_yahoo_fallback`, `sec_insufficient_facts_yahoo_fallback`, or `sec_parse_error_yahoo_fallback`, label Yahoo-normalized financials as a fallback and do not imply primary-source support.
+- For non-US ordinary listings or unsupported deterministic primary adapters, `primary_adapter_not_supported_yahoo_normalized` means Yahoo-normalized financials are available but company-report cross-check is required before researched claims.
+- `sec-edgar-companyfacts` means live SEC/EDGAR companyfacts/submissions data from the deterministic valuation service. `sec-xbrl-fixture` means fixture/test data and must not be described as broad live SEC support.
 - For non-US researched valuations, `yahoo_normalized` is allowed when source date, retrieval status, and company-report or filing cross-check status are explicit.
 - Treat provenance warnings and material mismatch warnings as data-quality limitations. They are not autonomous assumption evidence.
+
+Field definitions:
+
+- Use `{baseDir}/references/financial-field-definitions.md` for human-readable field meanings.
+- The service-owned canonical contract is `valuation-service/src/main/resources/data/financial_field_definitions.json`.
+- Field-level provenance is compact in ordinary output and detailed in audit/debug surfaces. Do not invent field meanings or thresholds.
+
+## `stockvaluation.researched_baseline`
+
+Fetches the default full researched baseline with researched source policy enabled. This tool is read-only and ticker-only. It does not accept arbitrary scenario overrides and it does not replace `stockvaluation.recalculate` for governed scenario math.
+
+Input:
+
+```json
+{
+  "ticker": "MSFT"
+}
+```
+
+Use the same output sections as `stockvaluation.value_ticker`, plus the researched policy marker in `policy.baselineEntrypoint`.
+
+Read `sourceQualityGate` before assumption judgment, guided refinement, or final report:
+
+```json
+{
+  "sourceQualityGate": {
+    "status": "requires_user_decision",
+    "reason": "sec_http_error_yahoo_fallback",
+    "primarySourceExpected": true,
+    "fallbackSourceAvailable": true,
+    "crossCheckRequired": true,
+    "allowedActions": ["continue_with_fallback", "retry_primary_source", "stop"]
+  }
+}
+```
+
+Allowed gate statuses include `not_required`, `requires_user_decision`, `bypassed_by_quick_mode`, `bypassed_by_no_questions`, `bypassed_by_smoke_test`, `bypassed_by_automation`, `approved_continue_with_fallback`, `approved_continue_after_cross_check`, `retry_requested`, and `stopped_by_user`.
+
+If SEC was expected and fallback was used, stop immediately after source selection. Say that SEC primary source was expected but unavailable, Yahoo-normalized fallback is available, and ask the user to choose `continue_with_fallback`, `retry_primary_source`, or `stop`.
+
+If `primary_adapter_not_supported_yahoo_normalized` is returned, do not describe it as an SEC failure. Make the gate the first part of evidence review, say that no supported deterministic primary-filing adapter covers this listing, require company-report cross-check before researched claims, and ask the user to choose `continue_after_company_report_cross_check`, corrections/additional sources, or `stop`.
+
+Do not present a generic `approve` prompt as sufficient for either source-quality gate. Quick, no-questions, smoke-test, and automation paths may bypass only when explicitly requested and must label the bypass.
 
 ## `stockvaluation.recalculate`
 

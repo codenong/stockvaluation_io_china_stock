@@ -70,6 +70,7 @@ The local MCP tools and deterministic valuation service handle:
 - reference-data status
 - effective assumptions
 - clear failure explanations
+- source policy, `sourceQualityGate` metadata, and SEC/Yahoo adapter provenance
 
 The user:
 
@@ -121,16 +122,17 @@ This project is Damodaran-inspired. It is not affiliated with or endorsed by Asw
 The default flow is not a one-shot report.
 
 1. The agent checks local service health.
-2. The agent researches the company.
-3. Source-heavy research can use subagents when supported.
-4. The agent builds a mechanical baseline from local MCP output.
-5. The agent gathers and classifies driver-specific evidence.
-6. The agent stops at a human evidence review gate before guided valuation refinement.
-7. After the gate is cleared, the agent builds an evidence-constrained assumption judgment.
-8. Any DCF math must come from `stockvaluation.recalculate`, not hand calculations.
-9. The agent asks materiality-driven guided valuation questions before the final report.
-10. The guided questions include bounded modeling defaults, not investment advice.
-11. After the user answers, the agent maps those answers into a user-refined scenario, calls local MCP tools again, and writes the final educational report.
+2. The agent calls `stockvaluation.researched_baseline` for the default full researched baseline and source-policy decision.
+3. If `sourceQualityGate` requires a decision, the agent stops or labels an explicit quick/no-questions/automation/smoke-test bypass.
+4. The agent researches the company.
+5. Source-heavy research can use subagents when supported.
+6. The agent gathers and classifies driver-specific evidence.
+7. The agent stops at a human evidence review gate before guided valuation refinement.
+8. After the gate is cleared, the agent builds an evidence-constrained assumption judgment.
+9. Any DCF math must come from `stockvaluation.recalculate`, not hand calculations.
+10. The agent asks materiality-driven guided valuation questions before the final report.
+11. The guided questions include bounded modeling defaults, not investment advice.
+12. After the user answers, the agent maps those answers into a user-refined scenario, calls local MCP tools again, and writes the final educational report.
 
 Use a quick or no-questions path only when the user explicitly asks for it.
 
@@ -195,6 +197,7 @@ For the default researched flow, expect the agent to research first, build a mec
 
 - `stockvaluation.health`
 - `stockvaluation.value_ticker`
+- `stockvaluation.researched_baseline`
 - `stockvaluation.recalculate`
 - `stockvaluation.get_assumptions`
 - `stockvaluation.get_growth_anchor`
@@ -203,8 +206,11 @@ For the default researched flow, expect the agent to research first, build a mec
 
 MCP tools return structured JSON. Agents should treat them as bounded deterministic tools, not as a hidden full valuation agent.
 
+SEC/EDGAR and Yahoo are adapters into a common StockValuation financial schema. For supported SEC-covered researched valuations, the service tries SEC/EDGAR primary filing data first. Yahoo-normalized financials remain available as an explicit fallback or global normalized source, but they must not be labeled primary filing data. Canonical field definitions live in `valuation-service/src/main/resources/data/financial_field_definitions.json` and are mirrored in the installed skill reference. Frozen SEC/Yahoo fixtures are test-only and are not production support logic.
+
 - `stockvaluation.health` checks the MCP adapter and local valuation service.
-- `stockvaluation.value_ticker` creates the baseline valuation.
+- `stockvaluation.value_ticker` creates the mechanical baseline valuation.
+- `stockvaluation.researched_baseline` creates the default full researched baseline with source policy enabled and returns `sourceQualityGate` when the user must approve fallback, retry, stop, or cross-check.
 - `stockvaluation.recalculate` is used for scenario math.
 - `stockvaluation.get_assumptions` exposes effective assumptions.
 - `stockvaluation.get_growth_anchor` gives context for growth assumptions.
@@ -223,6 +229,7 @@ Local:
 
 Not fully local:
 
+- US SEC primary financial data can come from public SEC EDGAR JSON APIs when `SEC_USER_AGENT` is configured.
 - Market and company data can come from Yahoo Finance.
 - Currency conversion uses the keyless Frankfurter provider by default.
 - The agent may use web research for filings, investor relations pages, news, and other public sources.
@@ -240,10 +247,12 @@ Fully local LLM support through Ollama is not implemented by this repo today. Th
 
 ## Limits
 
-- The service depends on Yahoo Finance for company, market, and normalized financial data.
+- The service uses live SEC/EDGAR companyfacts and submissions data for supported US SEC filers when `SEC_USER_AGENT` is configured.
+- SEC access uses declared User-Agent headers, conservative rate limiting below the SEC fair-access maximum, and in-memory response caching.
+- The service still depends on Yahoo Finance for company info, market data, revenue estimates, global coverage, and normalized fallback financial data.
 - Research/news search is performed by the user's agent against public sources such as filings, investor relations pages, company newsrooms, news, and other web sources; it is not a local StockValuation data provider.
-- US researched valuations prefer a primary-filing financial path when available, but current checked-in coverage is fixture-backed rather than broad live SEC ingestion.
-- When primary filing data is unavailable for a US researched valuation, the service falls back to Yahoo-normalized financials and reports that fallback in provenance.
+- US researched valuations prefer live SEC primary-filing financials when supported and configured.
+- When SEC primary filing data is unavailable, incomplete, unsupported, disabled, or missing a declared User-Agent, the service falls back to Yahoo-normalized financials and reports that fallback in provenance.
 - Non-US researched valuations may use Yahoo-normalized financials with explicit source-provenance and company-report cross-check caveats.
 - Valuation can fail when upstream data is missing, unsupported, stale, or low quality.
 - Historical coverage is limited.

@@ -1,6 +1,7 @@
 package io.stockvaluation.provider;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
@@ -9,6 +10,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class FixturePrimaryFilingDataProviderTest {
 
     private final FixturePrimaryFilingDataProvider provider = new FixturePrimaryFilingDataProvider();
+
+    @Test
+    void fixtureProviderIsNotAProductionSpringComponent() {
+        assertNull(FixturePrimaryFilingDataProvider.class.getAnnotation(Component.class));
+    }
 
     @Test
     void fixtureProviderReturnsPrimaryFilingProvenanceForSupportedUsTicker() {

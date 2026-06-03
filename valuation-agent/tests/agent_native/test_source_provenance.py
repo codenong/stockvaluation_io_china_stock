@@ -20,6 +20,7 @@ def test_us_researched_yahoo_financials_surface_missing_primary_fallback():
                 "source_date": "2025-06-30",
                 "period_end": "2025-06-30",
                 "retrieval_status": "retrieved",
+                "source_policy_status": "sec_http_error_yahoo_fallback",
                 "primary_source_expected": True,
                 "primary_source_available": False,
                 "cross_check_status": "not_checked",
@@ -28,11 +29,11 @@ def test_us_researched_yahoo_financials_surface_missing_primary_fallback():
     )
 
     assert result["ok"] is True
-    assert result["status"] == "primary_source_missing_fallback"
+    assert result["status"] == "sec_http_error_yahoo_fallback"
     assert result["core_financials"]["source_class"] == "yahoo_normalized"
-    assert result["core_financials"]["source_policy_status"] == "primary_source_missing_fallback"
+    assert result["core_financials"]["source_policy_status"] == "sec_http_error_yahoo_fallback"
     assert result["policy_warnings"] == [
-        "US researched valuation is using Yahoo-normalized financials because primary filing data is missing or unavailable."
+        "US researched valuation is using Yahoo-normalized financials because SEC primary filing data was unavailable (sec_http_error_yahoo_fallback)."
     ]
 
 
@@ -115,8 +116,8 @@ def test_non_us_yahoo_normalized_financials_are_allowed_with_cross_check_status(
     )
 
     assert result["ok"] is True
-    assert result["status"] == "yahoo_normalized_with_cross_check_status"
-    assert result["core_financials"]["source_policy_status"] == "yahoo_normalized_with_cross_check_status"
+    assert result["status"] == "primary_adapter_not_supported_yahoo_normalized"
+    assert result["core_financials"]["source_policy_status"] == "primary_adapter_not_supported_yahoo_normalized"
     assert result["core_financials"]["cross_check_status"] == "company_report_check_pending"
     assert result["policy_warnings"] == [
         "Non-US researched valuation may use Yahoo-normalized financials when company-report cross-check status is explicit."
@@ -287,6 +288,6 @@ def test_source_provenance_acceptance_fixture_cases_match_phase_3_policy():
 
     results = {case["name"]: validate_source_provenance_packet(case["packet"]) for case in cases}
 
-    assert results["us_missing_primary_fallback"]["status"] == "primary_source_missing_fallback"
-    assert results["non_us_yahoo_with_cross_check_status"]["status"] == "yahoo_normalized_with_cross_check_status"
+    assert results["us_missing_primary_fallback"]["status"] == "sec_missing_user_agent_yahoo_fallback"
+    assert results["non_us_yahoo_with_cross_check_status"]["status"] == "primary_adapter_not_supported_yahoo_normalized"
     assert results["material_reconciliation_mismatch"]["data_quality_warnings"][0]["status"] == "material_mismatch"

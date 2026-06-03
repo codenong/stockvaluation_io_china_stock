@@ -1,0 +1,14 @@
+{
+  "cik": "0000789019",
+  "name": "MICROSOFT CORP",
+  "tickers": ["MSFT"],
+  "exchanges": ["Nasdaq"],
+  "filings": {
+    "recent": {
+      "accessionNumber": ["0000950170-26-111111", "0000950170-26-222222"],
+      "form": ["10-K", "10-Q"],
+      "filingDate": ["2026-07-30", "2026-04-25"],
+      "reportDate": ["2026-06-30", "2026-03-31"]
+    }
+  }
+}

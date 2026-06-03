@@ -476,6 +476,10 @@ def test_compose_exposes_only_agent_native_runtime_services():
         "POSTGRES_DB",
         "POSTGRES_PASSWORD",
         "POSTGRES_USER",
+        "SEC_EDGAR_CACHE_TTL_SECONDS",
+        "SEC_EDGAR_ENABLED",
+        "SEC_EDGAR_REQUESTS_PER_SECOND",
+        "SEC_USER_AGENT",
         "YFINANCE_BASE_URL",
     }
     assert not any(
@@ -515,6 +519,10 @@ def test_env_example_lists_only_agent_native_required_secrets():
         "POSTGRES_DB",
         "POSTGRES_PASSWORD",
         "POSTGRES_USER",
+        "SEC_EDGAR_CACHE_TTL_SECONDS",
+        "SEC_EDGAR_ENABLED",
+        "SEC_EDGAR_REQUESTS_PER_SECOND",
+        "SEC_USER_AGENT",
     }
     assert not any(
         name.endswith("_KEY") or "SECRET" in name or "TOKEN" in name or "JWT" in name

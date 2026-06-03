@@ -3,6 +3,7 @@ package io.stockvaluation.provider;
 import io.stockvaluation.dto.BasicInfoDataDTO;
 import io.stockvaluation.dto.CompanyDataDTO;
 import io.stockvaluation.dto.FinancialDataDTO;
+import io.stockvaluation.provider.field.FinancialFieldDefinitionCatalog;
 
 import java.util.List;
 import java.util.Map;
@@ -42,6 +43,7 @@ import java.time.ZoneOffset;
  * </ul>
  */
 public interface DataProvider extends FinancialSnapshotProvider {
+    FinancialFieldDefinitionCatalog FIELD_DEFINITIONS = FinancialFieldDefinitionCatalog.loadDefault();
 
     /**
      * Get full company data for valuation.
@@ -238,37 +240,17 @@ public interface DataProvider extends FinancialSnapshotProvider {
             Map<String, Object> payload,
             String providerName) {
         return new IncomeStatementSnapshot(
-                firstNumeric(payload, List.of(
-                        "totalRevenue",
-                        "TotalRevenue")),
-                firstNumeric(payload, List.of(
-                        "operatingIncome",
-                        "EBIT",
-                        "OperatingIncome")),
+                firstNumeric(payload, yahooKeys("revenue")),
+                firstNumeric(payload, yahooKeys("operating_income")),
                 firstNumeric(payload, List.of(
                         "specialIncomeCharges",
                         "SpecialIncomeCharges")),
-                firstNumeric(payload, List.of(
-                        "interestExpense",
-                        "InterestExpense")),
-                firstNumeric(payload, List.of(
-                        "taxProvision",
-                        "TaxProvision",
-                        "IncomeTaxExpense")),
-                firstNumeric(payload, List.of(
-                        "pretaxIncome",
-                        "PretaxIncome",
-                        "IncomeBeforeTax")),
-                firstNumeric(payload, List.of(
-                        "researchAndDevelopment",
-                        "ResearchAndDevelopment",
-                        "ResearchAndDevelopmentExpense")),
-                firstNumeric(payload, List.of(
-                        "basicAverageShares",
-                        "BasicAverageShares")),
-                firstNumeric(payload, List.of(
-                        "dilutedAverageShares",
-                        "DilutedAverageShares")),
+                firstNumeric(payload, yahooKeys("interest_expense")),
+                firstNumeric(payload, yahooKeys("tax_provision")),
+                firstNumeric(payload, yahooKeys("pretax_income")),
+                firstNumeric(payload, yahooKeys("research_and_development")),
+                firstNumeric(payload, yahooKeys("basic_shares")),
+                firstNumeric(payload, yahooKeys("diluted_shares")),
                 SourceProvenance.yahooNormalized(providerName, periodEndFromEpochMillis(periodKey)));
     }
 
@@ -277,27 +259,11 @@ public interface DataProvider extends FinancialSnapshotProvider {
             Map<String, Object> payload,
             String providerName) {
         return new BalanceSheetSnapshot(
-                firstNumeric(payload, List.of(
-                        "bookValueEquity",
-                        "CommonStockEquity",
-                        "StockholdersEquity",
-                        "TotalEquityGrossMinorityInterest",
-                        "TotalEquity")),
-                firstNumeric(payload, List.of(
-                        "totalDebt",
-                        "TotalDebt",
-                        "LongTermDebtAndCapitalLeaseObligation",
-                        "TotalNonCurrentLiabilitiesNetMinorityInterest")),
-                firstNumeric(payload, List.of(
-                        "cashAndShortTermInvestments",
-                        "CashCashEquivalentsAndShortTermInvestments")),
-                firstNumeric(payload, List.of(
-                        "sharesOutstanding",
-                        "OrdinarySharesNumber")),
-                firstNumeric(payload, List.of(
-                        "minorityInterest",
-                        "MinorityInterest",
-                        "MinorityInterests")),
+                firstNumeric(payload, yahooKeys("book_equity")),
+                firstNumeric(payload, yahooKeys("total_debt")),
+                firstNumeric(payload, yahooKeys("cash_and_short_term_investments")),
+                firstNumeric(payload, yahooKeys("shares_outstanding")),
+                firstNumeric(payload, yahooKeys("minority_interest")),
                 SourceProvenance.yahooNormalized(providerName, periodEndFromEpochMillis(periodKey)));
     }
 
@@ -306,10 +272,7 @@ public interface DataProvider extends FinancialSnapshotProvider {
             Map<String, Object> payload,
             String providerName) {
         return new CashFlowSnapshot(
-                firstNumeric(payload, List.of(
-                        "stockBasedCompensation",
-                        "StockBasedCompensation",
-                        "ShareBasedCompensation")),
+                firstNumeric(payload, yahooKeys("stock_based_compensation")),
                 SourceProvenance.yahooNormalized(providerName, periodEndFromEpochMillis(periodKey)));
     }
 
@@ -354,5 +317,9 @@ public interface DataProvider extends FinancialSnapshotProvider {
             }
         }
         return null;
+    }
+
+    private static List<String> yahooKeys(String fieldName) {
+        return FIELD_DEFINITIONS.yahooKeys(fieldName);
     }
 }

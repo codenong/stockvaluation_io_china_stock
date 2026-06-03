@@ -73,7 +73,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
          * Core valuation calculation logic for the deterministic POST endpoint.
          * 
          * Step Order (aligned for consistency):
-         * 1. Fetch company data from Yahoo Finance
+         * 1. Fetch company baseline data from the selected financial provider
          * 2. Determine valuation template and primary model
          * 3. Initialize financial data with baseline values
          * 4. Apply user overrides (if any)
@@ -95,7 +95,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         FinancialDataInput overrides,
                         boolean enableDCFAnalysis) {
 
-                // Step 1: Fetch company baseline data from Yahoo Finance
+                // Step 1: Fetch company baseline data from the selected financial provider
                 CompanyDataDTO companyDataDTO = requiresResearchedSourcePolicy(overrides)
                                 ? commonService.getCompanyDataFromProvider(ticker, overrides)
                                 : commonService.getCompanyDataFromProvider(ticker);
@@ -237,6 +237,9 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 template,
                                 templateSelectionReason,
                                 adjustedParameters));
+                valuationOutputDTO.setSourceQualityGate(buildSourceQualityGate(
+                                financialDataInput,
+                                valuationOutputDTO.getAssumptionTransparency().getSourceProvenance()));
 
                 // Step 11: Add Growth Anchor Diagnostics
                 Optional<io.stockvaluation.dto.GrowthAnchorDTO> anchorDtoOpt = growthAnchorService
@@ -742,9 +745,20 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 }
                 return provenance.getDataQualityWarnings().stream()
                                 .filter(Objects::nonNull)
-                                .filter(warning -> field.equals(warning.getField()))
+                                .filter(warning -> field.equals(warning.getField())
+                                                || canonicalFieldAlias(field).equals(warning.getField()))
                                 .findFirst()
                                 .orElse(null);
+        }
+
+        private String canonicalFieldAlias(String field) {
+                if ("cash_and_marketable_securities".equals(field)) {
+                        return "cash_and_short_term_investments";
+                }
+                if ("debt".equals(field)) {
+                        return "total_debt";
+                }
+                return field;
         }
 
         private String reconciliationStatus(SourceProvenance provenance) {
@@ -922,7 +936,9 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 boolean usCompany = "United States".equalsIgnoreCase(country);
 
                 if (yahooNormalized && researchedMode && usCompany) {
-                        provenance.setSourcePolicyStatus("primary_source_missing_fallback");
+                        if (!isSecYahooFallbackStatus(provenance.getSourcePolicyStatus())) {
+                                provenance.setSourcePolicyStatus("sec_http_error_yahoo_fallback");
+                        }
                         if (provenance.getCrossCheckStatus() == null
                                         || provenance.getCrossCheckStatus().isBlank()
                                         || "not_checked_by_service".equals(provenance.getCrossCheckStatus())
@@ -931,7 +947,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         }
                         warnings.add("US researched valuation is using Yahoo-normalized financials because primary filing data was unavailable or not returned.");
                 } else if (yahooNormalized && researchedMode && !usCompany) {
-                        provenance.setSourcePolicyStatus("yahoo_normalized_with_cross_check_status");
+                        provenance.setSourcePolicyStatus("primary_adapter_not_supported_yahoo_normalized");
                         if (provenance.getCrossCheckStatus() == null
                                         || provenance.getCrossCheckStatus().isBlank()
                                         || "not_checked_by_service".equals(provenance.getCrossCheckStatus())
@@ -946,6 +962,46 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 }
                 provenance.setWarnings(dedupeStrings(warnings));
                 return provenance;
+        }
+
+        private SourceQualityGateDTO buildSourceQualityGate(
+                        FinancialDataInput financialDataInput,
+                        SourceProvenance provenance) {
+                String reason = provenance != null ? provenance.getSourcePolicyStatus() : null;
+                boolean researchedMode = financialDataInput != null
+                                && (Boolean.TRUE.equals(financialDataInput.getResearchedBaselineMode())
+                                                || POLICY_AUTONOMOUS_RESEARCHED.equals(resolveRequestPolicyMode(financialDataInput)));
+                if (researchedMode && isSecYahooFallbackStatus(reason)) {
+                        return new SourceQualityGateDTO(
+                                        "requires_user_decision",
+                                        reason,
+                                        true,
+                                        true,
+                                        true,
+                                        List.of("continue_with_fallback", "retry_primary_source", "stop"));
+                }
+                if (researchedMode && "primary_adapter_not_supported_yahoo_normalized".equals(reason)) {
+                        return new SourceQualityGateDTO(
+                                        "requires_user_decision",
+                                        reason,
+                                        false,
+                                        true,
+                                        true,
+                                        List.of("continue_with_fallback", "stop"));
+                }
+                return new SourceQualityGateDTO(
+                                "not_required",
+                                reason,
+                                false,
+                                SourceProvenance.YAHOO_NORMALIZED.equals(provenance != null ? provenance.getSourceClass() : null),
+                                false,
+                                List.of());
+        }
+
+        private boolean isSecYahooFallbackStatus(String status) {
+                return status != null
+                                && status.startsWith("sec_")
+                                && status.endsWith("_yahoo_fallback");
         }
 
         private boolean requiresResearchedSourcePolicy(FinancialDataInput overrides) {

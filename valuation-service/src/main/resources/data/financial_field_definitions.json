@@ -1,0 +1,562 @@
+{
+  "schemaVersion": "financial_field_definitions.v1",
+  "fields": [
+    {
+      "fieldName": "revenue",
+      "humanLabel": "Revenue",
+      "valuationUse": "Core operating scale, growth base, and margin denominator.",
+      "statementFamily": "income_statement",
+      "basis": "duration",
+      "periodExpectations": "Annual and quarterly duration facts; TTM may be constructed from comparable quarters.",
+      "unitExpectations": "Monetary value in the financial statement currency.",
+      "secPreferredConcepts": [
+        "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax",
+        "us-gaap:Revenues",
+        "us-gaap:SalesRevenueNet"
+      ],
+      "yahooAcceptedKeys": [
+        "totalRevenue",
+        "TotalRevenue"
+      ],
+      "commonAdjustmentsIncluded": "Provider-reported net revenue after ordinary revenue recognition adjustments.",
+      "commonAdjustmentsExcluded": "Segment mix, backlog, and non-financial operating KPIs.",
+      "adjustmentRisksByProvider": {
+        "sec": "Filed concepts can differ by company presentation and may require fallback tags.",
+        "yahoo": "Yahoo-normalized revenue can reflect provider restatement and statement normalization."
+      },
+      "knownProviderDifferences": "SEC maps filed XBRL concepts; Yahoo maps normalized statement keys.",
+      "fallbackBehaviorWhenMissing": "Required for valuation; missing revenue blocks primary-filing use and falls back when allowed.",
+      "reconciliationThreshold": {
+        "relativeDifference": 0.05,
+        "materialityBasis": "relative_to_filing_value"
+      },
+      "warningRules": [
+        "relative_mismatch",
+        "unit_mismatch",
+        "currency_mismatch",
+        "period_mismatch",
+        "stale_source_date",
+        "fallback_tag_or_key_used",
+        "missing_required_field"
+      ],
+      "auditProvenanceRequired": true
+    },
+    {
+      "fieldName": "operating_income",
+      "humanLabel": "Operating income",
+      "valuationUse": "Current operating profitability and margin base.",
+      "statementFamily": "income_statement",
+      "basis": "duration",
+      "periodExpectations": "Annual and quarterly duration facts comparable to revenue periods.",
+      "unitExpectations": "Monetary value in the financial statement currency.",
+      "secPreferredConcepts": [
+        "us-gaap:OperatingIncomeLoss"
+      ],
+      "yahooAcceptedKeys": [
+        "operatingIncome",
+        "EBIT",
+        "OperatingIncome"
+      ],
+      "commonAdjustmentsIncluded": "Reported operating income according to provider statement mapping.",
+      "commonAdjustmentsExcluded": "No autonomous normalization for one-time items, R&D capitalization, leases, or SBC.",
+      "adjustmentRisksByProvider": {
+        "sec": "Filed OperatingIncomeLoss reflects company taxonomy presentation.",
+        "yahoo": "Yahoo may normalize statement rows and can differ from filed operating income."
+      },
+      "knownProviderDifferences": "Yahoo EBIT aliases may not equal filed operating income for every issuer.",
+      "fallbackBehaviorWhenMissing": "Required for primary-filing use; missing value downgrades source quality.",
+      "reconciliationThreshold": {
+        "relativeDifference": 0.05,
+        "materialityBasis": "relative_to_filing_value"
+      },
+      "warningRules": [
+        "relative_mismatch",
+        "sign_mismatch",
+        "unit_mismatch",
+        "currency_mismatch",
+        "period_mismatch",
+        "stale_source_date",
+        "fallback_tag_or_key_used",
+        "missing_required_field"
+      ],
+      "auditProvenanceRequired": true
+    },
+    {
+      "fieldName": "interest_expense",
+      "humanLabel": "Interest expense",
+      "valuationUse": "Debt cost diagnostics and accounting context.",
+      "statementFamily": "income_statement",
+      "basis": "duration",
+      "periodExpectations": "Annual and quarterly duration facts.",
+      "unitExpectations": "Monetary value in the financial statement currency.",
+      "secPreferredConcepts": [
+        "us-gaap:InterestExpenseNonOperating",
+        "us-gaap:InterestExpense"
+      ],
+      "yahooAcceptedKeys": [
+        "interestExpense",
+        "InterestExpense"
+      ],
+      "commonAdjustmentsIncluded": "Provider-reported interest expense.",
+      "commonAdjustmentsExcluded": "No autonomous debt-cost override or lease reclassification.",
+      "adjustmentRisksByProvider": {
+        "sec": "Interest presentation can vary between operating and non-operating facts.",
+        "yahoo": "Yahoo-normalized interest expense can be absent or sign-normalized."
+      },
+      "knownProviderDifferences": "Provider sign conventions and classification can differ.",
+      "fallbackBehaviorWhenMissing": "Leave missing/report-only unless required by a tested downstream path.",
+      "reconciliationThreshold": {
+        "relativeDifference": 0.05,
+        "materialityBasis": "relative_to_filing_value"
+      },
+      "warningRules": [
+        "relative_mismatch",
+        "sign_mismatch",
+        "unit_mismatch",
+        "currency_mismatch",
+        "period_mismatch",
+        "stale_source_date",
+        "fallback_tag_or_key_used"
+      ],
+      "auditProvenanceRequired": true
+    },
+    {
+      "fieldName": "tax_provision",
+      "humanLabel": "Tax provision",
+      "valuationUse": "Effective tax-rate diagnostics and tax interpretation context.",
+      "statementFamily": "income_statement",
+      "basis": "duration",
+      "periodExpectations": "Annual and quarterly duration facts aligned with pretax income.",
+      "unitExpectations": "Monetary value in the financial statement currency.",
+      "secPreferredConcepts": [
+        "us-gaap:IncomeTaxExpenseBenefit"
+      ],
+      "yahooAcceptedKeys": [
+        "taxProvision",
+        "TaxProvision",
+        "IncomeTaxExpense"
+      ],
+      "commonAdjustmentsIncluded": "Reported tax expense or benefit.",
+      "commonAdjustmentsExcluded": "No autonomous tax-rate change or NOL modeling.",
+      "adjustmentRisksByProvider": {
+        "sec": "Tax benefits can carry sign and classification complexity.",
+        "yahoo": "Yahoo tax fields may be normalized or absent."
+      },
+      "knownProviderDifferences": "Sign conventions can affect implied effective tax interpretation.",
+      "fallbackBehaviorWhenMissing": "Use service marginal tax fallback where applicable and report source limitation.",
+      "reconciliationThreshold": {
+        "relativeDifference": 0.1,
+        "materialityBasis": "relative_to_filing_value"
+      },
+      "warningRules": [
+        "relative_mismatch",
+        "sign_mismatch",
+        "effective_tax_rate_mismatch",
+        "unit_mismatch",
+        "currency_mismatch",
+        "period_mismatch",
+        "stale_source_date",
+        "fallback_tag_or_key_used"
+      ],
+      "auditProvenanceRequired": true
+    },
+    {
+      "fieldName": "pretax_income",
+      "humanLabel": "Pretax income",
+      "valuationUse": "Effective tax-rate denominator and profitability context.",
+      "statementFamily": "income_statement",
+      "basis": "duration",
+      "periodExpectations": "Annual and quarterly duration facts aligned with tax provision.",
+      "unitExpectations": "Monetary value in the financial statement currency.",
+      "secPreferredConcepts": [
+        "us-gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "us-gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxes"
+      ],
+      "yahooAcceptedKeys": [
+        "pretaxIncome",
+        "PretaxIncome",
+        "IncomeBeforeTax"
+      ],
+      "commonAdjustmentsIncluded": "Provider-reported pretax income.",
+      "commonAdjustmentsExcluded": "No autonomous normalization for unusual items.",
+      "adjustmentRisksByProvider": {
+        "sec": "Concept can vary based on continuing operations and noncontrolling interest presentation.",
+        "yahoo": "Yahoo may choose a normalized income-before-tax key."
+      },
+      "knownProviderDifferences": "Tax-rate interpretation changes materially when sign or income basis differs.",
+      "fallbackBehaviorWhenMissing": "Effective tax calculation falls back to country marginal tax when unavailable.",
+      "reconciliationThreshold": {
+        "relativeDifference": 0.1,
+        "materialityBasis": "relative_to_filing_value"
+      },
+      "warningRules": [
+        "relative_mismatch",
+        "sign_mismatch",
+        "effective_tax_rate_mismatch",
+        "unit_mismatch",
+        "currency_mismatch",
+        "period_mismatch",
+        "stale_source_date",
+        "fallback_tag_or_key_used"
+      ],
+      "auditProvenanceRequired": true
+    },
+    {
+      "fieldName": "research_and_development",
+      "humanLabel": "Research and development",
+      "valuationUse": "Accounting cleanup diagnostics and possible explicit governed R&D scenario support.",
+      "statementFamily": "income_statement",
+      "basis": "duration",
+      "periodExpectations": "Annual duration history preferred; quarterly duration facts can support TTM.",
+      "unitExpectations": "Monetary value in the financial statement currency.",
+      "secPreferredConcepts": [
+        "us-gaap:ResearchAndDevelopmentExpense"
+      ],
+      "yahooAcceptedKeys": [
+        "researchAndDevelopment",
+        "ResearchAndDevelopment",
+        "ResearchAndDevelopmentExpense"
+      ],
+      "commonAdjustmentsIncluded": "Reported R&D expense when separately disclosed.",
+      "commonAdjustmentsExcluded": "No automatic capitalization in autonomous researched mode.",
+      "adjustmentRisksByProvider": {
+        "sec": "Some issuers do not separately tag R&D or present it in combined lines.",
+        "yahoo": "Yahoo may omit R&D or map it differently across industries."
+      },
+      "knownProviderDifferences": "Missing R&D from one provider while another has material R&D is a report limitation.",
+      "fallbackBehaviorWhenMissing": "Preserve missing status; do not convert missing R&D into analyzed cleanup.",
+      "reconciliationThreshold": {
+        "relativeDifference": 0.1,
+        "materialityBasis": "relative_to_filing_value"
+      },
+      "warningRules": [
+        "relative_mismatch",
+        "missing_present_mismatch",
+        "unit_mismatch",
+        "currency_mismatch",
+        "period_mismatch",
+        "stale_source_date",
+        "fallback_tag_or_key_used"
+      ],
+      "auditProvenanceRequired": true
+    },
+    {
+      "fieldName": "basic_shares",
+      "humanLabel": "Basic average shares",
+      "valuationUse": "Share-count diagnostics and dilution context.",
+      "statementFamily": "income_statement",
+      "basis": "duration_average",
+      "periodExpectations": "Average shares for the income statement period.",
+      "unitExpectations": "Shares.",
+      "secPreferredConcepts": [
+        "us-gaap:WeightedAverageNumberOfSharesOutstandingBasic"
+      ],
+      "yahooAcceptedKeys": [
+        "basicAverageShares",
+        "BasicAverageShares"
+      ],
+      "commonAdjustmentsIncluded": "Weighted average basic shares.",
+      "commonAdjustmentsExcluded": "Point-in-time shares outstanding and options/warrants adjustment.",
+      "adjustmentRisksByProvider": {
+        "sec": "Average-share concepts are not equivalent to point-in-time shares.",
+        "yahoo": "Yahoo may omit average shares or provide provider-normalized share rows."
+      },
+      "knownProviderDifferences": "Average shares must not be mixed with point-in-time shares without warning.",
+      "fallbackBehaviorWhenMissing": "Leave missing and report limitation.",
+      "reconciliationThreshold": {
+        "relativeDifference": 0.02,
+        "materialityBasis": "relative_to_filing_value"
+      },
+      "warningRules": [
+        "relative_mismatch",
+        "average_vs_point_in_time_mismatch",
+        "unit_mismatch",
+        "period_mismatch",
+        "stale_source_date",
+        "fallback_tag_or_key_used"
+      ],
+      "auditProvenanceRequired": true
+    },
+    {
+      "fieldName": "diluted_shares",
+      "humanLabel": "Diluted average shares",
+      "valuationUse": "Dilution diagnostics and per-share context.",
+      "statementFamily": "income_statement",
+      "basis": "duration_average",
+      "periodExpectations": "Average diluted shares for the income statement period.",
+      "unitExpectations": "Shares.",
+      "secPreferredConcepts": [
+        "us-gaap:WeightedAverageNumberOfDilutedSharesOutstanding"
+      ],
+      "yahooAcceptedKeys": [
+        "dilutedAverageShares",
+        "DilutedAverageShares"
+      ],
+      "commonAdjustmentsIncluded": "Weighted average diluted shares.",
+      "commonAdjustmentsExcluded": "Point-in-time shares outstanding and explicit option-value adjustments.",
+      "adjustmentRisksByProvider": {
+        "sec": "Diluted average shares can differ materially from current shares outstanding.",
+        "yahoo": "Yahoo may provide normalized share rows or omit diluted shares."
+      },
+      "knownProviderDifferences": "Average shares are period measures, while valuation per-share output uses share-count bridge assumptions.",
+      "fallbackBehaviorWhenMissing": "Leave missing and preserve report-only dilution caveat.",
+      "reconciliationThreshold": {
+        "relativeDifference": 0.02,
+        "materialityBasis": "relative_to_filing_value"
+      },
+      "warningRules": [
+        "relative_mismatch",
+        "average_vs_point_in_time_mismatch",
+        "unit_mismatch",
+        "period_mismatch",
+        "stale_source_date",
+        "fallback_tag_or_key_used"
+      ],
+      "auditProvenanceRequired": true
+    },
+    {
+      "fieldName": "shares_outstanding",
+      "humanLabel": "Shares outstanding",
+      "valuationUse": "Per-share equity value bridge.",
+      "statementFamily": "balance_sheet_or_dei",
+      "basis": "point_in_time",
+      "periodExpectations": "Instant fact at or near the latest balance sheet date.",
+      "unitExpectations": "Shares.",
+      "secPreferredConcepts": [
+        "dei:EntityCommonStockSharesOutstanding"
+      ],
+      "yahooAcceptedKeys": [
+        "sharesOutstanding",
+        "OrdinarySharesNumber"
+      ],
+      "commonAdjustmentsIncluded": "Current common shares outstanding where available.",
+      "commonAdjustmentsExcluded": "Average shares, option dilution, warrants, and treasury method adjustments.",
+      "adjustmentRisksByProvider": {
+        "sec": "DEI shares are point-in-time and may not align with average income statement periods.",
+        "yahoo": "Yahoo share count can come from market data or normalized statement fields."
+      },
+      "knownProviderDifferences": "Share-count basis differences can alter per-share valuation output.",
+      "fallbackBehaviorWhenMissing": "Report missing share-count bridge; do not invent shares.",
+      "reconciliationThreshold": {
+        "relativeDifference": 0.02,
+        "materialityBasis": "relative_to_filing_value"
+      },
+      "warningRules": [
+        "relative_mismatch",
+        "average_vs_point_in_time_mismatch",
+        "unit_mismatch",
+        "period_mismatch",
+        "stale_source_date",
+        "fallback_tag_or_key_used",
+        "missing_required_field"
+      ],
+      "auditProvenanceRequired": true
+    },
+    {
+      "fieldName": "book_equity",
+      "humanLabel": "Book equity",
+      "valuationUse": "Invested-capital and accounting bridge context.",
+      "statementFamily": "balance_sheet",
+      "basis": "point_in_time",
+      "periodExpectations": "Instant balance sheet fact.",
+      "unitExpectations": "Monetary value in the financial statement currency.",
+      "secPreferredConcepts": [
+        "us-gaap:StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+        "us-gaap:StockholdersEquity"
+      ],
+      "yahooAcceptedKeys": [
+        "bookValueEquity",
+        "CommonStockEquity",
+        "StockholdersEquity",
+        "TotalEquityGrossMinorityInterest",
+        "TotalEquity"
+      ],
+      "commonAdjustmentsIncluded": "Reported stockholders' equity according to source mapping.",
+      "commonAdjustmentsExcluded": "No autonomous lease, R&D, or minority-interest restatement.",
+      "adjustmentRisksByProvider": {
+        "sec": "Equity including noncontrolling interest can differ from common equity.",
+        "yahoo": "Yahoo equity rows may include or exclude minority interest depending on provider mapping."
+      },
+      "knownProviderDifferences": "Book equity is context, not a direct autonomous valuation override.",
+      "fallbackBehaviorWhenMissing": "Leave missing or zero according to existing service behavior and report limitation.",
+      "reconciliationThreshold": {
+        "relativeDifference": 0.05,
+        "materialityBasis": "relative_to_filing_value"
+      },
+      "warningRules": [
+        "relative_mismatch",
+        "unit_mismatch",
+        "currency_mismatch",
+        "period_mismatch",
+        "stale_source_date",
+        "fallback_tag_or_key_used"
+      ],
+      "auditProvenanceRequired": true
+    },
+    {
+      "fieldName": "total_debt",
+      "humanLabel": "Total debt",
+      "valuationUse": "Claims bridge from enterprise value to equity value.",
+      "statementFamily": "balance_sheet",
+      "basis": "point_in_time",
+      "periodExpectations": "Instant balance sheet fact; current plus noncurrent synthesis only when total debt is absent.",
+      "unitExpectations": "Monetary value in the financial statement currency.",
+      "secPreferredConcepts": [
+        "us-gaap:DebtCurrentAndNoncurrent",
+        "us-gaap:LongTermDebtAndFinanceLeaseObligationsCurrent",
+        "us-gaap:LongTermDebtCurrent",
+        "us-gaap:ShortTermBorrowings",
+        "us-gaap:ShortTermDebt",
+        "us-gaap:LongTermDebtAndFinanceLeaseObligationsNoncurrent",
+        "us-gaap:LongTermDebtNoncurrent",
+        "us-gaap:LongTermDebt"
+      ],
+      "yahooAcceptedKeys": [
+        "totalDebt",
+        "TotalDebt",
+        "LongTermDebtAndCapitalLeaseObligation",
+        "TotalNonCurrentLiabilitiesNetMinorityInterest"
+      ],
+      "commonAdjustmentsIncluded": "Reported or provider-normalized total debt.",
+      "commonAdjustmentsExcluded": "No autonomous lease or off-balance-sheet debt adjustment.",
+      "adjustmentRisksByProvider": {
+        "sec": "Debt may require current plus noncurrent synthesis; avoid double counting when total debt exists.",
+        "yahoo": "Yahoo total debt is provider-normalized and may include lease obligations."
+      },
+      "knownProviderDifferences": "Debt classification can differ materially between filed tags and normalized provider rows.",
+      "fallbackBehaviorWhenMissing": "Preserve missing status; direct debt overrides remain blocked in autonomous researched mode.",
+      "reconciliationThreshold": {
+        "relativeDifference": 0.05,
+        "materialityBasis": "relative_to_filing_value"
+      },
+      "warningRules": [
+        "relative_mismatch",
+        "unit_mismatch",
+        "currency_mismatch",
+        "period_mismatch",
+        "stale_source_date",
+        "fallback_tag_or_key_used",
+        "missing_required_field"
+      ],
+      "auditProvenanceRequired": true
+    },
+    {
+      "fieldName": "cash_and_short_term_investments",
+      "humanLabel": "Cash and short-term investments",
+      "valuationUse": "Claims bridge from enterprise value to equity value.",
+      "statementFamily": "balance_sheet",
+      "basis": "point_in_time",
+      "periodExpectations": "Instant balance sheet fact; cash plus investments synthesis only when combined tag is absent.",
+      "unitExpectations": "Monetary value in the financial statement currency.",
+      "secPreferredConcepts": [
+        "us-gaap:CashCashEquivalentsAndShortTermInvestments",
+        "us-gaap:CashAndCashEquivalentsAtCarryingValue",
+        "us-gaap:ShortTermInvestments"
+      ],
+      "yahooAcceptedKeys": [
+        "cashAndShortTermInvestments",
+        "CashCashEquivalentsAndShortTermInvestments"
+      ],
+      "commonAdjustmentsIncluded": "Reported cash, equivalents, and short-term investments where available.",
+      "commonAdjustmentsExcluded": "No autonomous excess cash or trapped cash analysis.",
+      "adjustmentRisksByProvider": {
+        "sec": "Combined tag may be absent and require cash plus short-term investment synthesis.",
+        "yahoo": "Yahoo may normalize cash and short-term investments into a single row."
+      },
+      "knownProviderDifferences": "Cash classification can differ when short-term investments are separate.",
+      "fallbackBehaviorWhenMissing": "Preserve missing status; direct cash overrides remain blocked in autonomous researched mode.",
+      "reconciliationThreshold": {
+        "relativeDifference": 0.05,
+        "materialityBasis": "relative_to_filing_value"
+      },
+      "warningRules": [
+        "relative_mismatch",
+        "unit_mismatch",
+        "currency_mismatch",
+        "period_mismatch",
+        "stale_source_date",
+        "fallback_tag_or_key_used",
+        "missing_required_field"
+      ],
+      "auditProvenanceRequired": true
+    },
+    {
+      "fieldName": "minority_interest",
+      "humanLabel": "Minority interest",
+      "valuationUse": "Claims and equity bridge context.",
+      "statementFamily": "balance_sheet",
+      "basis": "point_in_time",
+      "periodExpectations": "Instant balance sheet fact.",
+      "unitExpectations": "Monetary value in the financial statement currency.",
+      "secPreferredConcepts": [
+        "us-gaap:MinorityInterest"
+      ],
+      "yahooAcceptedKeys": [
+        "minorityInterest",
+        "MinorityInterest",
+        "MinorityInterests"
+      ],
+      "commonAdjustmentsIncluded": "Reported noncontrolling interest where available.",
+      "commonAdjustmentsExcluded": "No autonomous minority-interest adjustment beyond existing service fields.",
+      "adjustmentRisksByProvider": {
+        "sec": "Minority interest may be included in equity concepts or separately disclosed.",
+        "yahoo": "Yahoo can omit or normalize minority-interest rows."
+      },
+      "knownProviderDifferences": "Missing/present mismatches can affect claims interpretation.",
+      "fallbackBehaviorWhenMissing": "Treat as missing or zero according to existing service behavior and report limitation.",
+      "reconciliationThreshold": {
+        "relativeDifference": 0.1,
+        "materialityBasis": "relative_to_filing_value"
+      },
+      "warningRules": [
+        "relative_mismatch",
+        "missing_present_mismatch",
+        "unit_mismatch",
+        "currency_mismatch",
+        "period_mismatch",
+        "stale_source_date",
+        "fallback_tag_or_key_used"
+      ],
+      "auditProvenanceRequired": true
+    },
+    {
+      "fieldName": "stock_based_compensation",
+      "humanLabel": "Stock-based compensation",
+      "valuationUse": "SBC and dilution diagnostics; report-only in autonomous researched mode.",
+      "statementFamily": "cash_flow",
+      "basis": "duration",
+      "periodExpectations": "Annual duration history preferred; quarterly duration facts can support TTM.",
+      "unitExpectations": "Monetary value in the financial statement currency.",
+      "secPreferredConcepts": [
+        "us-gaap:ShareBasedCompensation"
+      ],
+      "yahooAcceptedKeys": [
+        "stockBasedCompensation",
+        "StockBasedCompensation",
+        "ShareBasedCompensation"
+      ],
+      "commonAdjustmentsIncluded": "Reported share-based compensation add-back where available.",
+      "commonAdjustmentsExcluded": "No autonomous dilution or SBC adjustment in researched mode.",
+      "adjustmentRisksByProvider": {
+        "sec": "SBC tags can be absent or classified differently in cash-flow statements.",
+        "yahoo": "Yahoo may omit SBC or normalize it under alternate cash-flow keys."
+      },
+      "knownProviderDifferences": "Missing SBC from one provider while another reports material SBC is a report limitation.",
+      "fallbackBehaviorWhenMissing": "Preserve missing status; do not imply SBC was analyzed.",
+      "reconciliationThreshold": {
+        "relativeDifference": 0.1,
+        "materialityBasis": "relative_to_filing_value"
+      },
+      "warningRules": [
+        "relative_mismatch",
+        "missing_present_mismatch",
+        "unit_mismatch",
+        "currency_mismatch",
+        "period_mismatch",
+        "stale_source_date",
+        "fallback_tag_or_key_used"
+      ],
+      "auditProvenanceRequired": true
+    }
+  ]
+}

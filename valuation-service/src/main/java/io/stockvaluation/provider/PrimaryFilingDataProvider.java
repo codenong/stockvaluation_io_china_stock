@@ -10,4 +10,14 @@ package io.stockvaluation.provider;
 public interface PrimaryFilingDataProvider extends FinancialSnapshotProvider {
 
     boolean hasPrimaryFinancials(String ticker);
+
+    default PrimaryFilingAvailability getPrimaryFinancialsAvailability(String ticker) {
+        if (hasPrimaryFinancials(ticker)) {
+            return PrimaryFilingAvailability.available(getProviderName());
+        }
+        return PrimaryFilingAvailability.unavailable(
+                "unavailable",
+                getProviderName(),
+                java.util.List.of("Primary filing provider returned unavailable."));
+    }
 }

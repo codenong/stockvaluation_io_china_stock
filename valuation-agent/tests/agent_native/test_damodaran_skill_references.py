@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from valuation_agent.installer import AgentInstaller, bundled_skill_dir
@@ -21,6 +22,7 @@ REQUIRED_GUIDES = {
     "options-leases-other-claims.md",
     "segment-quality.md",
     "special-company-stop-rules.md",
+    "financial-field-definitions.md",
 }
 
 REQUIRED_COVERAGE_TOPICS = [
@@ -67,6 +69,49 @@ def test_damodaran_reference_set_exists():
     references = bundled_skill_dir() / "references"
 
     assert REQUIRED_GUIDES.issubset({path.name for path in references.iterdir()})
+
+
+def test_financial_field_definition_reference_mirrors_service_contract():
+    repo_root = Path(__file__).parents[3]
+    service_contract = json.loads(
+        (repo_root / "valuation-service/src/main/resources/data/financial_field_definitions.json")
+        .read_text(encoding="utf-8")
+    )
+    reference = _read_reference("financial-field-definitions.md")
+
+    assert "valuation-service/src/main/resources/data/financial_field_definitions.json" in reference
+    assert "SEC and Yahoo are adapters into the same StockValuation financial schema" in reference
+    for field in service_contract["fields"]:
+        assert f"`{field['fieldName']}`" in reference
+
+
+def test_skill_docs_describe_researched_baseline_source_gate_and_field_contract():
+    skill = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8")
+    mcp = _read_reference("mcp-tools.md")
+    template = _read_reference("report-template.md")
+
+    for text in [skill, mcp, template]:
+        assert "stockvaluation.researched_baseline" in text
+        assert "sourceQualityGate" in text
+        assert "sec_http_error_yahoo_fallback" in text
+        assert "primary_adapter_not_supported_yahoo_normalized" in text
+        assert "financial-field-definitions.md" in text
+    assert "Keep `stockvaluation.value_ticker` mechanical" in skill
+    assert "Do not look for or request a high-level researched valuation tool." not in skill
+
+
+def test_source_quality_gate_docs_force_explicit_user_choice():
+    skill = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8")
+    gate = _read_reference("evidence-review-gate.md")
+    mcp = _read_reference("mcp-tools.md")
+    combined = "\n".join([skill, gate, mcp]).lower()
+
+    assert "sec primary source was expected but unavailable" in combined
+    assert "continue with yahoo-normalized fallback" in combined
+    assert "retry the primary source" in combined
+    assert "no supported deterministic primary-filing adapter covers this listing" in combined
+    assert "continue after company-report cross-check" in combined
+    assert "do not present a generic `approve` prompt as sufficient" in combined
 
 
 def test_coverage_map_has_required_topics_support_states_and_qa_fields():

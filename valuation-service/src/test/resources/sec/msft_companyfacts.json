@@ -1,0 +1,57 @@
+{
+  "cik": 789019,
+  "entityName": "MICROSOFT CORP",
+  "facts": {
+    "dei": {
+      "EntityCommonStockSharesOutstanding": {
+        "units": {
+          "shares": [
+            {"end": "2026-06-30", "val": 7430000000, "accn": "0000950170-26-111111", "fy": 2026, "fp": "FY", "form": "10-K", "filed": "2026-07-30", "frame": "CY2026Q2I"},
+            {"end": "2026-03-31", "val": 7440000000, "accn": "0000950170-26-222222", "fy": 2026, "fp": "Q3", "form": "10-Q", "filed": "2026-04-25", "frame": "CY2026Q1I"}
+          ]
+        }
+      }
+    },
+    "us-gaap": {
+      "RevenueFromContractWithCustomerExcludingAssessedTax": {
+        "units": {
+          "USD": [
+            {"start": "2025-07-01", "end": "2026-06-30", "val": 281724000000, "accn": "0000950170-26-111111", "fy": 2026, "fp": "FY", "form": "10-K", "filed": "2026-07-30", "frame": "CY2026"},
+            {"start": "2024-07-01", "end": "2025-06-30", "val": 245122000000, "accn": "0000950170-25-111111", "fy": 2025, "fp": "FY", "form": "10-K", "filed": "2025-07-30", "frame": "CY2025"},
+            {"start": "2023-07-01", "end": "2024-06-30", "val": 211915000000, "accn": "0000950170-24-111111", "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-07-30", "frame": "CY2024"},
+            {"start": "2022-07-01", "end": "2023-06-30", "val": 198270000000, "accn": "0000950170-23-111111", "fy": 2023, "fp": "FY", "form": "10-K", "filed": "2023-07-30", "frame": "CY2023"},
+            {"start": "2026-01-01", "end": "2026-03-31", "val": 70000000000, "accn": "0000950170-26-222222", "fy": 2026, "fp": "Q3", "form": "10-Q", "filed": "2026-04-25", "frame": "CY2026Q1"},
+            {"start": "2025-10-01", "end": "2025-12-31", "val": 68000000000, "accn": "0000950170-26-333333", "fy": 2026, "fp": "Q2", "form": "10-Q", "filed": "2026-01-25", "frame": "CY2025Q4"},
+            {"start": "2025-07-01", "end": "2025-09-30", "val": 66000000000, "accn": "0000950170-26-444444", "fy": 2026, "fp": "Q1", "form": "10-Q", "filed": "2025-10-25", "frame": "CY2025Q3"},
+            {"start": "2025-04-01", "end": "2025-06-30", "val": 64000000000, "accn": "0000950170-25-555555", "fy": 2025, "fp": "Q4", "form": "10-Q", "filed": "2025-07-25", "frame": "CY2025Q2"}
+          ]
+        }
+      },
+      "OperatingIncomeLoss": {
+        "units": {
+          "USD": [
+            {"start": "2025-07-01", "end": "2026-06-30", "val": 128528000000, "accn": "0000950170-26-111111", "fy": 2026, "fp": "FY", "form": "10-K", "filed": "2026-07-30", "frame": "CY2026"},
+            {"start": "2024-07-01", "end": "2025-06-30", "val": 109433000000, "accn": "0000950170-25-111111", "fy": 2025, "fp": "FY", "form": "10-K", "filed": "2025-07-30", "frame": "CY2025"},
+            {"start": "2023-07-01", "end": "2024-06-30", "val": 88523000000, "accn": "0000950170-24-111111", "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-07-30", "frame": "CY2024"},
+            {"start": "2022-07-01", "end": "2023-06-30", "val": 83383000000, "accn": "0000950170-23-111111", "fy": 2023, "fp": "FY", "form": "10-K", "filed": "2023-07-30", "frame": "CY2023"},
+            {"start": "2026-01-01", "end": "2026-03-31", "val": 32000000000, "accn": "0000950170-26-222222", "fy": 2026, "fp": "Q3", "form": "10-Q", "filed": "2026-04-25", "frame": "CY2026Q1"},
+            {"start": "2025-10-01", "end": "2025-12-31", "val": 31000000000, "accn": "0000950170-26-333333", "fy": 2026, "fp": "Q2", "form": "10-Q", "filed": "2026-01-25", "frame": "CY2025Q4"},
+            {"start": "2025-07-01", "end": "2025-09-30", "val": 30000000000, "accn": "0000950170-26-444444", "fy": 2026, "fp": "Q1", "form": "10-Q", "filed": "2025-10-25", "frame": "CY2025Q3"},
+            {"start": "2025-04-01", "end": "2025-06-30", "val": 29000000000, "accn": "0000950170-25-555555", "fy": 2025, "fp": "Q4", "form": "10-Q", "filed": "2025-07-25", "frame": "CY2025Q2"}
+          ]
+        }
+      },
+      "InterestExpenseNonOperating": {"units": {"USD": [{"start": "2025-07-01", "end": "2026-06-30", "val": 1000000000, "form": "10-K", "filed": "2026-07-30", "fp": "FY", "frame": "CY2026"}]}},
+      "IncomeTaxExpenseBenefit": {"units": {"USD": [{"start": "2025-07-01", "end": "2026-06-30", "val": 19651000000, "form": "10-K", "filed": "2026-07-30", "fp": "FY", "frame": "CY2026"}]}},
+      "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest": {"units": {"USD": [{"start": "2025-07-01", "end": "2026-06-30", "val": 108877000000, "form": "10-K", "filed": "2026-07-30", "fp": "FY", "frame": "CY2026"}]}},
+      "ResearchAndDevelopmentExpense": {"units": {"USD": [{"start": "2025-07-01", "end": "2026-06-30", "val": 32747000000, "form": "10-K", "filed": "2026-07-30", "fp": "FY", "frame": "CY2026"}]}},
+      "WeightedAverageNumberOfSharesOutstandingBasic": {"units": {"shares": [{"start": "2025-07-01", "end": "2026-06-30", "val": 7420000000, "form": "10-K", "filed": "2026-07-30", "fp": "FY", "frame": "CY2026"}]}},
+      "WeightedAverageNumberOfDilutedSharesOutstanding": {"units": {"shares": [{"start": "2025-07-01", "end": "2026-06-30", "val": 7460000000, "form": "10-K", "filed": "2026-07-30", "fp": "FY", "frame": "CY2026"}]}},
+      "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest": {"units": {"USD": [{"end": "2026-06-30", "val": 335420000000, "form": "10-K", "filed": "2026-07-30", "fp": "FY", "frame": "CY2026Q2I"}, {"end": "2026-03-31", "val": 330000000000, "form": "10-Q", "filed": "2026-04-25", "fp": "Q3", "frame": "CY2026Q1I"}]}},
+      "DebtCurrentAndNoncurrent": {"units": {"USD": [{"end": "2026-06-30", "val": 67127000000, "form": "10-K", "filed": "2026-07-30", "fp": "FY", "frame": "CY2026Q2I"}, {"end": "2026-03-31", "val": 68000000000, "form": "10-Q", "filed": "2026-04-25", "fp": "Q3", "frame": "CY2026Q1I"}]}},
+      "CashCashEquivalentsAndShortTermInvestments": {"units": {"USD": [{"end": "2026-06-30", "val": 95972000000, "form": "10-K", "filed": "2026-07-30", "fp": "FY", "frame": "CY2026Q2I"}, {"end": "2026-03-31", "val": 97000000000, "form": "10-Q", "filed": "2026-04-25", "fp": "Q3", "frame": "CY2026Q1I"}]}},
+      "MinorityInterest": {"units": {"USD": [{"end": "2026-06-30", "val": 0, "form": "10-K", "filed": "2026-07-30", "fp": "FY", "frame": "CY2026Q2I"}]}},
+      "ShareBasedCompensation": {"units": {"USD": [{"start": "2025-07-01", "end": "2026-06-30", "val": 12000000000, "form": "10-K", "filed": "2026-07-30", "fp": "FY", "frame": "CY2026"}, {"start": "2026-01-01", "end": "2026-03-31", "val": 3000000000, "form": "10-Q", "filed": "2026-04-25", "fp": "Q3", "frame": "CY2026Q1"}]}}
+    }
+  }
+}

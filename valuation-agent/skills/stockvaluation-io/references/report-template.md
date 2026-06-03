@@ -123,7 +123,7 @@ Separate market price, model intrinsic value, assumptions, and evidence. Describ
 
 ## Source Quality Summary
 
-Use `structuredContent.provenance` and `valuation.assumptionTransparency.sourceProvenance` when returned. Keep this section compact and visible in the default report.
+Use `structuredContent.provenance`, `structuredContent.sourceQualityGate`, and `valuation.assumptionTransparency.sourceProvenance` when returned. Keep this section compact and visible in the default report. The default full researched baseline should come from `stockvaluation.researched_baseline`; `stockvaluation.value_ticker` remains mechanical. Use `financial-field-definitions.md` for field meanings and reconciliation language.
 
 | Field | Value |
 | --- | --- |
@@ -131,15 +131,18 @@ Use `structuredContent.provenance` and `valuation.assumptionTransparency.sourceP
 | Provider |  |
 | Source date / period end |  |
 | Retrieval status |  |
-| Source policy status | `valid_source_provenance`, `primary_filing_used`, `primary_source_missing_fallback`, `yahoo_normalized_with_cross_check_status`, `stale_source_date`, or `missing_source_date` |
+| Source policy status | `primary_filing_used`, `sec_missing_user_agent_yahoo_fallback`, `sec_http_error_yahoo_fallback`, `sec_rate_limited_yahoo_fallback`, `sec_cik_not_found_yahoo_fallback`, `sec_unsupported_filer_yahoo_fallback`, `sec_unsupported_taxonomy_yahoo_fallback`, `sec_insufficient_facts_yahoo_fallback`, `sec_parse_error_yahoo_fallback`, `sec_primary_not_applicable`, `primary_adapter_not_supported_yahoo_normalized`, `company_report_check_pending`, `stale_source_date`, or `missing_source_date` |
+| Source quality gate | `sourceQualityGate.status`, reason, allowed actions, and whether cross-check is required |
 | Cross-check status | `company_report_cross_checked`, `company_report_check_pending`, `company_report_unavailable`, `not_applicable`, or other returned status |
 | Material warnings |  |
 
-For US researched valuations, prefer SEC/XBRL, company facts, or filing-derived primary financial data when returned. If the output shows `primary_source_missing_fallback`, say the run used Yahoo-normalized financials as a classified fallback and do not imply the core financials are primary-source backed.
+For US researched valuations, prefer SEC/EDGAR companyfacts, XBRL, company facts, or filing-derived primary financial data when returned. If the provider is `sec-edgar-companyfacts`, say live SEC/EDGAR primary filing data was used for the returned core financials, with the returned source date and period end. If the output shows `sec_http_error_yahoo_fallback` or another `sec_*_yahoo_fallback` status, say the run used Yahoo-normalized financials as a classified fallback and do not imply the core financials are primary-source backed. If `sourceQualityGate.status` is `requires_user_decision`, say whether the user approved fallback, requested retry, stopped, or explicitly bypassed the gate.
 
-For non-US researched valuations, Yahoo-normalized financials may be the main normalized source when the report labels the source class and gives the company-report or filing cross-check status. If cross-checks are pending, say so plainly and treat material accounting or segment claims as limitations until checked.
+SEC primary-filing provenance does not mean full GAAP/non-GAAP reconciliation, segment-footnote extraction, lease parsing, or accounting cleanup was completed. Treat those topics according to returned AccountingAndClaims statuses and evidence rules.
 
-If Yahoo-normalized data and filing/company-report data differ materially, include the returned data-quality warning and treat it as a limitation, not as an automatic assumption override.
+For non-US researched valuations, Yahoo-normalized financials may be the main normalized source when the report labels the source class and gives the company-report or filing cross-check status. If `primary_adapter_not_supported_yahoo_normalized` is returned, say no supported deterministic primary-filing adapter covered this listing and company-report cross-check is required. If cross-checks are pending, say so plainly and treat material accounting or segment claims as limitations until checked.
+
+If Yahoo-normalized data and filing/company-report data differ materially, include the returned data-quality warning and treat it as a limitation, not as an automatic assumption override. For field-specific interpretation, use `financial-field-definitions.md`; do not invent definitions for revenue, operating income, cash, debt, shares, R&D, SBC, tax, pretax income, minority interest, or book equity.
 
 ## Central Narrative Tension
 

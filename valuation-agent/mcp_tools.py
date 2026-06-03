@@ -62,6 +62,12 @@ REQUEST_POLICY_MODES = {
     "researched_autonomous",
     "researched_baseline",
 }
+SOURCE_QUALITY_GATE_BYPASS_STATUSES = {
+    "bypassed_by_quick_mode",
+    "bypassed_by_no_questions",
+    "bypassed_by_smoke_test",
+    "bypassed_by_automation",
+}
 SEGMENT_SERVICE_SECTOR_KEY_FIELDS = (
     "sector_key",
     "sectorKey",
@@ -135,6 +141,7 @@ DIRECT_VALUATION_OUTPUT_FIELDS = {
 TOOL_NAMES = [
     "stockvaluation.health",
     "stockvaluation.value_ticker",
+    "stockvaluation.researched_baseline",
     "stockvaluation.recalculate",
     "stockvaluation.get_assumptions",
     "stockvaluation.get_growth_anchor",
@@ -214,6 +221,14 @@ def tool_definitions() -> list[dict[str, Any]]:
             "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
         },
         {
+            "name": "stockvaluation.researched_baseline",
+            "title": "Researched Baseline",
+            "description": "Fetch the default full researched baseline with source policy enabled for a supported ticker.",
+            "inputSchema": _object_schema(ticker_property, ["ticker"]),
+            "outputSchema": _output_schema(),
+            "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+        },
+        {
             "name": "stockvaluation.recalculate",
             "title": "Recalculate Valuation",
             "description": "Recalculate local DCF JSON using governed scenario overrides.",
@@ -281,6 +296,7 @@ class MCPToolRegistry:
         self._handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
             "stockvaluation.health": self._health,
             "stockvaluation.value_ticker": self._value_ticker,
+            "stockvaluation.researched_baseline": self._researched_baseline,
             "stockvaluation.recalculate": self._recalculate,
             "stockvaluation.get_assumptions": self._get_assumptions,
             "stockvaluation.get_growth_anchor": self._get_growth_anchor,
@@ -328,6 +344,25 @@ class MCPToolRegistry:
         except ValuationServiceError as exc:
             return service_exception_payload(tool, exc, ticker=ticker)
 
+    def _researched_baseline(self, args: dict[str, Any]) -> dict[str, Any]:
+        tool = "stockvaluation.researched_baseline"
+        ticker, error = normalize_ticker(args.get("ticker"))
+        if error:
+            return error_payload(tool, "INVALID_TICKER", error, "invalid_ticker")
+        try:
+            valuation = self.service_client.value_ticker(
+                ticker,
+                {"researchedBaselineMode": True, "requestPolicyMode": "researched_baseline"},
+            )
+            return valuation_success_payload(
+                tool,
+                ticker,
+                valuation,
+                {"researchedBaselineMode": True, "requestPolicyMode": "researched_baseline"},
+            )
+        except ValuationServiceError as exc:
+            return service_exception_payload(tool, exc, ticker=ticker)
+
     def _recalculate(self, args: dict[str, Any]) -> dict[str, Any]:
         tool = "stockvaluation.recalculate"
         ticker, error = normalize_ticker(args.get("ticker"))
@@ -361,6 +396,7 @@ class MCPToolRegistry:
                 "unsupported_overrides",
                 extra={"ticker": ticker, "assumptions": assumption_meta, "baseline": blocked_baseline},
             )
+            apply_request_policy_source_quality_gate(payload, assumption_meta)
             attach_valuation_audit_packet(
                 payload,
                 ticker=ticker,
@@ -387,6 +423,7 @@ class MCPToolRegistry:
                 },
             )
             payload["assumptions"] = assumption_meta
+            apply_request_policy_source_quality_gate(payload, assumption_meta)
             attach_valuation_audit_packet(
                 payload,
                 ticker=ticker,
@@ -403,6 +440,7 @@ class MCPToolRegistry:
         except ValuationServiceError as exc:
             payload = service_exception_payload(tool, exc, ticker=ticker)
             payload["assumptions"] = assumption_meta
+            apply_request_policy_source_quality_gate(payload, assumption_meta)
             attach_valuation_audit_packet(
                 payload,
                 ticker=ticker,
@@ -1119,10 +1157,11 @@ def valuation_success_payload(
         "assumptions": extract_assumptions(valuation),
         "accountingAndClaims": extract_accounting_and_claims(valuation),
         "provenance": extract_source_provenance(valuation),
+        "sourceQualityGate": extract_source_quality_gate(valuation),
         "growthAnchor": extract_growth_anchor(valuation),
         "referenceData": reference_data_status(valuation),
         "version": version_metadata(valuation),
-        "policy": policy_metadata(),
+        "policy": policy_metadata(baseline_entrypoint_for_tool(tool)),
         "warnings": extract_warnings(valuation),
     }
 
@@ -1473,6 +1512,7 @@ def attach_valuation_audit_packet(
             "educational_use_only": True,
             "not_financial_advice": True,
             "summary": final_case_summary(final_case_type),
+            "source_quality_gate": _dict(payload.get("sourceQualityGate")),
         },
         data_quality_limitations=data_quality_limitations(payload),
         mcp_call_references=[
@@ -1696,6 +1736,7 @@ def scenario_book_provenance_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "data_quality_warnings": provenance.get("dataQualityWarnings") or [],
         "missing_source_families": [],
         "source_policy_status": provenance.get("sourcePolicyStatus"),
+        "source_quality_gate": _dict(payload.get("sourceQualityGate")),
     }
 
 
@@ -1997,6 +2038,76 @@ def extract_source_provenance(valuation: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def extract_source_quality_gate(valuation: dict[str, Any]) -> dict[str, Any]:
+    gate = _dict(valuation.get("sourceQualityGate"))
+    if not gate:
+        transparency = _dict(valuation.get("assumptionTransparency"))
+        gate = _dict(transparency.get("sourceQualityGate"))
+    if not gate:
+        return {}
+    return {
+        "status": gate.get("status"),
+        "reason": gate.get("reason"),
+        "primarySourceExpected": bool(gate.get("primarySourceExpected")),
+        "fallbackSourceAvailable": bool(gate.get("fallbackSourceAvailable")),
+        "crossCheckRequired": bool(gate.get("crossCheckRequired")),
+        "allowedActions": _string_list(gate.get("allowedActions")),
+    }
+
+
+def apply_request_policy_source_quality_gate(payload: dict[str, Any], assumption_meta: dict[str, Any]) -> None:
+    if _dict(payload.get("sourceQualityGate")):
+        return
+    metadata = _dict(assumption_meta.get("metadata"))
+    requested = _dict(assumption_meta.get("requested"))
+    request_policy = _dict(metadata.get("request_policy")) or _dict(requested.get("request_policy"))
+    gate = source_quality_gate_from_request_policy(request_policy)
+    if gate:
+        payload["sourceQualityGate"] = gate
+
+
+def source_quality_gate_from_request_policy(request_policy: dict[str, Any]) -> dict[str, Any]:
+    gate = normalize_source_quality_gate(
+        _dict(request_policy.get("source_quality_gate")) or _dict(request_policy.get("sourceQualityGate"))
+    )
+    if gate:
+        return gate
+    status = _string_or_none(
+        _first_present(
+            request_policy.get("source_quality_gate_status"),
+            request_policy.get("sourceQualityGateStatus"),
+            request_policy.get("source_quality_gate_bypass"),
+            request_policy.get("sourceQualityGateBypass"),
+        )
+    )
+    if status not in SOURCE_QUALITY_GATE_BYPASS_STATUSES:
+        return {}
+    return {
+        "status": status,
+        "reason": _string_or_none(
+            _first_present(request_policy.get("source_quality_gate_reason"), request_policy.get("sourceQualityGateReason"))
+        ) or status,
+        "primarySourceExpected": bool(request_policy.get("primarySourceExpected")),
+        "fallbackSourceAvailable": bool(request_policy.get("fallbackSourceAvailable")),
+        "crossCheckRequired": bool(request_policy.get("crossCheckRequired")),
+        "allowedActions": _string_list(request_policy.get("allowedActions")),
+    }
+
+
+def normalize_source_quality_gate(gate: dict[str, Any]) -> dict[str, Any]:
+    status = _string_or_none(gate.get("status"))
+    if not status:
+        return {}
+    return {
+        "status": status,
+        "reason": _string_or_none(gate.get("reason")) or status,
+        "primarySourceExpected": bool(gate.get("primarySourceExpected")),
+        "fallbackSourceAvailable": bool(gate.get("fallbackSourceAvailable")),
+        "crossCheckRequired": bool(gate.get("crossCheckRequired")),
+        "allowedActions": _string_list(gate.get("allowedActions")),
+    }
+
+
 def reference_data_status(valuation: dict[str, Any]) -> dict[str, Any]:
     anchor = extract_growth_anchor(valuation)
     return {
@@ -2038,13 +2149,24 @@ def mcp_metadata() -> dict[str, Any]:
     }
 
 
-def policy_metadata() -> dict[str, Any]:
-    return {
+def policy_metadata(baseline_entrypoint: str | None = None) -> dict[str, Any]:
+    policy = {
         "educationalUseOnly": True,
         "notFinancialAdvice": True,
         "reportWriter": "user-agent",
         "prohibitedRecommendationLanguage": ["buy", "sell", "hold", "target price", "should invest"],
     }
+    if baseline_entrypoint:
+        policy["baselineEntrypoint"] = baseline_entrypoint
+    return policy
+
+
+def baseline_entrypoint_for_tool(tool: str) -> str | None:
+    if tool == "stockvaluation.researched_baseline":
+        return "researched_baseline"
+    if tool == "stockvaluation.value_ticker":
+        return "mechanical_baseline"
+    return None
 
 
 def extract_warnings(valuation: dict[str, Any]) -> list[str]:
@@ -2437,6 +2559,12 @@ def _data_quality_warning_list(value: Any) -> list[dict[str, Any]]:
             "thresholdPct": _number_or_none(item.get("thresholdPct")),
             "sourceClass": _string_or_none(item.get("sourceClass")),
             "sourceDate": _string_or_none(item.get("sourceDate")),
+            "normalizedSourceClass": _string_or_none(item.get("normalizedSourceClass")),
+            "normalizedSourceDate": _string_or_none(item.get("normalizedSourceDate")),
+            "normalizedPeriodEnd": _string_or_none(item.get("normalizedPeriodEnd")),
+            "filingSourceClass": _string_or_none(item.get("filingSourceClass")),
+            "filingSourceDate": _string_or_none(item.get("filingSourceDate")),
+            "filingPeriodEnd": _string_or_none(item.get("filingPeriodEnd")),
         }
         warnings.append({key: value for key, value in warning.items() if value is not None})
     return warnings

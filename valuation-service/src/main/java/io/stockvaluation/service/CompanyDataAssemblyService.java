@@ -14,8 +14,10 @@ import io.stockvaluation.dto.GrowthDto;
 import io.stockvaluation.exception.InsufficientFinancialDataException;
 import io.stockvaluation.provider.DataProvider;
 import io.stockvaluation.provider.FinancialSnapshotProvider;
+import io.stockvaluation.provider.PrimaryFilingAvailability;
 import io.stockvaluation.provider.PrimaryFilingDataProvider;
 import io.stockvaluation.provider.SourceProvenance;
+import io.stockvaluation.provider.field.FinancialFieldDefinitionCatalog;
 import io.stockvaluation.repository.CostOfCapitalRepository;
 import io.stockvaluation.repository.CountryEquityRepository;
 import io.stockvaluation.repository.IndustryAveragesGlobalRepository;
@@ -30,6 +32,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -46,6 +49,8 @@ import static io.stockvaluation.utils.Helper.targetOperatingMargin;
 @Slf4j
 @RequiredArgsConstructor
 public class CompanyDataAssemblyService {
+    private static final FinancialFieldDefinitionCatalog FIELD_DEFINITIONS =
+            FinancialFieldDefinitionCatalog.loadDefault();
 
     private final CountryEquityRepository countryEquityRepository;
     private final SectorMappingRepository sectorMappingRepository;
@@ -82,9 +87,11 @@ public class CompanyDataAssemblyService {
             sourceProvenance = applyPrimaryFilingReconciliation(
                     sourceProvenance,
                     normalizedIngestion.financialDataDTO(),
-                    ingestionData.financialDataDTO());
+                    ingestionData.financialDataDTO(),
+                    normalizedIngestion.sourceProvenance(),
+                    basicInfoMap);
         } else if (sourceSelection.primaryProviderUnavailable()) {
-            sourceProvenance = applyPrimarySourceMissingFallback(sourceProvenance);
+            sourceProvenance = applyPrimarySourceMissingFallback(sourceProvenance, sourceSelection.primaryAvailability());
         } else if (sourceSelection.nonUsYahooResearchPath()) {
             sourceProvenance = applyNonUsYahooCrossCheckStatus(sourceProvenance);
         }
@@ -310,22 +317,50 @@ public class CompanyDataAssemblyService {
         if (primaryFilingDataProvider.hasPrimaryFinancials(ticker)) {
             return SourceSelection.primaryFiling(primaryFilingDataProvider);
         }
-        return SourceSelection.primaryUnavailable(dataProvider);
+        PrimaryFilingAvailability availability = primaryFilingDataProvider.getPrimaryFinancialsAvailability(ticker);
+        return SourceSelection.primaryUnavailable(dataProvider, availability);
     }
 
-    private static SourceProvenance applyPrimarySourceMissingFallback(SourceProvenance sourceProvenance) {
+    private static SourceProvenance applyPrimarySourceMissingFallback(
+            SourceProvenance sourceProvenance,
+            PrimaryFilingAvailability primaryAvailability) {
         if (sourceProvenance == null) {
             sourceProvenance = SourceProvenance.yahooNormalized("unknown", null);
         } else {
             sourceProvenance = copySourceProvenance(sourceProvenance);
         }
-        sourceProvenance.setSourcePolicyStatus("primary_source_missing_fallback");
+        sourceProvenance.setSourcePolicyStatus(phase9FallbackStatus(primaryAvailability));
         sourceProvenance.setCrossCheckStatus(normalizeCrossCheckStatus(sourceProvenance.getCrossCheckStatus()));
         List<String> warnings = new ArrayList<>(safeWarnings(sourceProvenance));
+        String primaryStatus = primaryAvailability == null || primaryAvailability.status() == null
+                ? "unavailable"
+                : primaryAvailability.status();
         warnings.add(
-                "US researched valuation is using Yahoo-normalized financials because the primary filing provider returned unavailable.");
+                "US researched valuation is using Yahoo-normalized financials because the primary filing provider returned unavailable ("
+                        + primaryStatus + ").");
+        if (primaryAvailability != null) {
+            warnings.addAll(primaryAvailability.warnings());
+        }
         sourceProvenance.setWarnings(dedupe(warnings));
         return sourceProvenance;
+    }
+
+    private static String phase9FallbackStatus(PrimaryFilingAvailability primaryAvailability) {
+        String status = primaryAvailability == null || primaryAvailability.status() == null
+                ? "unavailable"
+                : primaryAvailability.status();
+        return switch (status) {
+            case "missing_user_agent" -> "sec_missing_user_agent_yahoo_fallback";
+            case "http_error" -> "sec_http_error_yahoo_fallback";
+            case "rate_limited" -> "sec_rate_limited_yahoo_fallback";
+            case "cik_not_found" -> "sec_cik_not_found_yahoo_fallback";
+            case "unsupported_filer" -> "sec_unsupported_filer_yahoo_fallback";
+            case "unsupported_taxonomy" -> "sec_unsupported_taxonomy_yahoo_fallback";
+            case "insufficient_facts" -> "sec_insufficient_facts_yahoo_fallback";
+            case "parse_error" -> "sec_parse_error_yahoo_fallback";
+            case "primary_not_applicable", "not_applicable" -> "sec_primary_not_applicable";
+            default -> "sec_http_error_yahoo_fallback";
+        };
     }
 
     private static SourceProvenance applyNonUsYahooCrossCheckStatus(SourceProvenance sourceProvenance) {
@@ -334,7 +369,7 @@ public class CompanyDataAssemblyService {
         } else {
             sourceProvenance = copySourceProvenance(sourceProvenance);
         }
-        sourceProvenance.setSourcePolicyStatus("yahoo_normalized_with_cross_check_status");
+        sourceProvenance.setSourcePolicyStatus("primary_adapter_not_supported_yahoo_normalized");
         sourceProvenance.setCrossCheckStatus(normalizeCrossCheckStatus(sourceProvenance.getCrossCheckStatus()));
         List<String> warnings = new ArrayList<>(safeWarnings(sourceProvenance));
         warnings.add(
@@ -346,7 +381,9 @@ public class CompanyDataAssemblyService {
     private static SourceProvenance applyPrimaryFilingReconciliation(
             SourceProvenance sourceProvenance,
             FinancialDataDTO normalizedFinancials,
-            FinancialDataDTO filingFinancials) {
+            FinancialDataDTO filingFinancials,
+            SourceProvenance normalizedSourceProvenance,
+            Map<String, Object> basicInfoMap) {
         if (sourceProvenance == null) {
             sourceProvenance = SourceProvenance.primaryFiling("unknown", null);
         } else {
@@ -358,16 +395,27 @@ public class CompanyDataAssemblyService {
                 new ArrayList<>(sourceProvenance.getDataQualityWarnings() == null
                         ? List.of()
                         : sourceProvenance.getDataQualityWarnings());
+        addSourceMetadataWarnings(
+                warnings,
+                normalizedSourceProvenance,
+                sourceProvenance,
+                normalizedFinancials,
+                filingFinancials,
+                basicInfoMap);
         addMismatchWarning(warnings, "revenue", normalizedFinancials.getRevenueTTM(),
                 filingFinancials.getRevenueTTM(), sourceProvenance);
         addMismatchWarning(warnings, "operating_income", normalizedFinancials.getOperatingIncomeTTM(),
                 filingFinancials.getOperatingIncomeTTM(), sourceProvenance);
-        addMismatchWarning(warnings, "cash_and_marketable_securities", normalizedFinancials.getCashAndMarkablTTM(),
+        addMismatchWarning(warnings, "cash_and_short_term_investments", normalizedFinancials.getCashAndMarkablTTM(),
                 filingFinancials.getCashAndMarkablTTM(), sourceProvenance);
-        addMismatchWarning(warnings, "debt", normalizedFinancials.getBookValueDebtTTM(),
+        addMismatchWarning(warnings, "total_debt", normalizedFinancials.getBookValueDebtTTM(),
                 filingFinancials.getBookValueDebtTTM(), sourceProvenance);
         addMismatchWarning(warnings, "shares_outstanding", normalizedFinancials.getNoOfShareOutstanding(),
                 filingFinancials.getNoOfShareOutstanding(), sourceProvenance);
+        addMismatchWarning(warnings, "research_and_development", latestValue(normalizedFinancials.getResearchAndDevelopmentMap()),
+                latestValue(filingFinancials.getResearchAndDevelopmentMap()), sourceProvenance);
+        addMismatchWarning(warnings, "stock_based_compensation", normalizedFinancials.getStockBasedCompensationTTM(),
+                filingFinancials.getStockBasedCompensationTTM(), sourceProvenance);
         sourceProvenance.setDataQualityWarnings(dedupeDataQualityWarnings(warnings));
         return sourceProvenance;
     }
@@ -378,12 +426,52 @@ public class CompanyDataAssemblyService {
             Double normalizedValue,
             Double filingValue,
             SourceProvenance sourceProvenance) {
+        double threshold = reconciliationThreshold(field);
+        List<String> warningRules = warningRules(field);
         if (normalizedValue == null || filingValue == null) {
+            if (normalizedValue == null
+                    && filingValue == null
+                    && warningRules.contains("missing_required_field")) {
+                warnings.add(new SourceProvenance.DataQualityWarning(
+                        field,
+                        "missing_required_field",
+                        null,
+                        null,
+                        null,
+                        threshold,
+                        sourceProvenance.getSourceClass(),
+                        sourceProvenance.getSourceDate()));
+            }
+            Double presentValue = normalizedValue != null ? normalizedValue : filingValue;
+            if (presentValue != null
+                    && Math.abs(presentValue) > 0.0
+                    && warningRules.contains("missing_present_mismatch")) {
+                warnings.add(new SourceProvenance.DataQualityWarning(
+                        field,
+                        "missing_present_mismatch",
+                        normalizedValue,
+                        filingValue,
+                        null,
+                        threshold,
+                        sourceProvenance.getSourceClass(),
+                        sourceProvenance.getSourceDate()));
+            }
             return;
         }
-        double threshold = 0.05;
         double denominator = Math.max(Math.abs(filingValue), 1.0);
         double differencePct = Math.abs(normalizedValue - filingValue) / denominator;
+        if (warningRules.contains("sign_mismatch") && signsDiffer(normalizedValue, filingValue)) {
+            warnings.add(new SourceProvenance.DataQualityWarning(
+                    field,
+                    "sign_mismatch",
+                    normalizedValue,
+                    filingValue,
+                    round4(differencePct),
+                    threshold,
+                    sourceProvenance.getSourceClass(),
+                    sourceProvenance.getSourceDate()));
+            return;
+        }
         if (differencePct <= threshold) {
             return;
         }
@@ -396,6 +484,156 @@ public class CompanyDataAssemblyService {
                 threshold,
                 sourceProvenance.getSourceClass(),
                 sourceProvenance.getSourceDate()));
+    }
+
+    private static void addSourceMetadataWarnings(
+            List<SourceProvenance.DataQualityWarning> warnings,
+            SourceProvenance normalizedSource,
+            SourceProvenance filingSource,
+            FinancialDataDTO normalizedFinancials,
+            FinancialDataDTO filingFinancials,
+            Map<String, Object> basicInfoMap) {
+        if (normalizedSource != null
+                && filingSource != null
+                && differentNonBlank(normalizedSource.getPeriodEnd(), filingSource.getPeriodEnd())) {
+            warnings.add(metadataWarning("source_period", "period_mismatch", normalizedSource, filingSource));
+        }
+        if (isStaleSourceDate(normalizedSource) || isStaleSourceDate(filingSource)) {
+            warnings.add(metadataWarning("source_date", "stale_source_date", normalizedSource, filingSource));
+        }
+        if (basicInfoMap != null
+                && differentNonBlank(stringValue(basicInfoMap.get("currency")),
+                stringValue(basicInfoMap.get("financialCurrency")))) {
+            warnings.add(metadataWarning("currency", "currency_mismatch", normalizedSource, filingSource));
+        }
+        addAverageVsPointInTimeShareWarning(warnings, normalizedFinancials, filingFinancials, filingSource);
+    }
+
+    private static void addAverageVsPointInTimeShareWarning(
+            List<SourceProvenance.DataQualityWarning> warnings,
+            FinancialDataDTO normalizedFinancials,
+            FinancialDataDTO filingFinancials,
+            SourceProvenance filingSource) {
+        Double averageShares = firstNonNull(
+                normalizedFinancials.getDilutedSharesOutstanding(),
+                normalizedFinancials.getBasicSharesOutstanding(),
+                filingFinancials.getDilutedSharesOutstanding(),
+                filingFinancials.getBasicSharesOutstanding());
+        Double pointInTimeShares = firstNonNull(
+                normalizedFinancials.getNoOfShareOutstanding(),
+                filingFinancials.getNoOfShareOutstanding());
+        if (averageShares == null || pointInTimeShares == null) {
+            return;
+        }
+        double threshold = reconciliationThreshold("shares_outstanding");
+        double differencePct = Math.abs(averageShares - pointInTimeShares) / Math.max(Math.abs(pointInTimeShares), 1.0);
+        if (differencePct <= threshold) {
+            return;
+        }
+        warnings.add(new SourceProvenance.DataQualityWarning(
+                "shares_outstanding",
+                "average_vs_point_in_time_mismatch",
+                averageShares,
+                pointInTimeShares,
+                round4(differencePct),
+                threshold,
+                filingSource == null ? null : filingSource.getSourceClass(),
+                filingSource == null ? null : filingSource.getSourceDate()));
+    }
+
+    private static SourceProvenance.DataQualityWarning metadataWarning(
+            String field,
+            String status,
+            SourceProvenance normalizedSource,
+            SourceProvenance filingSource) {
+        SourceProvenance.DataQualityWarning warning = new SourceProvenance.DataQualityWarning(
+                field,
+                status,
+                null,
+                null,
+                null,
+                null,
+                filingSource == null ? null : filingSource.getSourceClass(),
+                filingSource == null ? null : filingSource.getSourceDate());
+        if (normalizedSource != null) {
+            warning.setNormalizedSourceClass(normalizedSource.getSourceClass());
+            warning.setNormalizedSourceDate(normalizedSource.getSourceDate());
+            warning.setNormalizedPeriodEnd(normalizedSource.getPeriodEnd());
+        }
+        if (filingSource != null) {
+            warning.setFilingSourceClass(filingSource.getSourceClass());
+            warning.setFilingSourceDate(filingSource.getSourceDate());
+            warning.setFilingPeriodEnd(filingSource.getPeriodEnd());
+        }
+        return warning;
+    }
+
+    private static boolean isStaleSourceDate(SourceProvenance source) {
+        if (source == null || source.getSourceDate() == null || source.getSourceDate().isBlank()) {
+            return false;
+        }
+        try {
+            return LocalDate.parse(source.getSourceDate()).isBefore(LocalDate.now().minusMonths(18));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static boolean differentNonBlank(String left, String right) {
+        return left != null
+                && !left.isBlank()
+                && right != null
+                && !right.isBlank()
+                && !left.equalsIgnoreCase(right);
+    }
+
+    private static String stringValue(Object value) {
+        return value == null ? null : value.toString();
+    }
+
+    private static Double firstNonNull(Double... values) {
+        for (Double value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static double reconciliationThreshold(String field) {
+        try {
+            return FIELD_DEFINITIONS.definition(field).reconciliationThreshold().relativeDifference();
+        } catch (IllegalArgumentException e) {
+            return 0.05;
+        }
+    }
+
+    private static List<String> warningRules(String field) {
+        try {
+            return FIELD_DEFINITIONS.definition(field).warningRules();
+        } catch (IllegalArgumentException e) {
+            return List.of();
+        }
+    }
+
+    private static boolean signsDiffer(Double normalizedValue, Double filingValue) {
+        return normalizedValue != null
+                && filingValue != null
+                && normalizedValue != 0.0
+                && filingValue != 0.0
+                && Math.signum(normalizedValue) != Math.signum(filingValue);
+    }
+
+    private static Double latestValue(Map<String, Double> values) {
+        if (values == null || values.isEmpty()) {
+            return null;
+        }
+        return values.entrySet().stream()
+                .sorted(Map.Entry.<String, Double>comparingByKey().reversed())
+                .map(Map.Entry::getValue)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
     }
 
     private static String normalizeCrossCheckStatus(String status) {
@@ -502,22 +740,24 @@ public class CompanyDataAssemblyService {
             boolean useDefaultProviderCall,
             boolean primaryProviderSelected,
             boolean primaryProviderUnavailable,
-            boolean nonUsYahooResearchPath) {
+            boolean nonUsYahooResearchPath,
+            PrimaryFilingAvailability primaryAvailability) {
 
         static SourceSelection defaultProvider(DataProvider provider) {
-            return new SourceSelection(provider, true, false, false, false);
+            return new SourceSelection(provider, true, false, false, false, null);
         }
 
         static SourceSelection primaryFiling(FinancialSnapshotProvider provider) {
-            return new SourceSelection(provider, false, true, false, false);
+            return new SourceSelection(provider, false, true, false, false,
+                    PrimaryFilingAvailability.available(provider.getProviderName()));
         }
 
-        static SourceSelection primaryUnavailable(DataProvider provider) {
-            return new SourceSelection(provider, false, false, true, false);
+        static SourceSelection primaryUnavailable(DataProvider provider, PrimaryFilingAvailability availability) {
+            return new SourceSelection(provider, false, false, true, false, availability);
         }
 
         static SourceSelection nonUsYahoo(DataProvider provider) {
-            return new SourceSelection(provider, false, false, false, true);
+            return new SourceSelection(provider, false, false, false, true, null);
         }
     }
 }

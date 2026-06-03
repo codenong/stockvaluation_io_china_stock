@@ -30,6 +30,7 @@ public class ValuationOutputDTO {
             this.simulationResultsDto = other.simulationResultsDto;
             this.calibrationResultDTO = other.calibrationResultDTO;
             this.assumptionTransparency = other.assumptionTransparency;
+            this.sourceQualityGate = other.sourceQualityGate;
 
             this.primaryModel = other.primaryModel;
             this.modelSelectionRationale = other.modelSelectionRationale;
@@ -72,6 +73,7 @@ public class ValuationOutputDTO {
     private SimulationResultsDTO simulationResultsDto;
     private CalibrationResultDTO calibrationResultDTO;
     private AssumptionTransparencyDTO assumptionTransparency;
+    private SourceQualityGateDTO sourceQualityGate;
 
     /**
      * Skill diagnostics representing the industry priors.

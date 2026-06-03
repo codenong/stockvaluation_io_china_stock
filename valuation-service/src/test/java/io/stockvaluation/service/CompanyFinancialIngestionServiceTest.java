@@ -63,8 +63,8 @@ class CompanyFinancialIngestionServiceTest {
 
         assertEquals(600.0, financialData.getRevenueTTM());
         assertEquals(550.0, financialData.getRevenueLTM());
-        assertEquals(63.0, financialData.getOperatingIncomeTTM());
-        assertEquals(55.0, financialData.getOperatingIncomeLTM());
+        assertEquals(60.0, financialData.getOperatingIncomeTTM());
+        assertEquals(50.0, financialData.getOperatingIncomeLTM());
         assertEquals(4.0, financialData.getInterestExpenseTTM());
         assertEquals(6.0, financialData.getInterestExpenseLTM());
         assertEquals(100.0, financialData.getBookValueEqualityTTM());

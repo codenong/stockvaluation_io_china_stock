@@ -16,6 +16,16 @@ NON_US_YAHOO_CROSS_CHECK_STATUSES = {
 }
 RESEARCHED_RUN_MODES = {"full_researched", "autonomous_researched", "researched_baseline"}
 STALE_SOURCE_DAYS = 550
+SEC_YAHOO_FALLBACK_STATUSES = {
+    "sec_missing_user_agent_yahoo_fallback",
+    "sec_http_error_yahoo_fallback",
+    "sec_rate_limited_yahoo_fallback",
+    "sec_cik_not_found_yahoo_fallback",
+    "sec_unsupported_filer_yahoo_fallback",
+    "sec_unsupported_taxonomy_yahoo_fallback",
+    "sec_insufficient_facts_yahoo_fallback",
+    "sec_parse_error_yahoo_fallback",
+}
 
 
 def validate_source_provenance_packet(packet: Any) -> dict[str, Any]:
@@ -67,15 +77,15 @@ def validate_source_provenance_packet(packet: Any) -> dict[str, Any]:
             "US researched valuation has primary filing data available; Yahoo-normalized data cannot be treated as the preferred source."
         )
     elif ok and _is_us_researched_fallback(packet, normalized_core):
-        status = "primary_source_missing_fallback"
+        status = _phase9_sec_fallback_status(normalized_core)
         normalized_core["source_policy_status"] = status
         policy_warnings.append(
-            "US researched valuation is using Yahoo-normalized financials because primary filing data is missing or unavailable."
+            f"US researched valuation is using Yahoo-normalized financials because SEC primary filing data was unavailable ({status})."
         )
         if _is_stale_source_date(packet, normalized_core):
             policy_warnings.append("Core financial source date is stale relative to the valuation as-of date.")
     elif ok and _is_non_us_yahoo_researched(packet, normalized_core):
-        status = "yahoo_normalized_with_cross_check_status"
+        status = "primary_adapter_not_supported_yahoo_normalized"
         normalized_core["source_policy_status"] = status
         policy_warnings.append(
             "Non-US researched valuation may use Yahoo-normalized financials when company-report cross-check status is explicit."
@@ -149,6 +159,13 @@ def _is_us_researched_fallback(packet: dict[str, Any], core: dict[str, Any]) -> 
         and bool(core.get("primary_source_expected"))
         and not bool(core.get("primary_source_available"))
     )
+
+
+def _phase9_sec_fallback_status(core: dict[str, Any]) -> str:
+    status = str(core.get("source_policy_status") or "").strip()
+    if status in SEC_YAHOO_FALLBACK_STATUSES:
+        return status
+    return "sec_missing_user_agent_yahoo_fallback"
 
 
 def _is_us_researched_primary_available_not_used(packet: dict[str, Any], core: dict[str, Any]) -> bool:

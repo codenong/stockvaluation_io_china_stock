@@ -46,9 +46,7 @@ public class CompanyFinancialIngestionService {
         Map<String, IncomeStatementSnapshot> recentQuarterlyIncome = getMostRecentPeriods(quarterlyIncomeSnapshots, 4);
         double totalRevenueTTM = calculateTotal(recentQuarterlyIncome, IncomeStatementSnapshot::totalRevenue);
         double operatingIncomeTTM = calculateTotal(recentQuarterlyIncome, IncomeStatementSnapshot::operatingIncome);
-        double specialIncomeChargesTTM = calculateTotal(recentQuarterlyIncome, IncomeStatementSnapshot::specialIncomeCharges);
         double interestExpenseTTM = calculateTotal(recentQuarterlyIncome, IncomeStatementSnapshot::interestExpense);
-        operatingIncomeTTM += Math.abs(specialIncomeChargesTTM);
 
         FinancialDataDTO financialDataDTO = new FinancialDataDTO();
         financialDataDTO.setResearchAndDevelopmentMap(
@@ -93,8 +91,7 @@ public class CompanyFinancialIngestionService {
         }
 
         double revenueLtmValue = valueOrZero(revenueLTM);
-        double operatingIncomeLtmValue = valueOrZero(previousYearIncomeSnapshot.operatingIncome())
-                + Math.abs(valueOrZero(previousYearIncomeSnapshot.specialIncomeCharges()));
+        double operatingIncomeLtmValue = valueOrZero(previousYearIncomeSnapshot.operatingIncome());
         double interestExpenseLtmValue = valueOrZero(previousYearIncomeSnapshot.interestExpense());
         double taxProvision = valueOrZero(previousYearIncomeSnapshot.taxProvision());
         Double preTaxIncome = previousYearIncomeSnapshot.pretaxIncome();

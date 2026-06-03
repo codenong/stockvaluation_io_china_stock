@@ -1,14 +1,11 @@
 package io.stockvaluation.provider;
 
-import org.springframework.stereotype.Component;
-
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-@Component
 public class FixturePrimaryFilingDataProvider implements PrimaryFilingDataProvider {
 
     private static final String PROVIDER_NAME = "sec-xbrl-fixture";

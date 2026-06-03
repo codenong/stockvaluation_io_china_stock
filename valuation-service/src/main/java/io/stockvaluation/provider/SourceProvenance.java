@@ -67,15 +67,19 @@ public class SourceProvenance {
     }
 
     public static SourceProvenance primaryFiling(String provider, String periodEnd) {
+        return primaryFiling(provider, periodEnd, periodEnd);
+    }
+
+    public static SourceProvenance primaryFiling(String provider, String sourceDate, String periodEnd) {
         SourceProvenance provenance = new SourceProvenance();
         provenance.setSourceClass(PRIMARY_FILING);
         provenance.setProvider(provider);
-        provenance.setSourceDate(periodEnd);
+        provenance.setSourceDate(sourceDate);
         provenance.setPeriodEnd(periodEnd);
         provenance.setRetrievalStatus("retrieved");
         provenance.setCrossCheckStatus("not_applicable");
         provenance.setSourcePolicyStatus("primary_filing_used");
-        if (periodEnd == null || periodEnd.isBlank()) {
+        if (periodEnd == null || periodEnd.isBlank() || sourceDate == null || sourceDate.isBlank()) {
             provenance.setRetrievalStatus("retrieved_missing_period");
             provenance.setSourcePolicyStatus("missing_source_date");
             provenance.setWarnings(List.of("Primary filing provider returned data without parseable period metadata."));
@@ -88,6 +92,25 @@ public class SourceProvenance {
     @Getter
     @Setter
     public static class DataQualityWarning {
+        public DataQualityWarning(
+                String field,
+                String status,
+                Double normalizedValue,
+                Double filingValue,
+                Double differencePct,
+                Double thresholdPct,
+                String sourceClass,
+                String sourceDate) {
+            this.field = field;
+            this.status = status;
+            this.normalizedValue = normalizedValue;
+            this.filingValue = filingValue;
+            this.differencePct = differencePct;
+            this.thresholdPct = thresholdPct;
+            this.sourceClass = sourceClass;
+            this.sourceDate = sourceDate;
+        }
+
         private String field;
         private String status;
         private Double normalizedValue;
@@ -96,5 +119,11 @@ public class SourceProvenance {
         private Double thresholdPct;
         private String sourceClass;
         private String sourceDate;
+        private String normalizedSourceClass;
+        private String normalizedSourceDate;
+        private String normalizedPeriodEnd;
+        private String filingSourceClass;
+        private String filingSourceDate;
+        private String filingPeriodEnd;
     }
 }
