@@ -54,7 +54,6 @@
       ],
       "yahooAcceptedKeys": [
         "operatingIncome",
-        "EBIT",
         "OperatingIncome"
       ],
       "commonAdjustmentsIncluded": "Reported operating income according to provider statement mapping.",
@@ -63,7 +62,7 @@
         "sec": "Filed OperatingIncomeLoss reflects company taxonomy presentation.",
         "yahoo": "Yahoo may normalize statement rows and can differ from filed operating income."
       },
-      "knownProviderDifferences": "Yahoo EBIT aliases may not equal filed operating income for every issuer.",
+      "knownProviderDifferences": "Yahoo EBIT rows may not equal filed operating income and should not be used as the operating-income comparator.",
       "fallbackBehaviorWhenMissing": "Required for primary-filing use; missing value downgrades source quality.",
       "reconciliationThreshold": {
         "relativeDifference": 0.05,
@@ -90,6 +89,7 @@
       "periodExpectations": "Annual and quarterly duration facts.",
       "unitExpectations": "Monetary value in the financial statement currency.",
       "secPreferredConcepts": [
+        "us-gaap:InterestExpenseNonoperating",
         "us-gaap:InterestExpenseNonOperating",
         "us-gaap:InterestExpense"
       ],
@@ -100,7 +100,7 @@
       "commonAdjustmentsIncluded": "Provider-reported interest expense.",
       "commonAdjustmentsExcluded": "No autonomous debt-cost override or lease reclassification.",
       "adjustmentRisksByProvider": {
-        "sec": "Interest presentation can vary between operating and non-operating facts.",
+        "sec": "Interest presentation can vary between operating and non-operating facts; when direct interest expense is absent, SEC mapping may synthesize expense from filed interest income and net non-operating interest.",
         "yahoo": "Yahoo-normalized interest expense can be absent or sign-normalized."
       },
       "knownProviderDifferences": "Provider sign conventions and classification can differ.",
@@ -169,6 +169,7 @@
       "periodExpectations": "Annual and quarterly duration facts aligned with tax provision.",
       "unitExpectations": "Monetary value in the financial statement currency.",
       "secPreferredConcepts": [
+        "us-gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
         "us-gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
         "us-gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxes"
       ],
@@ -406,11 +407,20 @@
         "us-gaap:DebtCurrentAndNoncurrent",
         "us-gaap:LongTermDebtAndFinanceLeaseObligationsCurrent",
         "us-gaap:LongTermDebtCurrent",
+        "us-gaap:DebtCurrent",
         "us-gaap:ShortTermBorrowings",
         "us-gaap:ShortTermDebt",
+        "us-gaap:OtherShortTermBorrowings",
+        "us-gaap:CommercialPaper",
         "us-gaap:LongTermDebtAndFinanceLeaseObligationsNoncurrent",
         "us-gaap:LongTermDebtNoncurrent",
-        "us-gaap:LongTermDebt"
+        "us-gaap:LongTermDebt",
+        "us-gaap:OperatingLeaseLiability",
+        "us-gaap:OperatingLeaseLiabilityCurrent",
+        "us-gaap:OperatingLeaseLiabilityNoncurrent",
+        "us-gaap:FinanceLeaseLiability",
+        "us-gaap:FinanceLeaseLiabilityCurrent",
+        "us-gaap:FinanceLeaseLiabilityNoncurrent"
       ],
       "yahooAcceptedKeys": [
         "totalDebt",
@@ -418,10 +428,10 @@
         "LongTermDebtAndCapitalLeaseObligation",
         "TotalNonCurrentLiabilitiesNetMinorityInterest"
       ],
-      "commonAdjustmentsIncluded": "Reported or provider-normalized total debt.",
-      "commonAdjustmentsExcluded": "No autonomous lease or off-balance-sheet debt adjustment.",
+      "commonAdjustmentsIncluded": "Reported or provider-normalized debt; SEC mapping includes recognized lease liabilities when separately filed.",
+      "commonAdjustmentsExcluded": "No off-balance-sheet lease conversion or manual debt adjustment beyond recognized filed lease liabilities.",
       "adjustmentRisksByProvider": {
-        "sec": "Debt may require current plus noncurrent synthesis; avoid double counting when total debt exists.",
+        "sec": "Debt may require synthesis; avoid double counting finance leases when debt tags already include finance lease obligations.",
         "yahoo": "Yahoo total debt is provider-normalized and may include lease obligations."
       },
       "knownProviderDifferences": "Debt classification can differ materially between filed tags and normalized provider rows.",
@@ -443,25 +453,30 @@
     },
     {
       "fieldName": "cash_and_short_term_investments",
-      "humanLabel": "Cash and short-term investments",
+      "humanLabel": "Cash and marketable securities",
       "valuationUse": "Claims bridge from enterprise value to equity value.",
       "statementFamily": "balance_sheet",
       "basis": "point_in_time",
-      "periodExpectations": "Instant balance sheet fact; cash plus investments synthesis only when combined tag is absent.",
+      "periodExpectations": "Instant balance sheet fact; cash plus marketable-securities synthesis only when combined tag is absent or noncurrent marketable securities are separately filed.",
       "unitExpectations": "Monetary value in the financial statement currency.",
       "secPreferredConcepts": [
         "us-gaap:CashCashEquivalentsAndShortTermInvestments",
         "us-gaap:CashAndCashEquivalentsAtCarryingValue",
-        "us-gaap:ShortTermInvestments"
+        "us-gaap:ShortTermInvestments",
+        "us-gaap:MarketableSecuritiesCurrent",
+        "us-gaap:AvailableForSaleSecuritiesDebtSecuritiesCurrent",
+        "us-gaap:DebtSecuritiesAvailableForSaleExcludingAccruedInterestCurrent",
+        "us-gaap:MarketableSecuritiesNoncurrent",
+        "us-gaap:AvailableForSaleSecuritiesDebtSecuritiesNoncurrent"
       ],
       "yahooAcceptedKeys": [
         "cashAndShortTermInvestments",
         "CashCashEquivalentsAndShortTermInvestments"
       ],
-      "commonAdjustmentsIncluded": "Reported cash, equivalents, and short-term investments where available.",
+      "commonAdjustmentsIncluded": "Reported cash, equivalents, and marketable securities where available.",
       "commonAdjustmentsExcluded": "No autonomous excess cash or trapped cash analysis.",
       "adjustmentRisksByProvider": {
-        "sec": "Combined tag may be absent and require cash plus short-term investment synthesis.",
+        "sec": "Combined tag may be absent and require cash plus current and noncurrent marketable-securities synthesis.",
         "yahoo": "Yahoo may normalize cash and short-term investments into a single row."
       },
       "knownProviderDifferences": "Cash classification can differ when short-term investments are separate.",

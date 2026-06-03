@@ -18,7 +18,8 @@ class DataProviderTest {
         StubProvider provider = new StubProvider(
                 Map.of("1704067200000", Map.of(
                         "TotalRevenue", 100.0,
-                        "EBIT", 20.0,
+                        "operatingIncome", 20.0,
+                        "EBIT", 99.0,
                         "SpecialIncomeCharges", -5.0,
                         "InterestExpense", 3.0,
                         "IncomeTaxExpense", 4.0,
@@ -86,6 +87,23 @@ class DataProviderTest {
         assertEquals("AAPL", exception.getTicker());
         assertEquals("[stub] Failed for ticker 'AAPL': failed", exception.getMessage());
         assertSame(cause, exception.getCause());
+    }
+
+    @Test
+    void normalizedOperatingIncomeDoesNotUseEbitAlias() {
+        StubProvider provider = new StubProvider(
+                Map.of("1704067200000", Map.of(
+                        "TotalRevenue", 100.0,
+                        "EBIT", 20.0)),
+                Map.of(),
+                Map.of(),
+                Map.of(),
+                List.of());
+
+        IncomeStatementSnapshot income = provider.getIncomeStatementSnapshots("AAPL").get("1704067200000");
+
+        assertEquals(100.0, income.totalRevenue());
+        assertNull(income.operatingIncome());
     }
 
     private record StubProvider(
