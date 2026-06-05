@@ -558,6 +558,12 @@ public class SegmentWeightedParameterService {
         segmentParams.setSegmentCount(segments.size());
         segmentParams.setBaselineQuality("segment_weighted_baseline");
         segmentParams.setSegmentCoveragePct(round2(mappedCoverage * 100.0));
+        if (missingMappingRevenueShare > 0.0) {
+            segmentParams.setSegmentWarnings(List.of(String.format(
+                    "Segment weighting used partial segment coverage: %.2f%% mapped; %.2f%% unmapped revenue was redistributed across mapped segments.",
+                    mappedCoverage * 100.0,
+                    missingMappingRevenueShare * 100.0)));
+        }
 
         // Calculate and store sector-specific parameters
         for (SegmentResponseDTO.Segment segment : segments) {

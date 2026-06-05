@@ -29,6 +29,8 @@ from .service_client import (
 )
 
 TICKER_RE = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,14}$")
+SEC_PROSPECTUS_URL_PATTERN = r"^https://www\.sec\.gov/Archives/edgar/data/[0-9]+/[0-9]+/[A-Za-z0-9._-]+\.html?$"
+SEC_PROSPECTUS_URL_RE = re.compile(SEC_PROSPECTUS_URL_PATTERN)
 MIN_MARGIN_CONVERGENCE_YEAR = 1.0
 MAX_MARGIN_CONVERGENCE_YEAR = 10.0
 MIN_SALES_TO_CAPITAL = 0.05
@@ -142,6 +144,8 @@ TOOL_NAMES = [
     "stockvaluation.health",
     "stockvaluation.value_ticker",
     "stockvaluation.researched_baseline",
+    "stockvaluation.extract_prospectus",
+    "stockvaluation.value_prospectus",
     "stockvaluation.recalculate",
     "stockvaluation.get_assumptions",
     "stockvaluation.get_growth_anchor",
@@ -160,6 +164,8 @@ KNOWN_FAILURE_CATEGORIES = {
     "upstream_service_error",
     "invalid_ticker",
     "unsupported_overrides",
+    "invalid_prospectus_source",
+    "prospectus_review_required",
     "unknown_failure",
 }
 
@@ -225,6 +231,48 @@ def tool_definitions() -> list[dict[str, Any]]:
             "title": "Researched Baseline",
             "description": "Fetch the default full researched baseline with source policy enabled for a supported ticker.",
             "inputSchema": _object_schema(ticker_property, ["ticker"]),
+            "outputSchema": _output_schema(),
+            "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+        },
+        {
+            "name": "stockvaluation.extract_prospectus",
+            "title": "Extract Prospectus",
+            "description": "Extract a review-required ProspectusFinancialPacket from a SEC EDGAR HTML prospectus filing URL.",
+            "inputSchema": _object_schema(
+                {
+                    "filing_url": {
+                        "type": "string",
+                        "pattern": SEC_PROSPECTUS_URL_PATTERN,
+                        "description": "SEC EDGAR Archives HTML URL for an S-1, S-1/A, or 424B prospectus.",
+                    },
+                    "expected_company": {
+                        "type": "string",
+                        "description": "Optional company name expected by the user for review context.",
+                    },
+                    "expected_symbol": {
+                        "type": "string",
+                        "description": "Optional ticker or expected symbol for review context.",
+                    },
+                },
+                ["filing_url"],
+            ),
+            "outputSchema": _output_schema(),
+            "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+        },
+        {
+            "name": "stockvaluation.value_prospectus",
+            "title": "Value Prospectus",
+            "description": "Run a local educational valuation from a user-reviewed ProspectusFinancialPacket.",
+            "inputSchema": _object_schema(
+                {
+                    "packet": {
+                        "type": "object",
+                        "description": "A ProspectusFinancialPacket returned by stockvaluation.extract_prospectus after user review.",
+                        "additionalProperties": True,
+                    }
+                },
+                ["packet"],
+            ),
             "outputSchema": _output_schema(),
             "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
         },
@@ -297,6 +345,8 @@ class MCPToolRegistry:
             "stockvaluation.health": self._health,
             "stockvaluation.value_ticker": self._value_ticker,
             "stockvaluation.researched_baseline": self._researched_baseline,
+            "stockvaluation.extract_prospectus": self._extract_prospectus,
+            "stockvaluation.value_prospectus": self._value_prospectus,
             "stockvaluation.recalculate": self._recalculate,
             "stockvaluation.get_assumptions": self._get_assumptions,
             "stockvaluation.get_growth_anchor": self._get_growth_anchor,
@@ -362,6 +412,44 @@ class MCPToolRegistry:
             )
         except ValuationServiceError as exc:
             return service_exception_payload(tool, exc, ticker=ticker)
+
+    def _extract_prospectus(self, args: dict[str, Any]) -> dict[str, Any]:
+        tool = "stockvaluation.extract_prospectus"
+        filing_url, error = normalize_prospectus_url(args.get("filing_url") or args.get("filingUrl"))
+        if error:
+            return error_payload(tool, "INVALID_PROSPECTUS_URL", error, "invalid_prospectus_source")
+        expected_company = _string_or_none(args.get("expected_company") or args.get("expectedCompany"))
+        expected_symbol = _string_or_none(args.get("expected_symbol") or args.get("expectedSymbol"))
+        try:
+            result = self.service_client.extract_prospectus(filing_url, expected_company, expected_symbol)
+            return prospectus_extraction_success_payload(tool, result)
+        except ValuationServiceError as exc:
+            return service_exception_payload(tool, exc)
+
+    def _value_prospectus(self, args: dict[str, Any]) -> dict[str, Any]:
+        tool = "stockvaluation.value_prospectus"
+        packet = args.get("packet")
+        if not isinstance(packet, dict):
+            return error_payload(
+                tool,
+                "INVALID_PROSPECTUS_PACKET",
+                "packet must be a ProspectusFinancialPacket object returned by stockvaluation.extract_prospectus.",
+                "prospectus_review_required",
+            )
+        review_status = prospectus_review_status(packet)
+        if review_status != "reviewed":
+            return error_payload(
+                tool,
+                "PROSPECTUS_REVIEW_REQUIRED",
+                "ProspectusFinancialPacket reviewStatus must be reviewed before valuation.",
+                "prospectus_review_required",
+                extra={"prospectus": {"reviewStatus": review_status or "missing"}},
+            )
+        try:
+            result = self.service_client.value_prospectus(packet)
+            return prospectus_valuation_success_payload(tool, result)
+        except ValuationServiceError as exc:
+            return service_exception_payload(tool, exc)
 
     def _recalculate(self, args: dict[str, Any]) -> dict[str, Any]:
         tool = "stockvaluation.recalculate"
@@ -528,6 +616,23 @@ def normalize_ticker(raw: Any) -> tuple[str, str | None]:
     if not ticker or not TICKER_RE.fullmatch(ticker):
         return "", "ticker must be 1-15 characters using letters, numbers, dots, or hyphens only."
     return ticker, None
+
+
+def normalize_prospectus_url(raw: Any) -> tuple[str, str | None]:
+    if not isinstance(raw, str):
+        return "", "filing_url must be a SEC EDGAR Archives HTML URL."
+    filing_url = raw.strip()
+    lowered = filing_url.lower()
+    if "<html" in lowered or "<table" in lowered or lowered.startswith("<"):
+        return "", "filing_url must be a SEC EDGAR Archives HTML URL, not raw HTML filing text."
+    if not SEC_PROSPECTUS_URL_RE.fullmatch(filing_url):
+        return "", "filing_url must be a SEC EDGAR Archives HTML URL under https://www.sec.gov/Archives/edgar/data/."
+    return filing_url, None
+
+
+def prospectus_review_status(packet: dict[str, Any]) -> str | None:
+    value = _string_or_none(packet.get("reviewStatus")) or _string_or_none(packet.get("review_status"))
+    return value.lower() if value else None
 
 
 def map_recalculate_overrides(requested: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
@@ -1163,6 +1268,122 @@ def valuation_success_payload(
         "version": version_metadata(valuation),
         "policy": policy_metadata(baseline_entrypoint_for_tool(tool)),
         "warnings": extract_warnings(valuation),
+    }
+
+
+def prospectus_extraction_success_payload(tool: str, result: dict[str, Any]) -> dict[str, Any]:
+    packet = _dict(result.get("packet"))
+    return {
+        "ok": True,
+        "tool": tool,
+        "prospectus": {
+            "status": _string_or_none(result.get("status")) or "requires_review",
+            "reviewStatus": _string_or_none(packet.get("reviewStatus")) or _string_or_none(packet.get("review_status")),
+            "company": sanitize_for_agent(_dict(packet.get("company"))),
+            "filing": sanitize_for_agent(_dict(packet.get("filing"))),
+            "sourceUrl": _string_or_none(packet.get("sourceUrl")) or _string_or_none(packet.get("source_url")),
+            "packet": sanitize_for_agent(packet),
+        },
+        "provenance": extract_prospectus_source_provenance(_dict(packet.get("sourceProvenance") or packet.get("source_provenance"))),
+        "sourceQualityGate": normalize_source_quality_gate(_dict(result.get("sourceQualityGate") or result.get("source_quality_gate"))),
+        "version": {"mcp": mcp_metadata()},
+        "policy": policy_metadata("prospectus_extraction"),
+    }
+
+
+def prospectus_valuation_success_payload(tool: str, result: dict[str, Any]) -> dict[str, Any]:
+    packet = _dict(result.get("packet"))
+    valuation = prospectus_valuation_for_agent(_dict(result.get("valuation")))
+    provenance = _dict(result.get("sourceProvenance") or result.get("source_provenance"))
+    if not provenance:
+        provenance = _dict(packet.get("sourceProvenance") or packet.get("source_provenance"))
+    return {
+        "ok": True,
+        "tool": tool,
+        "priceBasis": _string_or_none(result.get("priceBasis")) or _string_or_none(result.get("price_basis")) or "offering_price",
+        "prospectus": {
+            "status": _string_or_none(result.get("status")) or "valued",
+            "reviewStatus": _string_or_none(packet.get("reviewStatus")) or _string_or_none(packet.get("review_status")),
+            "company": sanitize_for_agent(_dict(packet.get("company"))),
+            "filing": sanitize_for_agent(_dict(packet.get("filing"))),
+            "sourceUrl": _string_or_none(packet.get("sourceUrl")) or _string_or_none(packet.get("source_url")),
+            "packet": sanitize_for_agent(packet),
+        },
+        "valuation": valuation,
+        "dcf": extract_dcf_summary(valuation),
+        "baseline": extract_baseline_contract(valuation, {"requestPolicyMode": "prospectus_reviewed"}),
+        "assumptions": extract_assumptions(valuation),
+        "accountingAndClaims": extract_accounting_and_claims(valuation),
+        "provenance": extract_prospectus_source_provenance(provenance),
+        "sourceQualityGate": normalize_source_quality_gate(_dict(result.get("sourceQualityGate") or result.get("source_quality_gate"))),
+        "growthAnchor": extract_growth_anchor(valuation),
+        "referenceData": prospectus_reference_data_status(valuation),
+        "version": version_metadata(valuation),
+        "policy": policy_metadata("prospectus_reviewed"),
+        "warnings": extract_warnings(valuation),
+    }
+
+
+def prospectus_valuation_for_agent(valuation: dict[str, Any]) -> dict[str, Any]:
+    return _remove_yahoo_market_references(sanitize_for_agent(valuation))
+
+
+def _remove_yahoo_market_references(value: Any) -> Any:
+    if isinstance(value, dict):
+        cleaned: dict[str, Any] = {}
+        for key, item in value.items():
+            filtered = _remove_yahoo_market_references(item)
+            if filtered is None:
+                continue
+            if isinstance(filtered, (list, dict)) and not filtered:
+                cleaned[key] = filtered
+                continue
+            cleaned[key] = filtered
+        return cleaned
+    if isinstance(value, list):
+        return [
+            filtered
+            for item in value
+            if (filtered := _remove_yahoo_market_references(item)) is not None
+        ]
+    if isinstance(value, str) and ("yahoo" in value.lower() or "yfinance" in value.lower()):
+        return None
+    return value
+
+
+def prospectus_reference_data_status(valuation: dict[str, Any]) -> dict[str, Any]:
+    anchor = extract_growth_anchor(valuation)
+    return {
+        "marketData": {
+            "provider": "not_used_prospectus_primary_filing",
+            "status": "not_queried_for_prospectus_path",
+            "warnings": [],
+        },
+        "damodaranReferenceData": {
+            "status": "available_when_growth_anchor_present" if anchor.get("mappedEntity") else "not_returned",
+            "mappedEntity": anchor.get("mappedEntity"),
+            "region": anchor.get("region"),
+            "year": anchor.get("year"),
+            "sourceDate": anchor.get("sourceDate"),
+            "confidence": anchor.get("confidence"),
+            "warnings": anchor.get("warnings", []),
+        },
+    }
+
+
+def extract_prospectus_source_provenance(source: dict[str, Any]) -> dict[str, Any]:
+    if not source:
+        return {}
+    return {
+        "sourceClass": source.get("sourceClass") or source.get("source_class"),
+        "provider": source.get("provider"),
+        "sourceDate": source.get("sourceDate") or source.get("source_date"),
+        "periodEnd": source.get("periodEnd") or source.get("period_end"),
+        "retrievalStatus": source.get("retrievalStatus") or source.get("retrieval_status"),
+        "crossCheckStatus": source.get("crossCheckStatus") or source.get("cross_check_status"),
+        "sourcePolicyStatus": source.get("sourcePolicyStatus") or source.get("source_policy_status"),
+        "warnings": _string_list(source.get("warnings")),
+        "dataQualityWarnings": _data_quality_warning_list(source.get("dataQualityWarnings") or source.get("data_quality_warnings")),
     }
 
 
@@ -2321,6 +2542,8 @@ def classify_failure(message: str) -> str:
         return "insufficient_financial_data"
     if any(term in lowered for term in ("configuration", "environment variable", "required")):
         return "missing_configuration"
+    if "prospectus" in lowered and "review" in lowered:
+        return "prospectus_review_required"
     if "stale" in lowered and "reference" in lowered:
         return "stale_reference_data"
     if "non-json" in lowered or "non json" in lowered or "html" in lowered:
@@ -2342,6 +2565,8 @@ def failure_code_for_category(category: str) -> str:
         "missing_local_service": "MISSING_LOCAL_SERVICE",
         "currency_conversion_failed": "CURRENCY_CONVERSION_FAILED",
         "upstream_service_error": "UPSTREAM_SERVICE_ERROR",
+        "invalid_prospectus_source": "INVALID_PROSPECTUS_URL",
+        "prospectus_review_required": "PROSPECTUS_REVIEW_REQUIRED",
     }.get(category, "VALUATION_SERVICE_ERROR")
 
 
@@ -2357,6 +2582,8 @@ def recovery_for_category(category: str) -> dict[str, Any]:
         "upstream_service_error": "Tell the user the local valuation service returned an upstream error. Ask them to run `sv service status`, retry once, and preserve the failure category if it repeats.",
         "invalid_ticker": "Ask for a valid public ticker symbol.",
         "unsupported_overrides": "Ask before retrying with only governed scenario override fields.",
+        "invalid_prospectus_source": "Ask for a SEC EDGAR Archives HTML prospectus URL. Do not paste raw filing HTML into the MCP tool.",
+        "prospectus_review_required": "Review the extracted ProspectusFinancialPacket with the user, correct any disputed fields, then retry only after setting reviewStatus to reviewed.",
         "unknown_failure": "Summarize the failure and ask the user whether to run service status checks.",
     }
     return {
@@ -2451,10 +2678,32 @@ def compact_text_content(payload: dict[str, Any], is_error: bool) -> str:
             summary += price_text + "."
         if baseline_status:
             summary += f" Baseline use {baseline_status}."
+        price_basis = _string_or_none(payload.get("priceBasis"))
+        if price_basis:
+            summary += f" Price basis {price_basis}."
         provenance = _dict(payload.get("provenance"))
         source_policy_status = _string_or_none(provenance.get("sourcePolicyStatus"))
         if source_policy_status:
             summary += f" Source policy {source_policy_status}."
+        return f"{summary}{policy_text} Full JSON is in structuredContent."
+
+    if tool == "stockvaluation.extract_prospectus":
+        prospectus = _dict(payload.get("prospectus"))
+        company = _dict(prospectus.get("company"))
+        filing = _dict(prospectus.get("filing"))
+        gate = _dict(payload.get("sourceQualityGate"))
+        company_name = _string_or_none(company.get("legalName")) or _string_or_none(company.get("name"))
+        form_type = _string_or_none(filing.get("formType")) or _string_or_none(filing.get("form_type"))
+        review_status = _string_or_none(prospectus.get("reviewStatus")) or "review_required"
+        gate_reason = _string_or_none(gate.get("reason"))
+        summary = f"{subject}: ok. Prospectus extraction requires review."
+        if company_name:
+            summary += f" {company_name}."
+        if form_type:
+            summary += f" Filing {form_type}."
+        summary += f" Review status {review_status}."
+        if gate_reason:
+            summary += f" Source gate {gate_reason}."
         return f"{summary}{policy_text} Full JSON is in structuredContent."
 
     if tool == "stockvaluation.health":

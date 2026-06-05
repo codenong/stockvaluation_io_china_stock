@@ -17,6 +17,7 @@ The product surface is the user's agent. The deterministic valuation math comes 
 - Do not infer a guided-refinement bypass from ordinary phrasing. Do not infer an evidence-review bypass from ordinary phrasing. Bypass either step only when the user explicitly says quick, no questions, skip questions, one-shot report, automation, smoke-test, or equivalent.
 - In the default full researched valuation flow, the final report is blocked until the evidence review gate is cleared and until guided refinement is either completed from user answers or explicitly bypassed by the user.
 - The final report is blocked until guided refinement is completed or explicitly bypassed; an evidence-review approval or caveated continuation alone is not permission to skip guided questions.
+- If the user provides a SEC EDGAR HTML prospectus URL or asks for a prospectus-driven valuation, use prospectus mode in `{baseDir}/references/prospectus-mode.md`. Call `stockvaluation.extract_prospectus`, stop at `prospectus_extraction_review_required`, show a compact review card, and call `stockvaluation.value_prospectus` only after the packet `reviewStatus` is `reviewed`. Do not show the user only a bare list of allowed actions. Show four numbered human choices with plain explanations, then map the user's number to the internal action.
 - After evidence gathering and driver-specific evidence classification, stop at the evidence review gate. Do not ask guided valuation questions or write the final report before the gate is cleared.
 - After the evidence review gate is cleared and the evidence-constrained base case is built, build a hidden guided question plan that is materiality-driven, then ask every material company-specific question up to a hard cap of 15 visible guided questions. Ask one question at a time by default. Do not ask a batch of 4-6 questions unless the user explicitly requests batch mode.
 - Each visible question must show "My analysis" or equivalent modeling-default language, why the default was selected, evidence used, business impact, model impact, and confidence. The default is educational modeling judgment, not financial advice.
@@ -50,12 +51,29 @@ The product surface is the user's agent. The deterministic valuation math comes 
 18. Write the final educational report using `{baseDir}/references/report-template.md` as the canonical controlling structure. Use `{baseDir}/references/narrative-report-style.md` only as subordinate prose guidance, summarizing the judgment in prose and tables rather than printing raw JSON by default.
 19. Apply `{baseDir}/references/no-advice-policy.md` before finalizing.
 
+## Prospectus Workflow
+
+Use this workflow when the input is a SEC EDGAR Archives HTML prospectus URL, especially for IPO or offering cases where an ordinary ticker and trading market price may not exist.
+
+1. Call `stockvaluation.health`.
+2. Call `stockvaluation.extract_prospectus` with `filing_url` and optional `expected_company` or `expected_symbol` only. Do not paste raw HTML into the MCP call.
+3. Read `structuredContent.prospectus.packet`, `structuredContent.sourceQualityGate`, and `structuredContent.provenance`. The extraction must return `sourceQualityGate.reason = prospectus_extraction_review_required`, `sourceClass = primary_filing`, and provider `sec-edgar-prospectus` before it can support prospectus mode.
+4. Stop and ask the user to review the extracted company identity, filing metadata, `offering_price`, share-count basis, financial statement facts, segment revenue weights, source table titles, and extraction issues. The review is educational modeling control and is not financial advice. Do not show the user only a bare list of allowed actions. Show a compact review card with what was extracted, what is missing or ambiguous, the recommended next action, and four numbered human choices: `1` approve and continue, `2` correct the packet, `3` add sources, or `4` stop. Map the number to the internal action names in `{baseDir}/references/prospectus-mode.md`; do not ask humans to type internal action names unless they are using automation.
+5. If the user approves or corrects the packet, update only the reviewed/corrected packet fields and set `reviewStatus` to `reviewed`. If the user adds sources, process them before valuation. If the user stops, do not value the prospectus.
+6. Call `stockvaluation.value_prospectus` with the reviewed packet. Use the returned `priceBasis = offering_price`; do not substitute Yahoo Finance, yfinance, market-data revenue estimates, or a live trading market price.
+7. Prospectus extraction review is not the evidence review gate and does not replace guided valuation refinement. After `stockvaluation.value_prospectus`, continue into the normal researched workflow: build the evidence packet, stop at `{baseDir}/references/evidence-review-gate.md`, run baseline plausibility, and use `{baseDir}/references/guided-valuation-refinement.md` for material user-judgment questions unless the user explicitly requested quick/no-questions/automation/smoke-test.
+8. If there is no prospectus-specific recalculation path, guided answers are report-only guided defaults. Do not call report-only prospectus guided answers a user-refined scenario unless a deterministic prospectus recalc actually happened. If the visible guided flow says "Question 1 of 3" and the user accepts defaults, all remaining default answers must be summarized; do not skip hidden questions silently.
+9. SEC filing facts are primary. External news is report-only context and external news must not override filing facts from the prospectus.
+10. Write the final report using `{baseDir}/references/report-template.md`, `{baseDir}/references/prospectus-mode.md`, and `{baseDir}/references/no-advice-policy.md`. Label provenance as `primary_filing` / `sec-edgar-prospectus` and keep recommendation language out of the report.
+
 ## Tool Rules
 
 - Use the MCP tools documented in `{baseDir}/references/mcp-tools.md`.
 - Treat MCP JSON as the source of truth for valuation output.
 - Do not invent missing service fields, missing financial data, growth-anchor confidence, or scenario math.
 - Use `stockvaluation.researched_baseline` as the full researched baseline entrypoint. Keep `stockvaluation.value_ticker` mechanical for preflight and mechanical diagnostics.
+- Use `stockvaluation.extract_prospectus` and `stockvaluation.value_prospectus` only for the prospectus workflow. `stockvaluation.value_prospectus` requires a reviewed `ProspectusFinancialPacket`; do not bypass `prospectus_extraction_review_required`.
+- For prospectus workflow output, label `offering_price`, `primary_filing`, and `sec-edgar-prospectus` exactly when returned. Do not use Yahoo Finance or yfinance as the source of prospectus financials or price basis.
 - Do not describe `stockvaluation.value_ticker` as SEC primary-source backed unless returned provenance says `primary_filing`. When the service returns `sec_http_error_yahoo_fallback`, `sec_missing_user_agent_yahoo_fallback`, or another `sec_*_yahoo_fallback` status, label Yahoo-normalized financials as fallback and do not imply SEC support. When the service returns `primary_adapter_not_supported_yahoo_normalized`, require company-report cross-check before researched claims.
 - Treat `sourceQualityGate.status = requires_user_decision` as a source-quality stop point unless the user explicitly selected quick, no-questions, automation, or smoke-test bypass. For SEC fallback, stop immediately after source selection. For non-US unsupported-primary-adapter fallback, the evidence review is the stop point after company-report cross-check; make the Yahoo-normalized source choice explicit and do not treat a generic approval as enough.
 - If a tool returns `ok: false`, use `stockvaluation.explain_failure` and explain the failure plainly.
@@ -96,6 +114,7 @@ The product surface is the user's agent. The deterministic valuation math comes 
 
 - `{baseDir}/references/mcp-tools.md`
 - `{baseDir}/references/financial-field-definitions.md`
+- `{baseDir}/references/prospectus-mode.md`
 - `{baseDir}/references/search-and-evidence.md`
 - `{baseDir}/references/driver-specific-evidence.md`
 - `{baseDir}/references/evidence-review-gate.md`

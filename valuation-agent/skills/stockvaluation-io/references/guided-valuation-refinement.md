@@ -152,6 +152,8 @@ After each answer, store it and ask the next unanswered question. Do not recalcu
 
 The Scenario Book must then contain exactly one user-refined scenario for the completed guided path. If the user says `use defaults`, record the defaults as user judgment, not evidence, and still run one final user-refined recalculation.
 
+If the current workflow has no supported recalculation path, such as no prospectus-specific recalculation path in prospectus mode, keep answers as report-only guided defaults. Do not call report-only prospectus guided answers a user-refined scenario. If the visible question count says "Question 1 of 3", all remaining default answers must be summarized when `use defaults` is accepted; do not skip hidden questions silently.
+
 ## User Judgment Package
 
 After the user answers, create a `user_judgment` package distinct from autonomous `assumption_judgment`:

@@ -18,6 +18,8 @@ public class SecurityConfig {
                         .requestMatchers("/public/**").permitAll() // no auth required
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/automated-dcf-analysis/*/valuation").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/prospectus/extract").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/prospectus/valuation").permitAll()
                         .requestMatchers("/api-s/**").permitAll() // internal service-to-service
                         .anyRequest().authenticated()
                 );

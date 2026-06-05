@@ -58,9 +58,30 @@ class ValuationServiceClient:
     def value_ticker(self, ticker: str, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
         url = f"{self.base_url}/{parse.quote(ticker)}/valuation"
         payload = self._post_json(url, overrides or {})
+        return self._data_object(payload, "valuation-service response missing JSON data object")
+
+    def extract_prospectus(
+        self,
+        filing_url: str,
+        expected_company: str | None = None,
+        expected_symbol: str | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"filing_url": filing_url}
+        if expected_company:
+            body["expected_company"] = expected_company
+        if expected_symbol:
+            body["expected_symbol"] = expected_symbol
+        payload = self._post_json(self._api_v1_url("/prospectus/extract"), body)
+        return self._data_object(payload, "valuation-service prospectus extraction response missing JSON data object")
+
+    def value_prospectus(self, packet: dict[str, Any]) -> dict[str, Any]:
+        payload = self._post_json(self._api_v1_url("/prospectus/valuation"), {"packet": packet})
+        return self._data_object(payload, "valuation-service prospectus valuation response missing JSON data object")
+
+    def _data_object(self, payload: dict[str, Any], message: str) -> dict[str, Any]:
         data = payload.get("data") if isinstance(payload, dict) else None
         if not isinstance(data, dict):
-            raise NonJsonServiceResponse("valuation-service response missing JSON data object")
+            raise NonJsonServiceResponse(message)
         return data
 
     def _health_url(self) -> str:
@@ -69,6 +90,17 @@ class ValuationServiceClient:
             return explicit
         parsed = parse.urlsplit(self.base_url)
         return parse.urlunsplit((parsed.scheme, parsed.netloc, "/actuator/health", "", ""))
+
+    def _api_v1_url(self, path: str) -> str:
+        parsed = parse.urlsplit(self.base_url)
+        marker = "/api/v1"
+        base_path = parsed.path or marker
+        if marker in base_path:
+            api_root = base_path[: base_path.index(marker) + len(marker)]
+        else:
+            api_root = marker
+        suffix = path if path.startswith("/") else f"/{path}"
+        return parse.urlunsplit((parsed.scheme, parsed.netloc, f"{api_root}{suffix}", "", ""))
 
     def _get_json(self, url: str) -> dict[str, Any]:
         req = request.Request(url, method="GET")

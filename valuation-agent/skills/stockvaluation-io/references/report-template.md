@@ -4,6 +4,8 @@ This file is the canonical controlling structure for the final educational valua
 
 `narrative-report-style.md` is subordinate to this template. narrative-report-style.md is subordinate to the report template. It may improve prose, but it must not remove, rename, or reorder required template sections. Do not use the older loose story-and-numbers shape as the controlling report structure.
 
+For prospectus mode, use this same template after `stockvaluation.extract_prospectus` has stopped at `prospectus_extraction_review_required`, the user has reviewed or corrected the `ProspectusFinancialPacket`, and `stockvaluation.value_prospectus` has returned a result. Label `priceBasis = offering_price`, source class `primary_filing`, and provider `sec-edgar-prospectus`. Prospectus mode remains educational use only and not financial advice.
+
 ## Final Report Rendering Contract
 
 The final answer must render the required report-template headings in order. Do not replace this template with a compressed memo, even when the user asks for a concise answer. A final answer that starts with a sentence such as "Using stockvaluation.io, the user-refined case values COMPANY at PRICE" and then gives only "Key assumptions", "Main caveats", and "Sources used" is not template-compliant.
@@ -118,8 +120,12 @@ Lead with the scenario the user actually selected. Include compact values only w
 | Segment coverage |  |
 | Mapped industries |  |
 | Target operating margin source/status | segment-weighted, single-industry mechanical fallback, governed override, unsupported/challenged, or blocked |
+| Prospectus review status | reviewed, review_required, corrected, stopped, or not_applicable |
+| Prospectus price basis | `offering_price` when returned by `stockvaluation.value_prospectus` |
 
 Separate market price, model intrinsic value, assumptions, and evidence. Describe the gap as a model result, not as a recommendation. The mechanical baseline value is omitted from the default snapshot unless the user asks for audit/debug detail.
+
+For prospectus mode, call the comparable price input the offering price, not a trading market price. Use `stockvaluation.value_prospectus` output and the reviewed packet; do not substitute Yahoo Finance, yfinance, market-data revenue estimates, or a live market price.
 
 ## Source Quality Summary
 
@@ -131,13 +137,22 @@ Use `structuredContent.provenance`, `structuredContent.sourceQualityGate`, and `
 | Provider |  |
 | Source date / period end |  |
 | Retrieval status |  |
-| Source policy status | `primary_filing_used`, `sec_missing_user_agent_yahoo_fallback`, `sec_http_error_yahoo_fallback`, `sec_rate_limited_yahoo_fallback`, `sec_cik_not_found_yahoo_fallback`, `sec_unsupported_filer_yahoo_fallback`, `sec_unsupported_taxonomy_yahoo_fallback`, `sec_insufficient_facts_yahoo_fallback`, `sec_parse_error_yahoo_fallback`, `sec_primary_not_applicable`, `primary_adapter_not_supported_yahoo_normalized`, `company_report_check_pending`, `stale_source_date`, or `missing_source_date` |
+| Source policy status | `primary_filing_used`, `prospectus_extraction_review_required`, `prospectus_packet_reviewed`, `sec_missing_user_agent_yahoo_fallback`, `sec_http_error_yahoo_fallback`, `sec_rate_limited_yahoo_fallback`, `sec_cik_not_found_yahoo_fallback`, `sec_unsupported_filer_yahoo_fallback`, `sec_unsupported_taxonomy_yahoo_fallback`, `sec_insufficient_facts_yahoo_fallback`, `sec_parse_error_yahoo_fallback`, `sec_primary_not_applicable`, `primary_adapter_not_supported_yahoo_normalized`, `company_report_check_pending`, `stale_source_date`, or `missing_source_date` |
 | Cross-check status | `company_report_cross_checked`, `company_report_check_pending`, `company_report_unavailable`, `not_applicable`, or other returned status |
+| Prospectus provider / price basis | `sec-edgar-prospectus` / `offering_price` when returned |
 | Material warnings |  |
 
 For US researched valuations, prefer SEC/EDGAR companyfacts, XBRL, company facts, or filing-derived primary financial data when returned. If the provider is `sec-edgar-companyfacts`, say live SEC/EDGAR primary filing data was used for the returned core financials, with the returned source date and period end. If the output shows `sec_http_error_yahoo_fallback` or another `sec_*_yahoo_fallback` status, say the run used Yahoo-normalized financials as a classified fallback and do not imply the core financials are primary-source backed. If `sourceQualityGate.status` is `requires_user_decision`, say whether the user approved fallback, requested retry, stopped, or explicitly bypassed the gate, but do not use a visible `Source quality gate` row or heading.
 
 SEC primary-filing provenance does not mean full GAAP/non-GAAP reconciliation, segment-footnote extraction, lease parsing, or accounting cleanup was completed. Treat those topics according to returned AccountingAndClaims statuses and evidence rules.
+
+For prospectus mode, `primary_filing` / `sec-edgar-prospectus` means the reviewed packet came from the SEC prospectus HTML filing. It does not mean the model has audited every pro forma adjustment or accounting claim. If `sourceQualityGate.reason = prospectus_extraction_review_required`, report whether the packet was approved, corrected, supplemented with sources, or stopped before `stockvaluation.value_prospectus`.
+
+Prospectus packet approval is only extraction review. It is not the evidence review gate and does not replace guided valuation refinement. For prospectus reports, still show evidence review status and guided-refinement status. If the workflow stopped at the prospectus packet review, say guided refinement was not run because valuation had not reached that stage. If the user explicitly requested quick/no-questions/automation/smoke-test, label that bypass.
+
+If there is no prospectus-specific recalculation path, label accepted guided defaults as report-only guided defaults. Do not call report-only prospectus guided answers a user-refined scenario, do not call them recalculated, and do not make them the headline value. Use a user-refined scenario label only when a deterministic prospectus recalc actually happened. If the user accepted defaults after a visible multi-question count, all remaining default answers must be summarized before the report; do not skip hidden questions silently.
+
+SEC filing facts are primary. External news is report-only context and may confirm background, but external news must not override filing facts from the prospectus.
 
 For non-US researched valuations, Yahoo-normalized financials may be the main normalized source when the report labels the source class and gives the company-report or filing cross-check status. If `primary_adapter_not_supported_yahoo_normalized` is returned, say no supported deterministic primary-filing adapter covered this listing and company-report cross-check is required. If cross-checks are pending, say so plainly and treat material accounting or segment claims as limitations until checked.
 

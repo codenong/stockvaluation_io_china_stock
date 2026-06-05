@@ -20,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class ValuationOutputServiceTest {
@@ -123,6 +124,21 @@ class ValuationOutputServiceTest {
         Double result = ReflectionTestUtils.invokeMethod(valuationOutputService, "calculateValueOfOptions",
                 financialDataInput, optionValueResultDTO);
         assertEquals(0.0, result);
+    }
+
+    @Test
+    void testCalculateOptionValueIfRequired_NoOptionsSkipsProviderLookup() {
+        financialDataInput.setHasEmployeeOptions(false);
+
+        OptionValueResultDTO result = ReflectionTestUtils.invokeMethod(
+                valuationOutputService,
+                "calculateOptionValueIfRequired",
+                "PROSPECTUS",
+                financialDataInput);
+
+        assertEquals(0.0, result.getValuePerOption());
+        assertEquals(0.0, result.getValueOfAllOptionsOutstanding());
+        verifyNoInteractions(optionValueService);
     }
 
     @Test

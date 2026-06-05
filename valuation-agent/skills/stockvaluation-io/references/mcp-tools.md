@@ -153,6 +153,73 @@ If `primary_adapter_not_supported_yahoo_normalized` is returned, do not describe
 
 Do not present a generic `approve` prompt as sufficient for either source-quality gate. Quick, no-questions, smoke-test, and automation paths may bypass only when explicitly requested and must label the bypass.
 
+## `stockvaluation.extract_prospectus`
+
+Extracts a review-required `ProspectusFinancialPacket` from a SEC EDGAR Archives HTML prospectus filing. Use it for prospectus mode before any prospectus valuation. This is educational use only and not financial advice.
+
+Input:
+
+```json
+{
+  "filing_url": "https://www.sec.gov/Archives/edgar/data/1819994/000119312526123456/d123456ds1a.htm",
+  "expected_company": "Space Exploration Technologies Corp.",
+  "expected_symbol": "SPACE"
+}
+```
+
+Rules:
+
+- `filing_url` must be a SEC EDGAR Archives `.htm` or `.html` URL. Do not paste raw HTML, raw filing text, non-SEC URLs, local files, or search-result pages into this tool.
+- The expected output has `prospectus.packet.reviewStatus = review_required`.
+- The expected source gate has `sourceQualityGate.reason = prospectus_extraction_review_required` and internal allowed actions `approve_extracted_packet`, `correct_packet`, `add_sources`, or `stop`.
+- The expected provenance is `sourceClass = primary_filing` and `provider = sec-edgar-prospectus`.
+
+Use these output sections:
+
+- `prospectus.packet`: the extracted `ProspectusFinancialPacket` for user review.
+- `prospectus.company` and `prospectus.filing`: compact identity and filing metadata.
+- `sourceQualityGate`: the review stop point.
+- `provenance`: primary filing provenance.
+- `policy`: educational-use and no-advice guardrails.
+
+After this call, stop. Review company identity, form type, filing date, source URL, `offering_price`, share-count basis, extracted financial facts, segment revenue weights, units, scale, and extraction issues. User approval is a packet-review control, not financial advice.
+
+Do not show the user only a bare list of allowed actions. Show a compact review card with what was extracted, what is missing or ambiguous, source provenance, extraction issues, and the recommended next action. Then show numbered human choices with explanations:
+
+1. Approve and continue - use the extracted packet as reviewed.
+2. Correct the packet - provide source-backed fixes before valuation.
+3. Add sources - provide another filing, amendment, or primary source before valuation.
+4. Stop - do not value this packet.
+
+Map the user's number to the internal action: `1` -> `approve_extracted_packet`, `2` -> `correct_packet: ...`, `3` -> `add_sources: ...`, and `4` -> `stop`. Do not ask humans to type internal action names unless they are using automation. If the user chooses 2 or 3 without details, ask one short follow-up for the correction or source. Choose `approve_extracted_packet` only when the required packet fields are present, source-backed, and internally consistent. For an empty packet, missing revenue, missing share count, missing units/scale, missing filing metadata, or unresolved extraction issues, recommend option 4 stop or option 2 correct the packet, not approval.
+
+## `stockvaluation.value_prospectus`
+
+Runs a local educational valuation from a user-reviewed `ProspectusFinancialPacket`. This tool is blocked unless the packet has `reviewStatus = reviewed`.
+
+Input:
+
+```json
+{
+  "packet": {
+    "schemaVersion": "prospectus_financial_packet.v1",
+    "reviewStatus": "reviewed"
+  }
+}
+```
+
+Use these output sections:
+
+- `priceBasis`: must be `offering_price` for prospectus mode.
+- `prospectus.packet`: the reviewed packet used for valuation.
+- `valuation`, `dcf`, `assumptions`, `baseline`, `growthAnchor`, and `accountingAndClaims`: valuation-service output derived from the reviewed prospectus packet.
+- `provenance`: should identify `primary_filing` / `sec-edgar-prospectus`.
+- `sourceQualityGate`: should show the reviewed packet no longer needs the extraction review gate.
+
+Do not use Yahoo Finance, yfinance, market-data revenue estimates, or a live trading market price for prospectus mode unless the user explicitly leaves prospectus mode. In reports, label the price basis as `offering_price`; do not translate it into buy, sell, hold, target-price, or should-invest language.
+
+Prospectus extraction review is not the evidence review gate and does not replace guided valuation refinement. After `stockvaluation.value_prospectus`, continue into the normal researched workflow: build evidence, stop at `evidence-review-gate.md`, run baseline plausibility, and use `guided-valuation-refinement.md` for material user-judgment questions unless the user explicitly requested quick/no-questions/automation/smoke-test.
+
 ## `stockvaluation.recalculate`
 
 Recalculates deterministic DCF output with governed scenario overrides. In the default full researched valuation workflow, call it once after producing `assumption_judgment` when the payload is supported.

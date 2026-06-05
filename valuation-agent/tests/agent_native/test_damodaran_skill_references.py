@@ -23,6 +23,7 @@ REQUIRED_GUIDES = {
     "segment-quality.md",
     "special-company-stop-rules.md",
     "financial-field-definitions.md",
+    "prospectus-mode.md",
 }
 
 REQUIRED_COVERAGE_TOPICS = [
@@ -112,6 +113,56 @@ def test_source_quality_gate_docs_force_explicit_user_choice():
     assert "no supported deterministic primary-filing adapter covers this listing" in combined
     assert "continue after company-report cross-check" in combined
     assert "do not present a generic `approve` prompt as sufficient" in combined
+
+
+def test_skill_docs_describe_prospectus_mode_review_gate_and_price_basis():
+    skill = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8")
+    mcp = _read_reference("mcp-tools.md")
+    template = _read_reference("report-template.md")
+    prospectus = _read_reference("prospectus-mode.md")
+
+    for text in [skill, mcp, template, prospectus]:
+        assert "stockvaluation.extract_prospectus" in text
+        assert "stockvaluation.value_prospectus" in text
+        assert "prospectus_extraction_review_required" in text
+        assert "offering_price" in text
+        assert "sec-edgar-prospectus" in text
+        assert "primary_filing" in text
+        assert "not financial advice" in text.lower()
+    assert "raw HTML" in mcp
+    assert "reviewStatus" in prospectus
+    assert "reviewed" in prospectus
+
+
+def test_prospectus_mode_review_gate_is_contextual_and_does_not_skip_guided_flow():
+    skill = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8").lower()
+    mcp = _read_reference("mcp-tools.md").lower()
+    prospectus = _read_reference("prospectus-mode.md").lower()
+    combined = "\n".join([skill, mcp, prospectus])
+
+    for phrase in [
+        "do not show the user only a bare list of allowed actions",
+        "show a compact review card",
+        "recommended next action",
+        "numbered human choices",
+        "1. approve and continue",
+        "2. correct the packet",
+        "3. add sources",
+        "4. stop",
+        "map the user's number to the internal action",
+        "do not ask humans to type internal action names",
+        "choose `approve_extracted_packet` only when",
+        "empty packet",
+        "prospectus extraction review is not the evidence review gate",
+        "does not replace guided valuation refinement",
+        "continue into the normal researched workflow",
+        "evidence-review-gate.md",
+        "guided-valuation-refinement.md",
+    ]:
+        assert phrase in combined
+
+    assert skill.index("prospectus-mode.md") < skill.index("evidence-review-gate.md")
+    assert skill.index("stockvaluation.value_prospectus") < skill.index("report-template.md")
 
 
 def test_coverage_map_has_required_topics_support_states_and_qa_fields():
@@ -402,6 +453,27 @@ def test_guided_refinement_preserves_market_implied_report_only_boundary():
     assert "user-refined scenario" in report
     assert "market-implied diagnostics" in report
     assert "do not call user answers evidence" in report
+
+
+def test_prospectus_guided_defaults_do_not_claim_recalculated_user_refined_value():
+    skill = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8").lower()
+    prospectus = _read_reference("prospectus-mode.md").lower()
+    guide = _read_reference("guided-valuation-refinement.md").lower()
+    report = _read_reference("report-template.md").lower()
+    combined = "\n".join([skill, prospectus, guide, report])
+
+    for phrase in [
+        "no prospectus-specific recalculation path",
+        "report-only guided defaults",
+        "do not call report-only prospectus guided answers a user-refined scenario",
+        "deterministic prospectus recalc actually happened",
+        "all remaining default answers must be summarized",
+        "do not skip hidden questions silently",
+        "sec filing facts are primary",
+        "external news is report-only",
+        "external news must not override filing facts",
+    ]:
+        assert phrase in combined
 
 
 def test_mcp_reference_documents_reportable_market_expectation_fields():

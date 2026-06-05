@@ -9,6 +9,7 @@ from valuation_agent.service_client import (
     NonJsonServiceResponse,
     ServiceHTTPError,
     ServiceUnavailable,
+    ValuationServiceClient,
 )
 
 
@@ -105,9 +106,133 @@ def _valuation_payload():
     }
 
 
+PROSPECTUS_URL = "https://www.sec.gov/Archives/edgar/data/1819994/000119312526123456/d123456ds1a.htm"
+
+
+def _prospectus_packet(review_status="review_required"):
+    return {
+        "schemaVersion": "prospectus_financial_packet.v1",
+        "company": {
+            "legalName": "Space Exploration Technologies Corp.",
+            "tickerOrExpectedSymbol": "SPACE",
+        },
+        "filing": {
+            "formType": "S-1/A",
+            "cik": "1819994",
+            "accessionNumber": "0001193125-26-123456",
+            "filingDate": "2026-05-15",
+        },
+        "sourceUrl": PROSPECTUS_URL,
+        "financials": {
+            "revenue": [
+                {
+                    "metric": "revenue",
+                    "label": "Revenue",
+                    "periodEnd": "2025-12-31",
+                    "value": 8_700_000_000.0,
+                    "unit": "USD",
+                    "scale": "actual",
+                    "statement": "income_statement",
+                    "sourceTableTitle": "Consolidated Statements of Operations",
+                    "sourceRowLabel": "Revenue",
+                }
+            ],
+            "operatingIncome": [
+                {
+                    "metric": "operating_income",
+                    "label": "Income from operations",
+                    "periodEnd": "2025-12-31",
+                    "value": 970_000_000.0,
+                    "unit": "USD",
+                    "scale": "actual",
+                    "statement": "income_statement",
+                    "sourceTableTitle": "Consolidated Statements of Operations",
+                    "sourceRowLabel": "Income from operations",
+                }
+            ],
+        },
+        "offering": {
+            "offeringPrice": {
+                "metric": "offering_price",
+                "label": "Initial public offering price",
+                "value": 97.0,
+                "unit": "USD/share",
+                "sourceTableTitle": "Prospectus summary",
+                "sourceRowLabel": "Initial public offering price",
+            }
+        },
+        "shareCounts": [
+            {
+                "basis": "pro_forma_as_adjusted",
+                "label": "Shares outstanding after this offering",
+                "shares": 2_120_000_000.0,
+                "sourceTableTitle": "Capitalization",
+                "sourceRowLabel": "Shares outstanding after this offering",
+            }
+        ],
+        "segments": [
+            {
+                "segmentName": "Launch and space services",
+                "sectorKey": "aerospace-defense",
+                "revenue": 4_900_000_000.0,
+                "revenueWeight": 0.563,
+                "mappingConfidence": "medium",
+                "sourceTableTitle": "Segment revenue",
+            }
+        ],
+        "sourceProvenance": {
+            "sourceClass": "primary_filing",
+            "provider": "sec-edgar-prospectus",
+            "sourceDate": "2026-05-15",
+            "periodEnd": "2025-12-31",
+            "retrievalStatus": "retrieved",
+            "crossCheckStatus": "not_applicable",
+            "sourcePolicyStatus": "prospectus_extracted",
+            "warnings": [],
+            "dataQualityWarnings": [],
+        },
+        "reviewStatus": review_status,
+    }
+
+
+def _prospectus_extraction_payload():
+    return {
+        "status": "requires_review",
+        "packet": _prospectus_packet(),
+        "sourceQualityGate": {
+            "status": "requires_user_decision",
+            "reason": "prospectus_extraction_review_required",
+            "primarySourceExpected": True,
+            "fallbackSourceAvailable": False,
+            "crossCheckRequired": True,
+            "allowedActions": ["approve_extracted_packet", "correct_packet", "add_sources", "stop"],
+        },
+    }
+
+
+def _prospectus_valuation_payload():
+    return {
+        "status": "valued",
+        "priceBasis": "offering_price",
+        "packet": _prospectus_packet("reviewed"),
+        "sourceProvenance": _prospectus_packet()["sourceProvenance"],
+        "sourceQualityGate": {
+            "status": "not_required",
+            "reason": "prospectus_packet_reviewed",
+            "primarySourceExpected": True,
+            "fallbackSourceAvailable": False,
+            "crossCheckRequired": False,
+            "allowedActions": [],
+        },
+        "valuation": _valuation_payload(),
+    }
+
+
 class FakeClient:
-    def __init__(self, payload=None):
+    def __init__(self, payload=None, prospectus_extraction=None, prospectus_valuation=None):
         self.payload = payload or _valuation_payload()
+        self.prospectus_extraction = prospectus_extraction or _prospectus_extraction_payload()
+        self.prospectus_valuation = prospectus_valuation or _prospectus_valuation_payload()
         self.calls = []
 
     def health(self):
@@ -116,6 +241,14 @@ class FakeClient:
     def value_ticker(self, ticker, overrides=None):
         self.calls.append((ticker, overrides or {}))
         return self.payload
+
+    def extract_prospectus(self, filing_url, expected_company=None, expected_symbol=None):
+        self.calls.append(("extract_prospectus", filing_url, expected_company, expected_symbol))
+        return self.prospectus_extraction
+
+    def value_prospectus(self, packet):
+        self.calls.append(("value_prospectus", packet))
+        return self.prospectus_valuation
 
 
 def _valid_evidence_packet(**item_overrides):
@@ -223,6 +356,8 @@ def test_mcp_tools_list_has_required_stockvaluation_contracts():
         "stockvaluation.health",
         "stockvaluation.value_ticker",
         "stockvaluation.researched_baseline",
+        "stockvaluation.extract_prospectus",
+        "stockvaluation.value_prospectus",
         "stockvaluation.recalculate",
         "stockvaluation.get_assumptions",
         "stockvaluation.get_growth_anchor",
@@ -232,6 +367,186 @@ def test_mcp_tools_list_has_required_stockvaluation_contracts():
     for tool in tools:
         assert tool["inputSchema"]["type"] == "object"
         assert tool["outputSchema"]["type"] == "object"
+
+
+def test_prospectus_tools_are_read_only_and_schema_bounded():
+    tools = {tool["name"]: tool for tool in MCPToolRegistry(FakeClient()).list_tools()}
+
+    extract = tools["stockvaluation.extract_prospectus"]
+    assert extract["annotations"]["readOnlyHint"] is True
+    assert extract["inputSchema"]["required"] == ["filing_url"]
+    assert extract["inputSchema"]["properties"]["filing_url"]["pattern"].startswith("^https://www\\.sec\\.gov/Archives/")
+    assert extract["inputSchema"]["properties"]["expected_company"]["type"] == "string"
+
+    value = tools["stockvaluation.value_prospectus"]
+    assert value["annotations"]["readOnlyHint"] is True
+    assert value["inputSchema"]["required"] == ["packet"]
+    assert value["inputSchema"]["properties"]["packet"]["type"] == "object"
+    assert value["inputSchema"]["properties"]["packet"]["additionalProperties"] is True
+
+
+@pytest.mark.parametrize(
+    "filing_url",
+    [
+        "https://example.com/Archives/edgar/data/1819994/000119312526123456/d123456ds1a.htm",
+        "<html><body><table><tr><td>Revenue</td></tr></table></body></html>",
+    ],
+)
+def test_extract_prospectus_rejects_non_sec_urls_and_raw_html_without_service_call(filing_url):
+    client = FakeClient()
+    result = MCPToolRegistry(client).call("stockvaluation.extract_prospectus", {"filing_url": filing_url})
+
+    assert result["isError"] is True
+    assert result["structuredContent"]["error"]["code"] == "INVALID_PROSPECTUS_URL"
+    assert result["structuredContent"]["failureCategory"] == "invalid_prospectus_source"
+    assert "SEC EDGAR Archives HTML URL" in result["structuredContent"]["error"]["message"]
+    assert client.calls == []
+
+
+def test_extract_prospectus_returns_review_required_packet_with_source_gate():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.extract_prospectus",
+        {
+            "filing_url": PROSPECTUS_URL,
+            "expected_company": "Space Exploration Technologies Corp.",
+            "expected_symbol": "SPACE",
+        },
+    )
+
+    assert result["isError"] is False
+    assert client.calls == [
+        (
+            "extract_prospectus",
+            PROSPECTUS_URL,
+            "Space Exploration Technologies Corp.",
+            "SPACE",
+        )
+    ]
+    structured = result["structuredContent"]
+    assert structured["prospectus"]["status"] == "requires_review"
+    assert structured["prospectus"]["reviewStatus"] == "review_required"
+    assert structured["prospectus"]["packet"]["reviewStatus"] == "review_required"
+    assert structured["sourceQualityGate"]["reason"] == "prospectus_extraction_review_required"
+    assert structured["provenance"]["sourceClass"] == "primary_filing"
+    assert structured["provenance"]["provider"] == "sec-edgar-prospectus"
+    visible_text = result["content"][0]["text"]
+    assert "requires review" in visible_text.lower()
+    assert "structuredContent" in visible_text
+    assert '"packet"' not in visible_text
+    assert "financials" not in visible_text
+    assert len(visible_text) < 600
+
+
+def test_value_prospectus_requires_reviewed_packet_before_service_call():
+    client = FakeClient()
+    result = MCPToolRegistry(client).call(
+        "stockvaluation.value_prospectus",
+        {"packet": _prospectus_packet("review_required")},
+    )
+
+    assert result["isError"] is True
+    assert result["structuredContent"]["error"]["code"] == "PROSPECTUS_REVIEW_REQUIRED"
+    assert result["structuredContent"]["failureCategory"] == "prospectus_review_required"
+    assert "reviewed" in result["structuredContent"]["error"]["message"].lower()
+    assert client.calls == []
+
+
+def test_value_prospectus_uses_reviewed_packet_and_offering_price_basis():
+    client = FakeClient()
+    reviewed_packet = _prospectus_packet("reviewed")
+
+    result = MCPToolRegistry(client).call(
+        "stockvaluation.value_prospectus",
+        {"packet": reviewed_packet},
+    )
+
+    assert result["isError"] is False
+    assert client.calls == [("value_prospectus", reviewed_packet)]
+    structured = result["structuredContent"]
+    assert structured["tool"] == "stockvaluation.value_prospectus"
+    assert structured["priceBasis"] == "offering_price"
+    assert structured["prospectus"]["reviewStatus"] == "reviewed"
+    assert structured["dcf"]["estimatedValuePerShare"] == 412.34
+    assert structured["provenance"]["sourceClass"] == "primary_filing"
+    assert structured["provenance"]["provider"] == "sec-edgar-prospectus"
+    assert structured["sourceQualityGate"]["reason"] == "prospectus_packet_reviewed"
+    assert "Yahoo Finance" not in json.dumps(structured)
+    visible_text = result["content"][0]["text"]
+    assert "offering_price" in visible_text
+    assert "structuredContent" in visible_text
+    assert len(visible_text) < 650
+
+
+def test_service_client_posts_prospectus_extract_to_api_v1_endpoint(monkeypatch):
+    captured = {}
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self):
+            return json.dumps({"data": _prospectus_extraction_payload()}).encode("utf-8")
+
+    def fake_urlopen(req, timeout):
+        captured["url"] = req.full_url
+        captured["body"] = json.loads(req.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr("valuation_agent.service_client.request.urlopen", fake_urlopen)
+
+    result = ValuationServiceClient(timeout=7).extract_prospectus(
+        PROSPECTUS_URL,
+        expected_company="Space Exploration Technologies Corp.",
+        expected_symbol="SPACE",
+    )
+
+    assert captured["url"] == "http://localhost:8081/api/v1/prospectus/extract"
+    assert captured["body"] == {
+        "filing_url": PROSPECTUS_URL,
+        "expected_company": "Space Exploration Technologies Corp.",
+        "expected_symbol": "SPACE",
+    }
+    assert captured["timeout"] == 7
+    assert result["status"] == "requires_review"
+
+
+def test_service_client_posts_reviewed_prospectus_packet_to_valuation_endpoint(monkeypatch):
+    captured = {}
+    reviewed_packet = _prospectus_packet("reviewed")
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self):
+            return json.dumps({"data": _prospectus_valuation_payload()}).encode("utf-8")
+
+    def fake_urlopen(req, timeout):
+        captured["url"] = req.full_url
+        captured["body"] = json.loads(req.data.decode("utf-8"))
+        return Response()
+
+    monkeypatch.setattr("valuation_agent.service_client.request.urlopen", fake_urlopen)
+
+    result = ValuationServiceClient(timeout=7).value_prospectus(reviewed_packet)
+
+    assert captured["url"] == "http://localhost:8081/api/v1/prospectus/valuation"
+    assert captured["body"] == {"packet": reviewed_packet}
+    assert result["priceBasis"] == "offering_price"
 
 
 def test_jsonrpc_mcp_server_lists_and_calls_tools():

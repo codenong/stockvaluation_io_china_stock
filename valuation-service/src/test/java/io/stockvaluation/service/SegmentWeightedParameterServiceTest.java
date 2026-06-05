@@ -137,6 +137,33 @@ class SegmentWeightedParameterServiceTest {
     }
 
     @Test
+    void applySegmentWeightedParameters_partialMappedCoverageAboveThresholdIsExplicit() {
+        FinancialDataInput input = baselineInput();
+        input.setSegments(new SegmentResponseDTO(List.of(
+                new SegmentResponseDTO.Segment("telecom-services", "Telecom. Services", List.of("Connectivity"), 0.8, 0.61, null),
+                new SegmentResponseDTO.Segment("aerospace-defense", "Aerospace/Defense", List.of("Space"), 0.8, 0.22, null),
+                new SegmentResponseDTO.Segment(null, null, List.of("AI"), 0.2, 0.17, null)
+        )));
+
+        when(sectorMappingRepository.findByIndustryName("telecom-services"))
+                .thenReturn(new SectorMapping(1L, "telecom", "telecom-services", "Telecom. Services"));
+        when(sectorMappingRepository.findByIndustryName("aerospace-defense"))
+                .thenReturn(new SectorMapping(2L, "aerospace", "aerospace-defense", "Aerospace/Defense"));
+        when(inputStatRepository.findFirstByIndustryGroupOrderByIdAsc(anyString())).thenReturn(Optional.empty());
+        when(industryAvgUSRepository.findByIndustryName(anyString())).thenReturn(null);
+
+        service.applySegmentWeightedParameters(input, companyData("United States"), List.of(), 0.04);
+
+        SegmentWeightedParameters context = SegmentParameterContext.getParameters();
+        assertNotNull(context);
+        assertTrue(context.hasValidParameters());
+        assertEquals("segment_weighted_baseline", context.getBaselineQuality());
+        assertEquals(83.0, context.getSegmentCoveragePct(), 0.0001);
+        assertTrue(context.getSegmentWarnings().stream()
+                .anyMatch(warning -> warning.contains("partial segment coverage")));
+    }
+
+    @Test
     void applySegmentWeightedParameters_explicitTopLevelOverrides_remainAuthoritativeInSegmentMode() {
         FinancialDataInput input = baselineInput();
         input.setRevenueNextYear(12.5);

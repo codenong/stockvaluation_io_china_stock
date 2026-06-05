@@ -174,6 +174,17 @@ public class ValuationOutputService {
         return 0.00;
     }
 
+    private OptionValueResultDTO calculateOptionValueIfRequired(String ticker, FinancialDataInput valuationInputDTO) {
+        if (!Boolean.TRUE.equals(valuationInputDTO.getHasEmployeeOptions())) {
+            return new OptionValueResultDTO(0.0, 0.0);
+        }
+        return optionValueService.calculateOptionValue(ticker,
+                valuationInputDTO.getAverageStrikePrice(),
+                valuationInputDTO.getAverageMaturity(),
+                valuationInputDTO.getNumberOfOptions(),
+                valuationInputDTO.getStockPriceStdDev());
+    }
+
     private Double calculatePVCFOverNextYear(Double[] pvFcff) {
         Double pvcffOverNext10Years = 0.00;
         for (int i = 0; i < pvFcff.length; i++) {
@@ -1220,9 +1231,7 @@ public class ValuationOutputService {
                 valuationInputDTO.getIndustry(),
                 valuationInputDTO.getFinancialDataDTO().getMarginalTaxRate(),
                 valuationInputDTO.getFinancialDataDTO().getResearchAndDevelopmentMap());
-        OptionValueResultDTO optionValueResultDTO = optionValueService.calculateOptionValue(ticker,
-                valuationInputDTO.getAverageStrikePrice(), valuationInputDTO.getAverageMaturity(),
-                valuationInputDTO.getNumberOfOptions(), valuationInputDTO.getStockPriceStdDev());
+        OptionValueResultDTO optionValueResultDTO = calculateOptionValueIfRequired(ticker, valuationInputDTO);
         LeaseResultDTO leaseResultDTO = calculateLeaseResult(valuationInputDTO);
 
         // calling methods to get the calculated values
