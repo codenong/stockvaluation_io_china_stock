@@ -1,55 +1,62 @@
-# Educational Valuation Report Template
+# Investor-Friendly Valuation Report Template
 
-This file is the canonical controlling structure for the final educational valuation report. Use this structure after the full researched valuation workflow completes. Write the report from MCP JSON, the Scenario Book, the valuation audit packet, evidence packet, evidence review gate status, segment discovery, `assumption_judgment`, baseline plausibility, guided-refinement `user_judgment` when present, recalculation output, and effective assumptions.
+This file is the canonical controlling structure for the final investor-facing educational valuation report. Use this structure after the full researched valuation workflow completes. Write the report from MCP JSON, the Scenario Book, the valuation audit packet, evidence packet, evidence review gate status, segment discovery, `assumption_judgment`, baseline plausibility, guided-refinement `user_judgment` when present, recalculation output, and effective assumptions.
 
 `narrative-report-style.md` is subordinate to this template. narrative-report-style.md is subordinate to the report template. It may improve prose, but it must not remove, rename, or reorder required template sections. Do not use the older loose story-and-numbers shape as the controlling report structure.
 
-For prospectus mode, use this same template after `stockvaluation.extract_prospectus` has stopped at `prospectus_extraction_review_required`, the user has reviewed or corrected the `ProspectusFinancialPacket`, and `stockvaluation.value_prospectus` has returned a result. Label `priceBasis = offering_price`, source class `primary_filing`, and provider `sec-edgar-prospectus`. Prospectus mode remains educational use only and not financial advice.
+For prospectus mode, use this same template after `stockvaluation.extract_prospectus` has stopped at `prospectus_extraction_review_required`, the user has reviewed or corrected the `ProspectusFinancialPacket`, and `stockvaluation.value_prospectus` has returned a result. Label `priceBasis = offering_price`, source class `primary_filing`, and provider `sec-edgar-prospectus` in plain prose. Prospectus mode remains educational use only and not financial advice, but the report should state that boundary once near the start rather than repeating it throughout.
 
 ## Final Report Rendering Contract
 
 The final answer must render the required report-template headings in order. Do not replace this template with a compressed memo, even when the user asks for a concise answer. A final answer that starts with a sentence such as "Using stockvaluation.io, the user-refined case values COMPANY at PRICE" and then gives only "Key assumptions", "Main caveats", and "Sources used" is not template-compliant.
 
+The default report is for an investor-reader, not an agent debugger. Use plain section names and plain prose. Do not use visible default headings named `Educational-Use Framing`, `Valuation Audit Packet Summary`, `Scenario Book Summary`, or `Internal Baseline Audit`. Do not print internal terms such as `MCP`, `structuredContent`, `sourceQualityGate`, `mechanical_only`, `mechanical baseline`, `mechanical model value`, `valuation_audit_packet`, or `scenario_book.v1` in the default report body unless the user explicitly asks for audit/debug detail.
+
+Use one concise no-advice line near the start. Do not repeat "educational use only" or "not financial advice" before every table or section.
+
+Do not show the internal mechanical model value in the default report. If no evidence-constrained base, user-refined deterministic scenario, or explicit supported scenario exists, state that no reliable user-facing valuation case was produced and explain the blockers in plain English. Show the internal mechanical value only in the explicit audit/debug appendix when the user asks for it.
+
 Every final report must visibly include evidence review status and guided-refinement status. If a status is unavailable, say unavailable in the relevant template section rather than omitting the section.
 
-Diagnostic scenarios stay diagnostic. Do not blend the main scenario with a diagnostic no-segment run, market-implied diagnostic, sensitivity run, or unsupported scenario into a headline valuation range. If a diagnostic run is useful, put it in the Scenario Book Summary, Scenario Headline Table, Sensitivity Analysis, or Internal Baseline Audit section, and label why it is not the main scenario.
+Diagnostic scenarios stay diagnostic. Do not blend the main scenario with a diagnostic no-segment run, market-implied diagnostic, sensitivity run, or unsupported scenario into a headline valuation range. If a diagnostic run is useful, put it under `What The Price Would Need`, `Sensitivity Analysis`, or an explicit audit/debug appendix, and label why it is not the main scenario.
 
 Use these section names as the visible spine of the final report unless the user explicitly asks for audit/debug appendices to be added:
 
-1. Educational-Use Framing
-2. Valuation Audit Packet Summary
-3. Scenario Book Summary
-4. Evidence Review Status
-5. Valuation Snapshot
-6. Source Quality Summary
-7. Central Narrative Tension
-8. Growth
-9. Margins
-10. Investment Efficiency
-11. Risk
-12. Market-Implied Expectations
-13. Assumptions Used
-14. Data Quality And Limitations
-15. Key Takeaways
-16. Guided User Judgment And User-Refined Scenario
-17. Evidence And Segment Summary
-18. Assumption Judgment Summary
+1. How To Read This
+2. Valuation View
+3. What Was Reviewed
+4. Source Confidence
+5. Business Story
+6. Growth
+7. Profitability
+8. Reinvestment Needs
+9. Risk
+10. What The Price Would Need
+11. Key Assumptions
+12. Data Limits
+13. Bottom Line
+14. Sources
+15. Guided Judgment
+16. Evidence And Segment Detail
+17. Assumption Support
 
 Do not print raw `assumption_judgment` JSON by default. Summarize it in prose and tables. Do not invent missing values. If MCP/service output does not return a value, say unavailable or omit the table.
 
-Do not print raw `valuation_audit_packet` JSON by default. Summarize the packet status, packet reference, final case type, rejected evidence, unsupported fields, guided-refinement status, and data-quality limitations in prose or compact tables. Keep mechanical baseline value/detail out of user-facing output unless the user explicitly asks for audit/debug detail.
+Do not print raw `valuation_audit_packet` JSON by default. Summarize the packet status, packet reference, final case type, rejected evidence, unsupported fields, guided-refinement status, and data-quality limitations only in audit/debug detail. Keep mechanical baseline value/detail out of user-facing output unless the user explicitly asks for audit/debug detail.
 
-Do not print raw `scenario_book.v1` JSON by default. Summarize the Scenario Book status, reference, main scenario, scenario types, evidence review status, guided-refinement status, diagnostics, unsupported inputs, and limitations in prose or compact tables.
+Do not print raw `scenario_book.v1` JSON by default. Summarize the Scenario Book status, reference, main scenario, scenario types, evidence review status, guided-refinement status, diagnostics, unsupported inputs, and limitations only in audit/debug detail.
 
 No raw hidden JSON by default: keep hidden guided question plans, audit packets, Scenario Book internals, and assumption-judgment objects summarized unless the user explicitly asks for audit/debug detail.
 
 The user-refined scenario is the main scenario when guided refinement was completed. Mechanical baseline is internal-only and remains internal-only by default. Mechanical baseline is internal scaffolding by default: do not include mechanical baseline value as a primary valuation case in the main report. Keep mechanical baseline detail available only in the explicit audit/debug section.
 
-## Educational-Use Framing
+## How To Read This
 
-This report is for educational use only and is not financial advice. It explains one local DCF model output and the assumptions that drive it. The result should be read as a scenario, not an instruction.
+Use one concise line: this report is for educational use only and is not financial advice. Then move on. Explain that the report compares business facts, assumptions, and model output; it is not an instruction to buy, sell, hold, or participate in an offering.
 
-## Valuation Audit Packet Summary
+## Internal Valuation Metadata (Debug Only)
+
+This section is audit/debug-only. Do not include it in the default report.
 
 Use `structuredContent.auditPacket.summary` when returned. State the final case type before presenting any valuation result:
 
@@ -58,9 +65,11 @@ Use `structuredContent.auditPacket.summary` when returned. State the final case 
 - `user_refined_scenario`: bounded user judgment created the main scenario; user answers are not external evidence.
 - `insufficient_researched_evidence`: the run did not earn a user-facing valuation case.
 
-Include the packet reference and a compact status summary. Do not present `mechanical_baseline` as a final case type, visible scenario, or report case. If the audit packet says `insufficient_researched_evidence`, stop or explain the insufficiency without showing the mechanical baseline value.
+Include the packet reference and a compact status summary only in audit/debug detail. Do not present `mechanical_baseline` as a final case type, visible scenario, or report case. If the audit packet says `insufficient_researched_evidence`, stop or explain the insufficiency without showing the mechanical baseline value.
 
-## Scenario Book Summary
+## Scenario Metadata (Debug Only)
+
+This section is audit/debug-only. Do not include it in the default report.
 
 Use `structuredContent.scenarioBook.summary` and `structuredContent.scenarioBook.book` when returned. State the main scenario before presenting valuation values.
 
@@ -78,27 +87,13 @@ Diagnostics:
 
 Market-implied diagnostics are diagnostic-only. They are not evidence, autonomous changes, or the main scenario.
 
-If guided refinement was bypassed by a quick/no-questions request, state the guided-refinement bypass and do not invent a user-refined scenario. If guided defaults were accepted, state that defaults are user judgment, not external evidence, and that the workflow created exactly one user-refined scenario.
+If guided refinement was bypassed by a quick/no-questions request, state the guided-refinement bypass and do not invent a user-refined scenario. If guided defaults were accepted in a workflow with deterministic recalculation support, state that defaults are user judgment, not external evidence, and that the workflow created exactly one user-refined scenario. If there is no deterministic recalculation path, describe defaults as report-only guided judgment.
 
 Each scenario table must keep requested, mapped, unsupported, metadata, and effective assumptions separate. Include payload reference, audit packet reference, evidence/provenance references, segment economics status, and AccountingAndClaims status when material.
 
 Do not present direct valuation outputs, fair value, target price, upside/downside, market price fitting, cash, debt, share count, or report-only accounting topics as mapped scenario inputs unless a tested governed contract accepted them.
 
-## Evidence Review Status
-
-State whether the human-in-the-loop evidence review gate was approved, corrected, caveated, bypassed by an explicit quick/no-questions/automation/smoke-test request, or not run because the workflow stopped earlier. User approval is not financial advice. User corrections are not external evidence unless source-backed and processed through evidence rules.
-
-| Field | Status |
-| --- | --- |
-| Evidence review status | approved, corrected, caveated, bypassed, not_run, or unavailable |
-| Gate timing | after evidence gathering and before guided valuation refinement |
-| User action | approve, corrections, additional sources, continue with caveats, or explicit bypass |
-| Source-backed corrections processed | yes/no/unavailable |
-| Remaining caveats |  |
-
-If the gate was bypassed for a quick/no-questions/automation/smoke-test path, label the bypass plainly and do not imply the user approved the evidence base.
-
-## Valuation Snapshot
+## Valuation View
 
 Lead with the scenario the user actually selected. Include compact values only when returned by MCP/service output.
 
@@ -106,41 +101,51 @@ Lead with the scenario the user actually selected. Include compact values only w
 | --- | --- |
 | Company |  |
 | Ticker |  |
-| Main scenario | user-refined scenario, evidence-constrained base, or explicit quick/no-questions bypass path |
-| User-refined scenario intrinsic value per share |  |
-| Evidence-constrained base intrinsic value per share |  |
+| Valuation status | reliable user-facing case produced, challenged, or unavailable |
+| Case shown | user-refined scenario, evidence-supported base case, explicit scenario, or unavailable |
+| Intrinsic value per share | only when a user-facing case exists |
 | Market price |  |
+| Offering price | prospectus mode only |
 | Equity value |  |
 | Gap to market | currency amount and percent |
 | Currency and source date |  |
-| Model, growth pattern, projection years |  |
-| Service/model/data versions |  |
-| Baseline quality | segment_weighted_baseline, single_industry_fallback, segment_evidence_insufficient, segment_mapping_blocked, or not_calculated |
-| Baseline use status | validated_segment_weighted, mechanical_only, segment_evidence_insufficient, challenged_baseline, or blocked |
-| Segment coverage |  |
-| Mapped industries |  |
-| Target operating margin source/status | segment-weighted, single-industry mechanical fallback, governed override, unsupported/challenged, or blocked |
 | Prospectus review status | reviewed, review_required, corrected, stopped, or not_applicable |
 | Prospectus price basis | `offering_price` when returned by `stockvaluation.value_prospectus` |
+| Main limitation | plain-English blocker or data limit |
 
-Separate market price, model intrinsic value, assumptions, and evidence. Describe the gap as a model result, not as a recommendation. The mechanical baseline value is omitted from the default snapshot unless the user asks for audit/debug detail.
+Separate market price, model intrinsic value, assumptions, and evidence. Describe the gap as a model result, not as a recommendation. The mechanical baseline value and mechanical model value are omitted from the default snapshot unless the user asks for audit/debug detail.
 
 For prospectus mode, call the comparable price input the offering price, not a trading market price. Use `stockvaluation.value_prospectus` output and the reviewed packet; do not substitute Yahoo Finance, yfinance, market-data revenue estimates, or a live market price.
 
-## Source Quality Summary
+## What Was Reviewed
 
-Use `structuredContent.provenance`, `structuredContent.sourceQualityGate`, and `valuation.assumptionTransparency.sourceProvenance` when returned. Keep this section compact and visible in the default report. The default full researched baseline should come from `stockvaluation.researched_baseline`; `stockvaluation.value_ticker` remains mechanical. Use `financial-field-definitions.md` for field meanings and reconciliation language.
+State whether the user reviewed the evidence, corrected it, added sources, continued with caveats, bypassed review by explicit quick/no-questions/automation/smoke-test request, or the workflow stopped earlier. Use plain words. User corrections are not external evidence unless source-backed and processed through evidence rules.
+
+| Field | Status |
+| --- | --- |
+| Evidence review status | approved, corrected, caveated, bypassed, not run, or unavailable |
+| Review timing | after evidence gathering and before guided valuation refinement |
+| User action | approve, corrections, additional sources, continue with caveats, or explicit bypass |
+| Source-backed corrections processed | yes/no/unavailable |
+| Remaining caveats |  |
+
+If the review was bypassed for a quick/no-questions/automation/smoke-test path, label the bypass plainly and do not imply the user approved the evidence base.
+
+## Source Confidence
+
+Use `structuredContent.provenance`, `structuredContent.sourceQualityGate`, and `valuation.assumptionTransparency.sourceProvenance` when returned. Keep this section compact and visible in the default report, but translate internal statuses into plain English. The default full researched baseline should come from `stockvaluation.researched_baseline`; `stockvaluation.value_ticker` remains mechanical. Use `financial-field-definitions.md` for field meanings and reconciliation language.
 
 | Field | Value |
 | --- | --- |
-| Core financial source class | `primary_filing`, `yahoo_normalized`, `company_ir`, or `agent_researched` |
-| Provider |  |
+| Core financial source | SEC filing, company report, Yahoo-normalized data, company IR, or agent research |
+| Provider or document |  |
 | Source date / period end |  |
-| Retrieval status |  |
-| Source policy status | `primary_filing_used`, `prospectus_extraction_review_required`, `prospectus_packet_reviewed`, `sec_missing_user_agent_yahoo_fallback`, `sec_http_error_yahoo_fallback`, `sec_rate_limited_yahoo_fallback`, `sec_cik_not_found_yahoo_fallback`, `sec_unsupported_filer_yahoo_fallback`, `sec_unsupported_taxonomy_yahoo_fallback`, `sec_insufficient_facts_yahoo_fallback`, `sec_parse_error_yahoo_fallback`, `sec_primary_not_applicable`, `primary_adapter_not_supported_yahoo_normalized`, `company_report_check_pending`, `stale_source_date`, or `missing_source_date` |
-| Cross-check status | `company_report_cross_checked`, `company_report_check_pending`, `company_report_unavailable`, `not_applicable`, or other returned status |
-| Prospectus provider / price basis | `sec-edgar-prospectus` / `offering_price` when returned |
+| How the source was used | primary source, fallback, cross-check, or report-only context |
+| Cross-check | completed, pending, unavailable, not needed, or not applicable |
+| Prospectus price basis | offering price when returned |
 | Material warnings |  |
+
+Translate raw service statuses into these plain labels. Keep raw status codes in audit/debug detail unless the user asks for them.
 
 For US researched valuations, prefer SEC/EDGAR companyfacts, XBRL, company facts, or filing-derived primary financial data when returned. If the provider is `sec-edgar-companyfacts`, say live SEC/EDGAR primary filing data was used for the returned core financials, with the returned source date and period end. If the output shows `sec_http_error_yahoo_fallback` or another `sec_*_yahoo_fallback` status, say the run used Yahoo-normalized financials as a classified fallback and do not imply the core financials are primary-source backed. If `sourceQualityGate.status` is `requires_user_decision`, say whether the user approved fallback, requested retry, stopped, or explicitly bypassed the gate, but do not use a visible `Source quality gate` row or heading.
 
@@ -158,7 +163,7 @@ For non-US researched valuations, Yahoo-normalized financials may be the main no
 
 If Yahoo-normalized data and filing/company-report data differ materially, include the returned data-quality warning and treat it as a limitation, not as an automatic assumption override. For field-specific interpretation, use `financial-field-definitions.md`; do not invent definitions for revenue, operating income, cash, debt, shares, R&D, SBC, tax, pretax income, minority interest, or book equity.
 
-## Central Narrative Tension
+## Business Story
 
 Write a short prose setup before the driver sections. If `marketImpliedExpectations` or `pricedInExpectations` are returned, use them as the central tension:
 
@@ -174,11 +179,11 @@ Use market-implied/priced-in data as report inputs, not autonomous model changes
 
 Write prose, not only bullets. Explain revenue drivers, market expansion, scale advantages, pricing power, segment growth, growth-anchor context, and what growth would have to be true. Compare the main scenario growth to returned market-implied growth when available.
 
-## Margins
+## Profitability
 
 Write prose. Explain current and target operating margins, operating leverage, cost structure, pricing power, competitive positioning, and what margin expansion or compression would have to be true. Compare the main scenario margin to returned market-implied margin when available.
 
-## Investment Efficiency
+## Reinvestment Needs
 
 Write prose. Explain sales-to-capital, reinvestment discipline, return on capital, asset intensity, capital efficiency, and whether the growth story can be funded. Tie high growth to reinvestment needs.
 
@@ -186,7 +191,7 @@ Write prose. Explain sales-to-capital, reinvestment discipline, return on capita
 
 Write prose. Explain operational, competitive, regulatory, macro, currency, cyclicality, cost-of-capital, and data-quality risks. WACC, terminal growth, and tax changes are explain-only in autonomous researched judgment unless the user explicitly requests a supported scenario.
 
-## Market-Implied Expectations
+## What The Price Would Need
 
 Use `valuation.assumptionTransparency.marketImpliedExpectations` when returned.
 
@@ -198,7 +203,7 @@ Use `valuation.assumptionTransparency.marketImpliedExpectations` when returned.
 
 Explain that each single-variable implied metric holds other variables fixed. If `marketImpliedExpectations` is absent, say it is unavailable rather than recreating it.
 
-## Assumptions Used
+## Key Assumptions
 
 Summarize requested, mapped, unsupported, and effective assumptions separately. The assumptions the deterministic service actually used are the effective assumptions.
 
@@ -214,13 +219,13 @@ Summarize requested, mapped, unsupported, and effective assumptions separately. 
 
 Do not call user answers evidence. Do not include unsupported answers in the MCP payload. Do not present market-implied diagnostics as a user-refined scenario unless the user explicitly selected bounded assumptions and the service recalculated them.
 
-## Data Quality And Limitations
+## Data Limits
 
 Cover Yahoo Finance coverage, missing or stale data, unsupported-company warnings, growth-anchor confidence warnings, currency issues, and absent report fields. Do not hide unsupported fields.
 
 If evidence is weak or missing, keep the relevant assumption baseline/conservative rather than forcing a researched change. Do not invent missing values.
 
-## Key Takeaways
+## Bottom Line
 
 Use a prose conclusion, not recommendation language. Cover:
 
@@ -229,6 +234,10 @@ Use a prose conclusion, not recommendation language. Cover:
 - Weakest assumption support.
 - What would change the model.
 - Which topics are supported adjustments, supported explanations, explain-only, future-support, unsupported-stop, or out-of-scope.
+
+## Sources
+
+List direct sources with dates. For prospectus mode, put the SEC filing first. External news may be included only as report-only context and must not override filing facts.
 
 ## Break-Even / Priced-In Frontier
 
@@ -254,7 +263,7 @@ Keep scenarios educational. Do not turn scenarios into recommendation cases.
 
 Use only service-returned sensitivity, `pricedInExpectations.grid`, market-implied metrics, or explicitly recalculated MCP scenarios. Include a two-variable table or compact heat-map-style table when returned. If sensitivity data is absent, explain the most sensitive assumptions qualitatively instead of inventing values.
 
-## Guided User Judgment And User-Refined Scenario
+## Guided Judgment
 
 Use this section when guided refinement was run. If the user requested a quick/no-questions path, say guided refinement was bypassed by request.
 
@@ -268,7 +277,7 @@ Do not include unsupported answers in the MCP payload. Keep report-only answers 
 
 If guided refinement was bypassed, do not fabricate a user-refined scenario, do not describe accepted defaults as user answers, and make the evidence-constrained base the main user-facing case only when evidence was sufficient.
 
-## Evidence And Segment Summary
+## Evidence And Segment Detail
 
 Use this area to connect cited evidence and official segment data to valuation drivers. Keep supported vs explain-only model actions visible. Use driver-specific evidence from `{baseDir}/references/driver-specific-evidence.md`; generic source presence is not enough.
 
@@ -303,7 +312,7 @@ State `segment_economics_quality` when a SegmentEconomics artifact is returned: 
 
 Revenue-only segment evidence cannot support growth, margin, or reinvestment changes. Product or sub-business facts such as Search, YouTube, subscriptions, devices, or Other Bets are report-only unless directly sourced and accepted for that specific driver.
 
-## Assumption Judgment Summary
+## Assumption Support
 
 Explain whether the evidence supports a governed change or no change. Include confidence and no-change rationale when applicable. Keep supported vs explain-only topics separate. Evidence packet summaries belong here; raw research logs do not.
 

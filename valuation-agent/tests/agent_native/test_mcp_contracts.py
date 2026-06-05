@@ -2234,7 +2234,7 @@ def test_recalculate_blocks_lease_schedule_even_for_explicit_scenario():
     assert client.calls == []
 
 
-def test_report_template_requires_baseline_use_status_before_assumptions():
+def test_report_template_keeps_baseline_use_status_in_audit_debug_section():
     template = (
         Path(__file__).parents[2]
         / "skills"
@@ -2243,14 +2243,18 @@ def test_report_template_requires_baseline_use_status_before_assumptions():
         / "report-template.md"
     ).read_text()
 
-    snapshot = template.index("## Valuation Snapshot")
-    assumption_summary = template.index("## Assumption Judgment Summary")
+    valuation_view = template.index("## Valuation View")
+    key_assumptions = template.index("## Key Assumptions")
+    internal_audit = template.index("## Internal Baseline Audit")
 
-    assert "Baseline use status" in template[snapshot:assumption_summary]
-    assert "target operating margin source/status" in template[snapshot:assumption_summary].lower()
+    assert "Baseline use status" not in template[valuation_view:key_assumptions]
+    assert "Baseline use status" in template[internal_audit:]
+    assert "target operating margin" in template[internal_audit:].lower()
+    assert "mechanical model value" in template[valuation_view:key_assumptions].lower()
+    assert "omitted from the default snapshot" in template[valuation_view:key_assumptions].lower()
 
 
-def test_report_template_requires_source_quality_summary():
+def test_report_template_requires_source_confidence_summary():
     template = (
         Path(__file__).parents[2]
         / "skills"
@@ -2260,13 +2264,13 @@ def test_report_template_requires_source_quality_summary():
     ).read_text()
     lower = template.lower()
 
-    assert "## Source Quality Summary" in template
-    assert "source class" in lower
-    assert "source policy status" in lower
-    assert "cross-check status" in lower
-    assert "primary_filing_used" in lower
-    assert "sec_http_error_yahoo_fallback" in lower
-    assert "primary_adapter_not_supported_yahoo_normalized" in lower
+    assert "## Source Confidence" in template
+    assert "core financial source" in lower
+    assert "how the source was used" in lower
+    assert "cross-check" in lower
+    assert "translate raw service statuses into these plain labels" in lower
+    assert "primary source, fallback, cross-check, or report-only context" in lower
+    assert "completed, pending, unavailable, not needed, or not applicable" in lower
 
 
 def test_missing_service_and_non_json_failures_have_stable_shapes():

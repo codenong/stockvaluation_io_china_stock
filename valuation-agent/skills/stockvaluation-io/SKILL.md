@@ -20,7 +20,7 @@ The product surface is the user's agent. The deterministic valuation math comes 
 - If the user provides a SEC EDGAR HTML prospectus URL or asks for a prospectus-driven valuation, use prospectus mode in `{baseDir}/references/prospectus-mode.md`. Call `stockvaluation.extract_prospectus`, stop at `prospectus_extraction_review_required`, show a compact review card, and call `stockvaluation.value_prospectus` only after the packet `reviewStatus` is `reviewed`. Do not show the user only a bare list of allowed actions. Show four numbered human choices with plain explanations, then map the user's number to the internal action.
 - After evidence gathering and driver-specific evidence classification, stop at the evidence review gate. Do not ask guided valuation questions or write the final report before the gate is cleared.
 - After the evidence review gate is cleared and the evidence-constrained base case is built, build a hidden guided question plan that is materiality-driven, then ask every material company-specific question up to a hard cap of 15 visible guided questions. Ask one question at a time by default. Do not ask a batch of 4-6 questions unless the user explicitly requests batch mode.
-- Each visible question must show "My analysis" or equivalent modeling-default language, why the default was selected, evidence used, business impact, model impact, and confidence. The default is educational modeling judgment, not financial advice.
+- Each visible question must show "My analysis" or equivalent modeling-default language, why the default was selected, evidence used, business impact, model impact, and confidence. The default is educational modeling judgment. State the no-advice boundary once near the start of the workflow, then avoid repeating it in every question unless needed for clarity.
 - Do not write the final report in that same response as an unanswered guided question.
 
 ## Context Discipline
@@ -94,7 +94,9 @@ Use this workflow when the input is a SEC EDGAR Archives HTML prospectus URL, es
 
 ## Report Rules
 
-- Frame the report as educational use only and not financial advice.
+- Frame the report as educational use only and not financial advice, but use one concise no-advice line near the start instead of repeating disclaimers throughout the report.
+- Write the default report for an investor-reader, not for an agent debugger. Use plain headings from `{baseDir}/references/report-template.md`. Do not use visible default headings such as `Educational-Use Framing`, `Valuation Audit Packet Summary`, `Scenario Book Summary`, or `Internal Baseline Audit`.
+- Do not show `mechanical model value`, `mechanical baseline value`, raw `mechanical_only`, or other internal scaffolding values in the default user-facing report. If the service only produced a mechanical/challenged result, say no reliable user-facing valuation case was produced and explain the blockers. Show the internal value only when the user asks for audit/debug detail.
 - Avoid buy, sell, hold, target-price, and personalized recommendation language.
 - Use `{baseDir}/references/report-template.md` as the controlling final report structure. Section order and required summaries come from the report template; narrative style is subordinate and cannot remove or reorder required sections.
 - Render the final report with the report-template headings. Do not replace the template with a compressed memo, a paragraph that starts "Using stockvaluation.io...", a "Key assumptions" bullet list, a "Main caveats" bullet list, and a "Sources used" line.

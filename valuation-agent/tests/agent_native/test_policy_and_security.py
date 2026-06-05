@@ -211,7 +211,7 @@ def test_report_template_summarizes_researched_judgment_without_raw_json_dump():
     template = (bundled_skill_dir() / "references" / "report-template.md").read_text(encoding="utf-8")
     lower = template.lower()
 
-    assert "assumption judgment summary" in lower
+    assert "assumption support" in lower
     assert "evidence packet" in lower
     assert "source date" in lower
     assert "effective assumptions" in lower
@@ -223,14 +223,18 @@ def test_report_template_summarizes_audit_packet_without_mechanical_baseline_val
     template = (bundled_skill_dir() / "references" / "report-template.md").read_text(encoding="utf-8")
     lower = template.lower()
 
+    assert "investor-reader" in lower
+    assert "one concise no-advice line" in lower
+    assert "do not use visible default headings" in lower
     assert "valuation audit packet" in lower
-    assert "final case type" in lower
+    assert "debug-only" in lower
     assert "do not print raw `valuation_audit_packet` json" in lower
     assert "evidence_constrained_no_change" in lower
     assert "evidence_constrained_governed_recalculation" in lower
     assert "user_refined_scenario" in lower
     assert "insufficient_researched_evidence" in lower
     assert "mechanical baseline value" in lower
+    assert "do not show the internal mechanical model value" in lower
     assert "not financial advice" in lower
 
 

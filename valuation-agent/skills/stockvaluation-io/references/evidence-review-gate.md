@@ -6,7 +6,9 @@ The gate is a human-in-the-loop review point for the evidence base. It is not a 
 
 ## Allowed Action
 
-Show a compact Markdown evidence review before guided valuation refinement. Ask the user to approve and continue to guided questions, provide corrections, provide additional sources, or continue with caveats. If `sourceQualityGate.status = requires_user_decision`, keep the gate metadata internal and ask for the allowed source-policy action explicitly in normal prose; do not show a visible `Source quality gate` heading or table row. Do not present a generic `approve` prompt as sufficient for a source-quality gate. If the user explicitly requests quick valuation, no questions, skip questions, one-shot report, automation, smoke-test, or equivalent bypass language, label the evidence review bypass and guided-refinement bypass instead of fabricating a user-refined scenario.
+Show a compact Markdown evidence review before guided valuation refinement. Write it for a human investor-reader, not as an agent debug log. Ask the user to approve and continue to guided questions, provide corrections, provide additional sources, or continue with caveats. If `sourceQualityGate.status = requires_user_decision`, keep the gate metadata internal and ask for the allowed source-policy action explicitly in normal prose; do not show a visible `Source quality gate` heading or table row. Do not present a generic `approve` prompt as sufficient for a source-quality gate. If the user explicitly requests quick valuation, no questions, skip questions, one-shot report, automation, smoke-test, or equivalent bypass language, label the evidence review bypass and guided-refinement bypass instead of fabricating a user-refined scenario.
+
+Do not show `mechanical model value`, `mechanical baseline value`, or raw internal status names such as `mechanical_only` in the default evidence review. If the current output is only mechanical or challenged, say the model is not ready for a user-facing valuation case and explain the plain-English reason.
 
 ## Source-Quality Gate
 
@@ -24,7 +26,7 @@ Do not ask guided valuation refinement questions before the gate is cleared. Do 
 
 The gate must show these items when available, and must explicitly say unavailable, not checked, weak, stale, conflicting, report-only, or unsupported when that is the true status:
 
-- No-advice framing.
+- One concise no-advice line near the start.
 - Company and ticker.
 - Source quality summary.
 - Sources checked, with source dates and source type.
@@ -45,9 +47,9 @@ Keep these labels out of the visible evidence-review display: `Source quality ga
 Use this readable Markdown shape or a tighter equivalent. Keep it compact enough for Codex and cloud Codex.
 
 ```text
-### Evidence review before guided valuation refinement
+### Evidence review before scenario questions
 
-(This is not financial advice.) This review confirms the evidence base before scenario questions.
+This is for educational use only. Please review the evidence before we use it for scenario questions.
 
 | Field | Summary |
 | --- | --- |

@@ -62,7 +62,7 @@ def test_report_template_distinguishes_mechanical_evidence_constrained_and_marke
 
     assert "## Internal Baseline Audit" in template
     assert "explicit audit/debug" in lower
-    assert "do not include mechanical baseline value as a primary valuation case" in lower
+    assert "do not show the internal mechanical model value" in lower
     assert "mechanical baseline" in lower
     assert "evidence-constrained base" in lower
     assert "market-implied diagnostics" in lower

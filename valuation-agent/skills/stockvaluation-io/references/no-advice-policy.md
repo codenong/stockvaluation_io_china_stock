@@ -4,6 +4,8 @@ StockValuation.io output must remain educational. Do not present reports as fina
 
 ## Required Framing
 
+Use one concise line near the start of a report or workflow. Do not repeat the same disclaimer before every table or section unless the user-facing context changed.
+
 Use clear language such as:
 
 - "This is for educational use only."
