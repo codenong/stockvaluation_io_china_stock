@@ -95,6 +95,105 @@ class ProspectusValuationServiceTest {
     }
 
     @Test
+    void postOfferingSharesWithoutProFormaCashReturnChallengedBasis() {
+        ProspectusCompanyDataAssembler assembler = mock(ProspectusCompanyDataAssembler.class);
+        CommonService commonService = mock(CommonService.class);
+        ValuationTemplateService templateService = mock(ValuationTemplateService.class);
+        ValuationOutputService outputService = mock(ValuationOutputService.class);
+        ProspectusValuationService service = new ProspectusValuationService(
+                new ProspectusPacketValidator(),
+                assembler,
+                commonService,
+                templateService,
+                outputService);
+        var packet = ProspectusTestPackets.reviewedPacket();
+        packet.getOffering().setNetProceeds(null);
+        packet.getOffering().setProceedsBasis(null);
+        CompanyDataDTO companyData = companyData();
+        ValuationOutputDTO output = valuationOutput();
+        when(assembler.assemble(packet)).thenReturn(companyData);
+        when(templateService.determineTemplate(any(), eq(companyData))).thenReturn(null);
+        when(outputService.getValuationOutput(eq("SPCX"), any(), eq(null))).thenReturn(output);
+
+        ProspectusValuationResult result = service.value(new ProspectusValuationRequest(packet));
+
+        assertEquals("pro_forma_cash_missing", result.valuationBasisStatus());
+        assertEquals("challenged_valuation_case", result.valuationCaseStatus());
+        assertEquals("pro_forma_cash_missing", result.valuation().getAssumptionTransparency().getValuationBasisStatus());
+        assertEquals("challenged_valuation_case", result.valuation().getAssumptionTransparency().getValuationCaseStatus());
+        assertTrue(result.valuation().getAssumptionTransparency().getBaselineWarnings().stream()
+                .anyMatch(warning -> warning.contains("post-offering shares require pro-forma cash")));
+        assertTrue(result.valuation().getAssumptionTransparency().getUnsupportedBaselineDrivers().stream()
+                .anyMatch(issue -> "cash_share_basis".equals(issue.getField())
+                        && "pro_forma_cash_missing".equals(issue.getStatus())));
+    }
+
+    @Test
+    void disclosedNetProceedsAreAddedToCashAndReturnCleanProFormaBasis() {
+        ProspectusCompanyDataAssembler assembler = mock(ProspectusCompanyDataAssembler.class);
+        CommonService commonService = mock(CommonService.class);
+        ValuationTemplateService templateService = mock(ValuationTemplateService.class);
+        ValuationOutputService outputService = mock(ValuationOutputService.class);
+        ProspectusValuationService service = new ProspectusValuationService(
+                new ProspectusPacketValidator(),
+                assembler,
+                commonService,
+                templateService,
+                outputService);
+        var packet = ProspectusTestPackets.reviewedPacket();
+        packet.getOffering().setNetProceeds(74_000_000_000.0);
+        packet.getOffering().setProceedsBasis("net_proceeds_disclosed");
+        CompanyDataDTO companyData = companyData();
+        companyData.getFinancialDataDTO().setCashAndMarkablTTM(24_747_000_000.0);
+        companyData.getFinancialDataDTO().setCashAndMarkablLTM(24_747_000_000.0);
+        ValuationOutputDTO output = valuationOutput();
+        when(assembler.assemble(packet)).thenReturn(companyData);
+        when(templateService.determineTemplate(any(), eq(companyData))).thenReturn(null);
+        when(outputService.getValuationOutput(eq("SPCX"), any(), eq(null))).thenAnswer(invocation -> {
+            FinancialDataInput projectionInput = invocation.getArgument(1);
+            assertEquals(98_747_000_000.0, projectionInput.getFinancialDataDTO().getCashAndMarkablTTM(), 0.001);
+            assertEquals(98_747_000_000.0, projectionInput.getFinancialDataDTO().getCashAndMarkablLTM(), 0.001);
+            return output;
+        });
+
+        ProspectusValuationResult result = service.value(new ProspectusValuationRequest(packet));
+
+        assertEquals("clean_pro_forma_basis", result.valuationBasisStatus());
+        assertEquals("clean_valuation_case", result.valuationCaseStatus());
+        assertEquals("net_proceeds_disclosed", result.proceedsBasis());
+        assertEquals("clean_pro_forma_basis", result.valuation().getAssumptionTransparency().getValuationBasisStatus());
+    }
+
+    @Test
+    void grossProceedsEstimateDoesNotReturnCleanProFormaBasis() {
+        ProspectusCompanyDataAssembler assembler = mock(ProspectusCompanyDataAssembler.class);
+        CommonService commonService = mock(CommonService.class);
+        ValuationTemplateService templateService = mock(ValuationTemplateService.class);
+        ValuationOutputService outputService = mock(ValuationOutputService.class);
+        ProspectusValuationService service = new ProspectusValuationService(
+                new ProspectusPacketValidator(),
+                assembler,
+                commonService,
+                templateService,
+                outputService);
+        var packet = ProspectusTestPackets.reviewedPacket();
+        packet.getOffering().setSharesOffered(555_555_555.0);
+        packet.getOffering().setNetProceeds(null);
+        packet.getOffering().setProceedsBasis(null);
+        CompanyDataDTO companyData = companyData();
+        ValuationOutputDTO output = valuationOutput();
+        when(assembler.assemble(packet)).thenReturn(companyData);
+        when(templateService.determineTemplate(any(), eq(companyData))).thenReturn(null);
+        when(outputService.getValuationOutput(eq("SPCX"), any(), eq(null))).thenReturn(output);
+
+        ProspectusValuationResult result = service.value(new ProspectusValuationRequest(packet));
+
+        assertEquals("gross_proceeds_estimate_only", result.valuationBasisStatus());
+        assertEquals("challenged_valuation_case", result.valuationCaseStatus());
+        assertEquals("gross_proceeds_estimate_only", result.proceedsBasis());
+    }
+
+    @Test
     void valuesSpaceXStyleSegmentMixWithRevenueWeightsInsteadOfFirstMappedSegment() {
         ProspectusCompanyDataAssembler assembler = mock(ProspectusCompanyDataAssembler.class);
         CommonService commonService = mock(CommonService.class);
@@ -144,7 +243,7 @@ class ProspectusValuationServiceTest {
         AssumptionTransparencyDTO transparency = result.valuation().getAssumptionTransparency();
         assertNotNull(transparency);
         assertEquals("segment_weighted_baseline", transparency.getBaselineQuality());
-        assertEquals("validated_segment_weighted", transparency.getBaselineUseStatus());
+        assertEquals("challenged_baseline", transparency.getBaselineUseStatus());
         assertTrue(transparency.isSegmentAware());
         assertEquals(3, transparency.getSegmentCount());
         assertEquals(83.0, transparency.getSegmentCoveragePct(), 0.001);
@@ -155,6 +254,11 @@ class ProspectusValuationServiceTest {
                 0.000001);
         assertTrue(transparency.getBaselineWarnings().stream()
                 .anyMatch(warning -> warning.contains("partial segment coverage")));
+        assertTrue(transparency.getBaselineWarnings().stream()
+                .anyMatch(warning -> warning.contains("material unmapped prospectus revenue")));
+        assertTrue(transparency.getUnsupportedBaselineDrivers().stream()
+                .anyMatch(issue -> "segments".equals(issue.getField())
+                        && "segment_mapping_material_gap".equals(issue.getStatus())));
         assertFalse(transparency.getTargetOperatingMarginSource().contains("Single-industry"));
     }
 
@@ -202,11 +306,13 @@ class ProspectusValuationServiceTest {
         AssumptionTransparencyDTO transparency = result.valuation().getAssumptionTransparency();
         assertNotNull(transparency);
         assertEquals("segment_mapping_blocked", transparency.getBaselineQuality());
-        assertEquals("segment_evidence_insufficient", transparency.getBaselineUseStatus());
+        assertEquals("challenged_baseline", transparency.getBaselineUseStatus());
         assertFalse(transparency.isSegmentAware());
         assertEquals(40.0, transparency.getSegmentCoveragePct(), 0.001);
         assertTrue(transparency.getBaselineWarnings().stream()
                 .anyMatch(warning -> warning.contains("below the 80% threshold")));
+        assertTrue(transparency.getBaselineWarnings().stream()
+                .anyMatch(warning -> warning.contains("material unmapped prospectus revenue")));
     }
 
     @Test

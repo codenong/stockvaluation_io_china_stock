@@ -749,6 +749,42 @@ class ValuationWorkflowServiceImplTest {
         }
 
         @Test
+        void getValuation_researchedBaselineDoesNotMarketCalibrateNegativeFirstPass() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                ValuationTemplate template = fcffTemplate();
+                ValuationOutputDTO initial = valuationOutput(100.0, -10.0);
+                ValuationOutputDTO refined = valuationOutput(100.0, -10.0);
+                stubHappyPath(companyData, template, initial, refined);
+                when(valuationOutputService.calculateCompanyData(any(FinancialDTO.class), any(FinancialDataInput.class),
+                                any(OptionValueResultDTO.class), any()))
+                                .thenAnswer(invocation -> {
+                                        FinancialDataInput input = invocation.getArgument(1);
+                                        CompanyDTO company = new CompanyDTO();
+                                        company.setEstimatedValuePerShare(100.0 + nonNull(input.getCompoundAnnualGrowth2_5()));
+                                        return company;
+                                });
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setResearchedBaselineMode(true);
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides);
+
+                ArgumentCaptor<FinancialDataInput> captor = ArgumentCaptor.forClass(FinancialDataInput.class);
+                verify(valuationOutputService, atLeast(2))
+                                .getValuationOutput(eq("AAPL"), captor.capture(), eq(template));
+                FinancialDataInput secondValuationInput = captor.getAllValues().get(1);
+                assertEquals(8.0, secondValuationInput.getCompoundAnnualGrowth2_5());
+                assertEquals(22.0, secondValuationInput.getTargetPreTaxOperatingMargin());
+                assertEquals("challenged_baseline", result.getAssumptionTransparency().getBaselineUseStatus());
+                assertTrue(result.getAssumptionTransparency().getBaselineWarnings().stream()
+                                .anyMatch(warning -> warning.contains("market calibration stayed diagnostic")));
+                assertTrue(result.getAssumptionTransparency().getUnsupportedBaselineDrivers().stream()
+                                .anyMatch(driver -> "market_calibration".equals(driver.getField())
+                                                && "market_calibrated_diagnostic".equals(driver.getStatus())));
+                assertNotNull(result.getAssumptionTransparency().getMarketImpliedExpectations());
+        }
+
+        @Test
         void getValuation_marketImpliedMetrics_canSolveWithMonotonicPricingFunction() {
                 ValuationWorkflowServiceImpl workflow = workflow();
                 CompanyDataDTO companyData = companyData();

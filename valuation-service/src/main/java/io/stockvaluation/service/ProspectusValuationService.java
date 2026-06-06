@@ -14,6 +14,7 @@ import io.stockvaluation.provider.prospectus.ProspectusExtractionIssue;
 import io.stockvaluation.provider.prospectus.ProspectusPacketValidationResult;
 import io.stockvaluation.provider.prospectus.ProspectusPacketValidator;
 import io.stockvaluation.provider.prospectus.ProspectusValuationRequest;
+import io.stockvaluation.provider.prospectus.ProspectusValuationBasis;
 import io.stockvaluation.provider.prospectus.ProspectusValuationResult;
 import io.stockvaluation.utils.SegmentParameterContext;
 import lombok.RequiredArgsConstructor;
@@ -49,13 +50,15 @@ public class ProspectusValuationService {
                         .collect(Collectors.joining(","));
                 throw new IllegalArgumentException("prospectus packet is blocked: " + codes);
             }
+            ProspectusValuationBasis basis = ProspectusValuationBasis.evaluate(request.packet());
             CompanyDataDTO companyData = assembler.assemble(request.packet());
+            applyProFormaCashBridge(companyData, basis);
             FinancialDataInput input = initializeInput(companyData);
             applyProspectusSegments(request.packet(), input, companyData);
             var template = templateService.determineTemplate(input, companyData);
             String ticker = companyData.getBasicInfoDataDTO().getTicker();
             ValuationOutputDTO output = outputService.getValuationOutput(ticker, input, template);
-            output.setAssumptionTransparency(buildProspectusTransparency(output, input));
+            output.setAssumptionTransparency(buildProspectusTransparency(output, input, request.packet(), basis));
             output.setSourceQualityGate(notRequiredGate());
             return new ProspectusValuationResult(
                     "valued",
@@ -63,6 +66,10 @@ public class ProspectusValuationService {
                     request.packet(),
                     request.packet().getSourceProvenance(),
                     notRequiredGate(),
+                    basis.status(),
+                    basis.valuationCaseStatus(),
+                    basis.proceedsBasis(),
+                    basis.warnings(),
                     output);
         } finally {
             SegmentParameterContext.clear();
@@ -101,6 +108,15 @@ public class ProspectusValuationService {
         input.setResearchedBaselineMode(true);
         input.setRequestPolicyMode("prospectus_reviewed");
         return input;
+    }
+
+    private static void applyProFormaCashBridge(CompanyDataDTO companyData, ProspectusValuationBasis basis) {
+        if (companyData == null || companyData.getFinancialDataDTO() == null || basis == null || basis.netProceeds() == null) {
+            return;
+        }
+        var financial = companyData.getFinancialDataDTO();
+        financial.setCashAndMarkablTTM(value(financial.getCashAndMarkablTTM()) + basis.netProceeds());
+        financial.setCashAndMarkablLTM(value(financial.getCashAndMarkablLTM()) + basis.netProceeds());
     }
 
     private void applyProspectusSegments(
@@ -214,7 +230,9 @@ public class ProspectusValuationService {
 
     private static AssumptionTransparencyDTO buildProspectusTransparency(
             ValuationOutputDTO output,
-            FinancialDataInput input) {
+            FinancialDataInput input,
+            ProspectusFinancialPacket packet,
+            ProspectusValuationBasis basis) {
         AssumptionTransparencyDTO dto = output.getAssumptionTransparency() == null
                 ? new AssumptionTransparencyDTO()
                 : output.getAssumptionTransparency();
@@ -222,6 +240,9 @@ public class ProspectusValuationService {
         dto.setIndustryGlobal(output.getIndustryGlobal());
         dto.setCurrency(output.getCurrency());
         dto.setRequestPolicyMode("prospectus_reviewed");
+        dto.setValuationCaseStatus(basis.valuationCaseStatus());
+        dto.setValuationBasisStatus(basis.status());
+        dto.setProceedsBasis(basis.proceedsBasis());
         dto.setSegmentCount(input.getSegments() == null || input.getSegments().getSegments() == null
                 ? 0
                 : input.getSegments().getSegments().size());
@@ -233,10 +254,24 @@ public class ProspectusValuationService {
         if (segmentParams != null && segmentParams.getSegmentWarnings() != null) {
             warnings.addAll(segmentParams.getSegmentWarnings());
         }
+        warnings.addAll(basis.warnings());
+        List<AssumptionTransparencyDTO.BaselineIssue> unsupportedIssues = new ArrayList<>();
+        if (!basis.clean()) {
+            unsupportedIssues.add(baselineIssue(
+                    "cash_share_basis",
+                    basis.status(),
+                    "Post-offering shares require disclosed net proceeds or pro-forma cash before this can be a clean valuation basis."));
+        }
+        List<AssumptionTransparencyDTO.BaselineIssue> segmentMaterialityIssues = segmentMaterialityIssues(packet);
+        unsupportedIssues.addAll(segmentMaterialityIssues);
+        for (AssumptionTransparencyDTO.BaselineIssue issue : segmentMaterialityIssues) {
+            warnings.add(issue.getReason());
+        }
+        boolean challenged = !basis.clean() || !segmentMaterialityIssues.isEmpty();
 
         if (segmentParams != null && segmentParams.hasValidParameters()) {
             dto.setBaselineQuality("segment_weighted_baseline");
-            dto.setBaselineUseStatus("validated_segment_weighted");
+            dto.setBaselineUseStatus(challenged ? "challenged_baseline" : "validated_segment_weighted");
             dto.setSegmentAware(true);
             dto.setSegmentCount(segmentParams.getSegmentCount());
             dto.setSegmentCoveragePct(value(segmentParams.getSegmentCoveragePct()));
@@ -249,7 +284,7 @@ public class ProspectusValuationService {
                     ? segmentParams.getBaselineQuality()
                     : "segment_evidence_insufficient";
             dto.setBaselineQuality(baselineQuality);
-            dto.setBaselineUseStatus("segment_evidence_insufficient");
+            dto.setBaselineUseStatus(challenged ? "challenged_baseline" : "segment_evidence_insufficient");
             dto.setSegmentAware(false);
             if (segmentParams != null) {
                 dto.setSegmentCount(segmentParams.getSegmentCount());
@@ -258,12 +293,46 @@ public class ProspectusValuationService {
             dto.setTargetOperatingMarginSource("Single-industry mechanical fallback");
             dto.setTargetOperatingMarginStatus("segment_evidence_insufficient");
             warnings.add("Prospectus segment weighting could not be used; baseline is labeled " + baselineQuality + ".");
-            dto.setUnsupportedBaselineDrivers(List.of(
-                    baselineIssue("segments", baselineQuality, "Prospectus segment evidence did not support validated segment weighting."),
-                    baselineIssue("target_operating_margin", "mechanical_fallback", "Target operating margin came from a company-level fallback because segment weighting was unavailable.")));
+            unsupportedIssues.add(baselineIssue("segments", baselineQuality, "Prospectus segment evidence did not support validated segment weighting."));
+            unsupportedIssues.add(baselineIssue("target_operating_margin", "mechanical_fallback", "Target operating margin came from a company-level fallback because segment weighting was unavailable."));
         }
+        dto.setUnsupportedBaselineDrivers(dedupeIssues(unsupportedIssues));
         dto.setBaselineWarnings(dedupe(warnings));
         return dto;
+    }
+
+    private static List<AssumptionTransparencyDTO.BaselineIssue> segmentMaterialityIssues(ProspectusFinancialPacket packet) {
+        List<ProspectusSegmentFact> facts = packet == null || packet.getSegments() == null
+                ? List.of()
+                : packet.getSegments();
+        List<AssumptionTransparencyDTO.BaselineIssue> issues = new ArrayList<>();
+        for (ProspectusSegmentFact fact : facts) {
+            Double weight = fact.getRevenueWeight();
+            if (weight == null || !Double.isFinite(weight)) {
+                continue;
+            }
+            double normalized = weight > 1.0 ? weight / 100.0 : weight;
+            if (normalized <= 0.0) {
+                continue;
+            }
+            String segmentName = defaultString(fact.getSegmentName(), "Unnamed segment");
+            boolean unmapped = blankToNull(fact.getSectorKey()) == null || blankToNull(fact.getMappedIndustry()) == null;
+            if (unmapped && normalized > 0.10) {
+                issues.add(baselineIssue(
+                        "segments",
+                        "segment_mapping_material_gap",
+                        "material unmapped prospectus revenue: " + segmentName + " is " + pct(normalized) + " of revenue."));
+                continue;
+            }
+            String confidence = fact.getMappingConfidence() == null ? "" : fact.getMappingConfidence().toLowerCase();
+            if ("low".equals(confidence) && normalized > 0.05) {
+                issues.add(baselineIssue(
+                        "segments",
+                        "low_confidence_segment_material",
+                        "material low-confidence prospectus segment mapping: " + segmentName + " is " + pct(normalized) + " of revenue."));
+            }
+        }
+        return issues;
     }
 
     private static List<String> mappedIndustries(SegmentWeightedParameters segmentParams) {
@@ -313,6 +382,19 @@ public class ProspectusValuationService {
                 .toList();
     }
 
+    private static List<AssumptionTransparencyDTO.BaselineIssue> dedupeIssues(
+            List<AssumptionTransparencyDTO.BaselineIssue> issues) {
+        Map<String, AssumptionTransparencyDTO.BaselineIssue> deduped = new LinkedHashMap<>();
+        for (AssumptionTransparencyDTO.BaselineIssue issue : issues) {
+            if (issue == null || issue.getField() == null || issue.getField().isBlank()) {
+                continue;
+            }
+            String key = issue.getField() + "|" + issue.getStatus() + "|" + issue.getReason();
+            deduped.putIfAbsent(key, issue);
+        }
+        return new ArrayList<>(deduped.values());
+    }
+
     private static double mappingScore(String confidence) {
         if (confidence == null) {
             return 0.0;
@@ -331,6 +413,10 @@ public class ProspectusValuationService {
 
     private static double round6(double value) {
         return Math.round(value * 1_000_000.0) / 1_000_000.0;
+    }
+
+    private static String pct(double value) {
+        return "%.1f%%".formatted(value * 100.0);
     }
 
     private static SourceQualityGateDTO notRequiredGate() {

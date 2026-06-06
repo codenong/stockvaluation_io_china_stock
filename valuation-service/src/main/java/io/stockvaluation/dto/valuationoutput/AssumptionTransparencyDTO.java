@@ -26,6 +26,9 @@ public class AssumptionTransparencyDTO {
     private boolean segmentAware;
     private String baselineQuality;
     private String baselineUseStatus;
+    private String valuationCaseStatus;
+    private String valuationBasisStatus;
+    private String proceedsBasis;
     private Double segmentCoveragePct;
     private List<String> mappedIndustries = new ArrayList<>();
     private Map<String, Object> weightedBaselineAssumptions = new LinkedHashMap<>();

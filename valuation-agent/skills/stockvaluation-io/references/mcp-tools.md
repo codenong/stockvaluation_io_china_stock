@@ -211,14 +211,76 @@ Input:
 Use these output sections:
 
 - `priceBasis`: must be `offering_price` for prospectus mode.
+- `valuationBasisStatus`: service status for the cash/share footing. Expected values include `clean_pro_forma_basis`, `pro_forma_cash_missing`, and `gross_proceeds_estimate_only`.
+- `valuationCaseStatus`: service status for whether the value can be shown as a clean case. Expected values include `clean_valuation_case` and `challenged_valuation_case`.
+- `proceedsBasis` and `valuationBasisWarnings`: net-proceeds or gross-estimate handling and plain warnings.
 - `prospectus.packet`: the reviewed packet used for valuation.
-- `valuation`, `dcf`, `assumptions`, `baseline`, `growthAnchor`, and `accountingAndClaims`: valuation-service output derived from the reviewed prospectus packet.
+- `valuation`, `dcf`, `assumptions`, `baseline`, `growthAnchor`, and `accountingAndClaims`: valuation-service output derived from the reviewed prospectus packet. `baseline` also carries `valuationBasisStatus`, `valuationCaseStatus`, and `proceedsBasis` when returned by service transparency. For challenged prospectus cases, `dcf.valueVisibility = diagnostic_only` and `dcf.caseStatus = challenged_diagnostic`; this means `dcf.estimatedValuePerShare` is audit/debug detail, not a clean report value.
 - `provenance`: should identify `primary_filing` / `sec-edgar-prospectus`.
 - `sourceQualityGate`: should show the reviewed packet no longer needs the extraction review gate.
 
 Do not use Yahoo Finance, yfinance, market-data revenue estimates, or a live trading market price for prospectus mode unless the user explicitly leaves prospectus mode. In reports, label the price basis as `offering_price`; do not translate it into buy, sell, hold, target-price, or should-invest language.
 
+If `valuationCaseStatus = challenged_valuation_case` or `dcf.valueVisibility = diagnostic_only`, do not present `dcf.estimatedValuePerShare` as a clean investor-facing intrinsic value. This applies even when `valuationBasisStatus = clean_pro_forma_basis`; a clean cash/share basis does not make a material segment gap a clean valuation case. Say no clean user-facing valuation was produced and explain the returned basis or segment issue in plain words. Keep any internal value diagnostic-only unless the user asks for audit/debug detail.
+
 Prospectus extraction review is not the evidence review gate and does not replace guided valuation refinement. After `stockvaluation.value_prospectus`, continue into the normal researched workflow: build evidence, stop at `evidence-review-gate.md`, run baseline plausibility, and use `guided-valuation-refinement.md` for material user-judgment questions unless the user explicitly requested quick/no-questions/automation/smoke-test.
+
+## `stockvaluation.plan_guided_questions`
+
+Builds a read-only story-to-driver guided-question plan from compact valuation context. This tool helps the agent generate many candidate questions internally, rank them by materiality, and show only the material company-specific questions. It does not compute valuation math and does not replace `stockvaluation.recalculate`.
+
+Input:
+
+```json
+{
+  "company": "Microsoft Corporation",
+  "ticker": "MSFT",
+  "workflow_type": "ticker",
+  "baseline_assumptions": {
+    "revenue_growth": 7.0,
+    "operating_margin": 45.0,
+    "sales_to_capital": 2.4
+  },
+  "baseline_plausibility": {},
+  "evidence_packet": {
+    "evidence_items": [
+      {
+        "driver": "revenue_growth",
+        "evidence_summary": "Cloud revenue growth remained above the company average.",
+        "source_url": "https://example.com/msft-earnings",
+        "source_date": "2026-01-30",
+        "confidence": "high"
+      }
+    ]
+  },
+  "segments": [],
+  "market_implied_diagnostics": {},
+  "deep_mode": false,
+  "max_visible_questions": 15
+}
+```
+
+Use the returned `guidedQuestionPlan`:
+
+- `planned_visible_question_count`: how many questions passed the materiality filter.
+- `question_count_rationale`: why that number was selected.
+- `questions`: visible guided questions to ask one at a time.
+- `hidden_candidate_questions`: lower-priority or report-only candidates for audit/debug use.
+- `evidence_input_quality`: count of received, usable, and dropped compact evidence items.
+- `planner_warnings`: warnings to inspect before asking questions.
+- `model_action`: `user scenario override`, `report-only user judgment`, or `unsupported`.
+- `hidden_model_mapping`: supported override field and candidate value when available.
+
+Rules:
+
+- Use after evidence review and baseline plausibility, not before.
+- Keep planner input compact, but each evidence item must include `driver`, `evidence_summary` or `fact`, `source_url`, `source_date`, and non-low `confidence`.
+- For SEC prospectus facts, repeat the SEC filing URL and filing date on each planner evidence item.
+- If `planner_warnings` is not empty or `evidence_input_quality.dropped_evidence_item_count` is nonzero, retry once with complete dated/cited evidence before asking the user.
+- Do not send planner output directly to `stockvaluation.recalculate`.
+- User answers remain `user_judgment`, not evidence.
+- For prospectus mode without deterministic prospectus recalculation, planner questions must remain report-only or unsupported.
+- Market-implied diagnostics may influence question priority, but they are not evidence.
 
 ## `stockvaluation.recalculate`
 

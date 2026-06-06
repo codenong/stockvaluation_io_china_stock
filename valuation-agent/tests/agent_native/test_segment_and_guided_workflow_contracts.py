@@ -209,6 +209,44 @@ def test_guided_refinement_documents_supported_and_report_only_fields():
         assert report_only in reference
 
 
+def test_valuation_method_consistency_statuses_are_documented_for_reports():
+    prospectus = _reference("prospectus-mode.md").lower()
+    guided = _reference("guided-valuation-refinement.md").lower()
+    mcp = _reference("mcp-tools.md").lower()
+    report = _reference("report-template.md").lower()
+    baseline = _reference("baseline-plausibility.md").lower()
+    segment = _reference("segment-quality.md").lower()
+
+    for status in [
+        "valuationbasisstatus",
+        "valuationcasestatus",
+        "clean_pro_forma_basis",
+        "pro_forma_cash_missing",
+        "gross_proceeds_estimate_only",
+        "challenged_valuation_case",
+        "clean_valuation_case",
+    ]:
+        assert status in mcp
+        assert status in report
+
+    for phrase in [
+        "no clean user-facing valuation was produced",
+        "post-offering shares require pro-forma cash",
+        "offering price is the prospectus price basis",
+        "do not show the internal diagnostic value by default",
+    ]:
+        assert phrase in report
+        assert phrase in prospectus
+
+    assert "report-only guided defaults" in guided
+    assert "do not call report-only prospectus guided answers a user-refined scenario" in prospectus
+    assert "market_calibrated_diagnostic" in baseline
+    assert "market calibration stayed diagnostic" in baseline
+    assert "period_mixed_quarterly_balance_yearly_shares" in report
+    assert "segment_mapping_material_gap" in segment
+    assert "material unmapped" in segment
+
+
 def test_user_refined_scenario_mcp_rejects_explicit_only_fields():
     class FakeClient:
         calls = []

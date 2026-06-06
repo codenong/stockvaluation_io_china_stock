@@ -142,6 +142,53 @@ class CompanyFinancialIngestionServiceTest {
         assertEquals("company_report_check_pending", result.sourceProvenance().getCrossCheckStatus());
     }
 
+    @Test
+    void ingestWarnsWhenQuarterlyBalanceSheetUsesYearlyShareCountFallback() {
+        int currentYear = LocalDate.now().getYear();
+        SourceProvenance quarterlyProvenance = SourceProvenance.yahooNormalized("yfinance-http", currentYear + "-03-31");
+        SourceProvenance yearlyProvenance = SourceProvenance.yahooNormalized("yfinance-http", (currentYear - 1) + "-12-31");
+
+        when(dataProvider.getIncomeStatementSnapshots("MIX", "quarterly")).thenReturn(Map.of(
+                epoch(currentYear, 3, 31), income(100.0, 20.0, null, 1.0, null, null, 4.0)));
+        when(dataProvider.getIncomeStatementSnapshots("MIX", "yearly")).thenReturn(Map.of(
+                epoch(currentYear - 1, 12, 31), income(400.0, 80.0, null, 4.0, 20.0, 60.0, 16.0)));
+        when(dataProvider.getBalanceSheetSnapshots("MIX", "quarterly")).thenReturn(Map.of(
+                epoch(currentYear, 3, 31), new BalanceSheetSnapshot(50.0, 25.0, 10.0, null, 1.0, quarterlyProvenance)));
+        when(dataProvider.getBalanceSheetSnapshots("MIX", "yearly")).thenReturn(Map.of(
+                epoch(currentYear - 1, 12, 31), new BalanceSheetSnapshot(45.0, 20.0, 9.0, 5.0, 1.0, yearlyProvenance)));
+
+        CompanyFinancialIngestionService.FinancialIngestionData result = service.ingest("MIX", Map.of());
+
+        assertEquals(5.0, result.financialDataDTO().getNoOfShareOutstanding());
+        SourceProvenance.DataQualityWarning warning = result.sourceProvenance().getDataQualityWarnings().get(0);
+        assertEquals("share_count", warning.getField());
+        assertEquals("period_mixed_quarterly_balance_yearly_shares", warning.getStatus());
+        assertEquals(5.0, warning.getNormalizedValue());
+        assertEquals("yahoo_normalized", warning.getNormalizedSourceClass());
+        assertEquals(currentYear + "-03-31", warning.getNormalizedSourceDate());
+        assertEquals((currentYear - 1) + "-12-31", warning.getFilingSourceDate());
+    }
+
+    @Test
+    void ingestDoesNotWarnWhenQuarterlyBalanceSheetHasQuarterlyShareCount() {
+        int currentYear = LocalDate.now().getYear();
+        SourceProvenance provenance = SourceProvenance.yahooNormalized("yfinance-http", currentYear + "-03-31");
+
+        when(dataProvider.getIncomeStatementSnapshots("ALGN", "quarterly")).thenReturn(Map.of(
+                epoch(currentYear, 3, 31), income(100.0, 20.0, null, 1.0, null, null, 4.0)));
+        when(dataProvider.getIncomeStatementSnapshots("ALGN", "yearly")).thenReturn(Map.of(
+                epoch(currentYear - 1, 12, 31), income(400.0, 80.0, null, 4.0, 20.0, 60.0, 16.0)));
+        when(dataProvider.getBalanceSheetSnapshots("ALGN", "quarterly")).thenReturn(Map.of(
+                epoch(currentYear, 3, 31), new BalanceSheetSnapshot(50.0, 25.0, 10.0, 5.0, 1.0, provenance)));
+        when(dataProvider.getBalanceSheetSnapshots("ALGN", "yearly")).thenReturn(Map.of(
+                epoch(currentYear - 1, 12, 31), new BalanceSheetSnapshot(45.0, 20.0, 9.0, 5.0, 1.0, provenance)));
+
+        CompanyFinancialIngestionService.FinancialIngestionData result = service.ingest("ALGN", Map.of());
+
+        assertEquals(5.0, result.financialDataDTO().getNoOfShareOutstanding());
+        assertEquals(List.of(), result.sourceProvenance().getDataQualityWarnings());
+    }
+
     private static IncomeStatementSnapshot income(
             Double revenue,
             Double operatingIncome,

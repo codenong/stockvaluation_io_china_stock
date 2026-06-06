@@ -27,6 +27,7 @@ Segment evidence can improve assumption judgment, but only when the source discl
 - Mark undisclosed revenue shares, margins, or growth rates as unavailable.
 - Preserve uncertainty in `assumption_judgment`.
 - Use `segment_weighted_baseline` only when the segment package passes evidence, coverage, and mapping checks.
+- Treat `segment_mapping_material_gap` as a challenged user-facing baseline even if the service can still run internal segment math. A material unmapped segment means unmapped revenue above 10% of revenue, or low-confidence mapped revenue above 5% when the service returns that status.
 - Treat SegmentEconomics validation as requested/mapped artifact status; the effective model baseline is confirmed only by service `segmentAware` and `baselineUseStatus` after recalculation.
 - Use `single_industry_fallback`, `segment_evidence_insufficient`, or `segment_mapping_blocked` when segment evidence cannot safely change the mechanical baseline.
 
@@ -59,6 +60,8 @@ SegmentEconomics acceptance does not prove the service used a segment-weighted b
 ## Report Guidance
 
 The segment table should show claim, source, source date, driver affected, and whether the evidence supported a governed change or only explanation.
+
+If material unmapped revenue is returned, say which segment is material unmapped context and do not call the baseline clean or fully segment-modeled.
 
 ## QA Expectation
 

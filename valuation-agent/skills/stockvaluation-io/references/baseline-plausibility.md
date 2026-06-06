@@ -110,6 +110,7 @@ Add a `baseline_plausibility` object to `assumption_judgment`:
 - If evidence is weak, mixed, stale, uncited, generic, or not driver-specific, keep assumptions baseline/conservative and document why.
 - If a problematic field is unsupported, flag it as an unsupported blocker instead of silently accepting the mechanical baseline as rational.
 - If market-implied diagnostics suggest different assumptions, report them as diagnostics only. Do not use them as evidence and do not send them to `stockvaluation.recalculate`.
+- If a researched baseline has a negative first-pass intrinsic value, market calibration must stay diagnostic. Treat returned `market_calibrated_diagnostic` status as a challenged baseline and say market calibration stayed diagnostic instead of repairing the researched baseline.
 - If there are governed evidence-constrained changes, send only supported fields to `stockvaluation.recalculate` and preserve requested, mapped, unsupported, metadata, and effective assumptions separately.
 - If there are no governed changes, write an evidence-constrained no-change case that explicitly says why the mechanical baseline remains challenged.
 

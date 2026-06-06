@@ -18,13 +18,45 @@ Prioritize questions by valuation materiality, evidence strength, uncertainty, m
 
 ## Allowed Action
 
-Generate a hidden materiality-driven guided question plan, ask every material company-specific question up to the cap, ask one question at a time, capture selected choices as `user_judgment`, and run one final user-refined recalculation after the dialogue is complete. Send only supported mapped assumptions to `stockvaluation.recalculate` with `request_policy.mode = "user_refined_scenario"`.
+Generate a hidden materiality-driven guided question plan, ask every material company-specific question up to the cap, ask one question at a time, capture selected choices as `user_judgment`, and run one final user-refined recalculation after the dialogue is complete. Use `stockvaluation.plan_guided_questions` when available to build the plan from compact baseline, evidence, plausibility, segment, and diagnostic context. The planning tool does not compute valuation math. Send only supported mapped assumptions to `stockvaluation.recalculate` with `request_policy.mode = "user_refined_scenario"`.
 
 ## Do Not
 
 Do not ask generic checklist questions, do not invent filler questions, do not use a preset question count, do not treat user answers as evidence, do not fit to market price, and do not send unsupported answers to MCP. Do not use investment recommendation language such as buy, sell, hold, target price, or should invest. You may provide a recommended bounded scenario answer as a modeling default when it is clearly labeled as educational scenario judgment and not financial advice.
 
 Do not print the hidden guided question plan JSON by default. Show exact model mapping only when the user asks for audit/debug detail.
+
+## Story-To-Driver Planner Tool
+
+When available, call `stockvaluation.plan_guided_questions` after evidence review and baseline plausibility. The tool is read-only. It ranks candidate questions by materiality and labels each question as `supported`, `report-only`, or `unsupported`.
+
+The planner input should stay compact:
+
+- company, ticker, and workflow type,
+- baseline assumptions,
+- baseline plausibility,
+- compact driver-specific evidence,
+- segment evidence,
+- market-implied diagnostics,
+- whether prospectus recalculation is supported.
+
+Every compact evidence item sent to the planner must include:
+
+```json
+{
+  "driver": "revenue_growth|operating_margin|reinvestment_sales_to_capital|capital_claims|business_definition",
+  "evidence_summary": "Driver-specific fact or data gap. The key `fact` is also accepted.",
+  "source_url": "https://...",
+  "source_date": "YYYY-MM-DD",
+  "confidence": "medium|high"
+}
+```
+
+Do not pass undated or uncited evidence to the planner. For SEC prospectus facts, repeat the SEC filing URL and filing date on each evidence item. The planner accepts common aliases such as `growth`, `margin`, `reinvestment`, `cash_share_basis`, and `segments`, but canonical driver names are preferred.
+
+After calling the planner, inspect `guidedQuestionPlan.planner_warnings` and `guidedQuestionPlan.evidence_input_quality`. If any evidence was dropped, do not ask the truncated question set yet. Retry once with complete `source_url`, `source_date`, and driver-specific text from the evidence review. If evidence is still dropped, explain plainly why fewer questions are being asked.
+
+Do not pass raw filing text, broad research logs, raw Scenario Book JSON, raw audit packets, or full hidden plans into the planner. Do not treat the planner output as evidence or valuation math.
 
 ## Hidden Guided Question Plan
 
@@ -40,6 +72,14 @@ Before asking the user anything, create an internal plan from the company eviden
   "planned_visible_question_count": 2,
   "question_count_rationale": "Ask every material company-specific question identified, capped at 15, with no filler.",
   "question_order": ["growth_durability", "margin_path"],
+  "evidence_input_quality": {
+    "received_evidence_item_count": 3,
+    "usable_evidence_item_count": 3,
+    "dropped_evidence_item_count": 0,
+    "dropped_evidence_items": [],
+    "planner_warnings": []
+  },
+  "planner_warnings": [],
   "questions": [
     {
       "id": "short_stable_id",
@@ -148,9 +188,9 @@ Every user-facing question must include "My analysis" or equivalent modeling-def
 
 The user may answer with a choice letter, a short explanation, `default` for the current question, or `use defaults` to accept all remaining guided defaults. If the user asks for audit/debug detail, show the hidden model mapping for the relevant question.
 
-After each answer, store it and ask the next unanswered question. Do not recalculate after each answer. Perform one final user-refined recalculation after all questions are answered or defaults are accepted.
+After each answer, store it and ask the next unanswered question. Do not recalculate after each answer. Perform one final user-refined recalculation after all questions are answered or defaults are accepted only when at least one answer maps to supported recalculation input.
 
-The Scenario Book must then contain exactly one user-refined scenario for the completed guided path. If the user says `use defaults`, record the defaults as user judgment, not evidence, and still run one final user-refined recalculation.
+The Scenario Book must then contain exactly one user-refined scenario for the completed guided path only when supported mapped assumptions exist and deterministic recalculation runs. If the user says `use defaults`, record the defaults as user judgment, not evidence. If all remaining defaults are report-only or unsupported, summarize them in the report and do not fabricate a user-refined scenario.
 
 If the current workflow has no supported recalculation path, such as no prospectus-specific recalculation path in prospectus mode, keep answers as report-only guided defaults. Do not call report-only prospectus guided answers a user-refined scenario. If the visible question count says "Question 1 of 3", all remaining default answers must be summarized when `use defaults` is accepted; do not skip hidden questions silently.
 
@@ -161,7 +201,8 @@ After the user answers, create a `user_judgment` package distinct from autonomou
 ```json
 {
   "source_type": "user_judgment",
-  "scenario_label": "user-refined scenario",
+  "scenario_label": "user-refined scenario|report-only guided defaults|report-only guided judgment",
+  "scenario_status": "recalculation_ready|report_only_or_unsupported",
   "answers": [
     {
       "question_id": "string",
@@ -178,6 +219,7 @@ After the user answers, create a `user_judgment` package distinct from autonomou
   ],
   "requested_assumptions": {},
   "mapped_assumptions": {},
+  "report_only_assumptions": {},
   "unsupported_assumptions": {},
   "not_evidence_statement": "User answers define a scenario; they are not independent evidence."
 }

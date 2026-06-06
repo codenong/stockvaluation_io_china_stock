@@ -86,7 +86,7 @@ public class ProspectusCompanyDataAssembler {
         financial.setHighestStockPrice(financial.getStockPrice());
         financial.setLowestStockPrice(financial.getStockPrice());
         financial.setPreviousDayStockPrice(financial.getStockPrice());
-        financial.setResearchAndDevelopmentMap(researchAndDevelopmentMap(latestIncome, priorIncome));
+        financial.setResearchAndDevelopmentMap(researchAndDevelopmentMap(snapshots.yearlyIncome()));
         financial.setSourceProvenance(packet.getSourceProvenance());
 
         double marginalTaxRate = countryEquityRepository
@@ -172,12 +172,17 @@ public class ProspectusCompanyDataAssembler {
         }
     }
 
-    private static Map<String, Double> researchAndDevelopmentMap(
-            IncomeStatementSnapshot latestIncome,
-            IncomeStatementSnapshot priorIncome) {
+    private static Map<String, Double> researchAndDevelopmentMap(Map<String, IncomeStatementSnapshot> yearlyIncome) {
         Map<String, Double> values = new LinkedHashMap<>();
-        values.put("currentR&D-0", value(latestIncome.researchAndDevelopment()));
-        values.put("currentR&D-1", value(priorIncome.researchAndDevelopment()));
+        if (yearlyIncome == null || yearlyIncome.isEmpty()) {
+            values.put("currentR&D-0", 0.0);
+            return values;
+        }
+        int index = 0;
+        for (IncomeStatementSnapshot income : yearlyIncome.values()) {
+            values.put("currentR&D-" + index, value(income.researchAndDevelopment()));
+            index++;
+        }
         return values;
     }
 

@@ -73,6 +73,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true", help="Print the deterministic 15-document report shape without network or service calls.")
     parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT, help="Number of prospectus documents to process; must be at least 15 for release use.")
     parser.add_argument("--service-url", default=os.getenv("STOCKVALUATION_PROSPECTUS_EXTRACT_URL", ""), help="Prospectus extraction endpoint. Defaults to the local service.")
+    parser.add_argument("--valuation-url", default=os.getenv("STOCKVALUATION_PROSPECTUS_VALUATION_URL", ""), help="Prospectus valuation endpoint. Defaults to the local service.")
     parser.add_argument("--sec-user-agent", default=os.getenv("SEC_USER_AGENT", ""), help="Declared SEC User-Agent for live SEC requests.")
     parser.add_argument("--cik", action="append", default=[], help="Additional CIK seed to search for S-1/S-1/A/424B filings.")
     parser.add_argument("--parser-bug", action="append", default=[], help="Parser bug fixed during this compatibility pass.")
@@ -95,6 +96,7 @@ def main() -> int:
             mode="dry-run",
             target=target,
             results=[{"candidate": doc, "ok": True, "status": "planned"} for doc in docs],
+            quality_gate_results=[],
             parser_bugs=bugs,
             fixtures=fixtures,
             final="DRY_RUN",
@@ -107,14 +109,26 @@ def main() -> int:
         return 2
 
     endpoint = args.service_url.strip() or derive_extract_endpoint(os.getenv("STOCKVALUATION_SERVICE_URL", ""))
+    valuation_endpoint = args.valuation_url.strip() or derive_valuation_endpoint(endpoint)
     seeds = dedupe([*args.cik, *SEED_CIKS])
     candidates = discover_candidates(seeds, target, user_agent)
-    results = [process_candidate(endpoint, candidate) for candidate in candidates[:target]]
-    final = "PASS" if len(results) >= target and all(result["ok"] for result in results) else "FAIL"
+    results = [process_candidate(endpoint, valuation_endpoint, candidate) for candidate in candidates[:target]]
+    quality_gates_exercised = sum(1 for result in results if result.get("valuation_quality_exercised"))
+    quality_gate_results = []
+    if quality_gates_exercised == 0:
+        quality_gate_results.append(fallback_valuation_quality_gate(valuation_endpoint))
+    quality_gates_exercised += sum(1 for result in quality_gate_results if result.get("valuation_quality_exercised"))
+    final = "PASS" if (
+        len(results) >= target
+        and all(result["ok"] for result in results)
+        and all(result["ok"] for result in quality_gate_results)
+        and quality_gates_exercised > 0
+    ) else "FAIL"
     print_report(
         mode="live",
         target=target,
         results=results,
+        quality_gate_results=quality_gate_results,
         parser_bugs=bugs,
         fixtures=fixtures,
         final=final,
@@ -133,6 +147,19 @@ def derive_extract_endpoint(configured: str) -> str:
             root = marker
         return parse.urlunsplit((parsed.scheme, parsed.netloc, f"{root}/prospectus/extract", "", ""))
     return "http://localhost:8081/api/v1/prospectus/extract"
+
+
+def derive_valuation_endpoint(extract_endpoint: str) -> str:
+    if extract_endpoint.endswith("/prospectus/extract"):
+        return extract_endpoint[: -len("/prospectus/extract")] + "/prospectus/valuation"
+    parsed = parse.urlsplit(extract_endpoint.rstrip("/"))
+    marker = "/api/v1"
+    path = parsed.path or marker
+    if marker in path:
+        root = path[: path.index(marker) + len(marker)]
+    else:
+        root = marker
+    return parse.urlunsplit((parsed.scheme, parsed.netloc, f"{root}/prospectus/valuation", "", ""))
 
 
 def dry_run_candidates(target: int) -> list[FilingCandidate]:
@@ -235,7 +262,7 @@ def fetch_json(url: str, user_agent: str) -> dict:
     return payload if isinstance(payload, dict) else {}
 
 
-def process_candidate(endpoint: str, candidate: FilingCandidate) -> dict:
+def process_candidate(endpoint: str, valuation_endpoint: str, candidate: FilingCandidate) -> dict:
     body = json.dumps({"filing_url": candidate.url, "expected_company": candidate.company}).encode("utf-8")
     req = request.Request(
         endpoint,
@@ -265,21 +292,162 @@ def process_candidate(endpoint: str, candidate: FilingCandidate) -> dict:
     empty_packet = packet_is_empty(packet)
     silent_empty = empty_packet and not issue_codes
     has_packet_substance = fact_count > 0 or bool(issue_codes)
+    valuation_gate = valuation_quality_gate(valuation_endpoint, packet) if valuation_ready else {
+        "ok": True,
+        "exercised": False,
+        "status": "not_run_not_valuation_ready",
+    }
     ok = (
         status == "requires_review"
         and review_status == "review_required"
         and provenance_ok
         and has_packet_substance
         and not silent_empty
+        and valuation_gate["ok"]
     )
     issue_summary = ",".join(issue_codes) if issue_codes else "none"
     detail = (
         f"facts={fact_count} issues={issue_summary} "
         f"valuation_ready={str(valuation_ready).lower()} "
-        f"provenance={source_class or 'missing'}/{provider or 'missing'}"
+        f"provenance={source_class or 'missing'}/{provider or 'missing'} "
+        f"valuation_quality_gate={valuation_gate['status']}"
     )
     reason = " silent_empty" if silent_empty else (" typed_empty" if empty_packet else "")
-    return {"candidate": candidate, "ok": ok, "status": f"{status}/{review_status or 'missing_review'} {detail}{reason}"}
+    return {
+        "candidate": candidate,
+        "ok": ok,
+        "status": f"{status}/{review_status or 'missing_review'} {detail}{reason}",
+        "valuation_quality_exercised": valuation_gate["exercised"],
+    }
+
+
+def valuation_quality_gate(endpoint: str, packet: dict | None) -> dict:
+    if not isinstance(packet, dict):
+        return {"ok": False, "exercised": False, "status": "missing_packet"}
+    reviewed = json.loads(json.dumps(packet))
+    reviewed["reviewStatus"] = "reviewed"
+    body = json.dumps({"packet": reviewed}).encode("utf-8")
+    req = request.Request(
+        endpoint,
+        data=body,
+        method="POST",
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+    )
+    try:
+        with request.urlopen(req, timeout=240) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        return {"ok": False, "exercised": True, "status": f"valuation_http_{exc.code}"}
+    except Exception as exc:
+        return {"ok": False, "exercised": True, "status": f"valuation_request_failed:{str(exc)[:120]}"}
+
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, dict):
+        return {"ok": False, "exercised": True, "status": "valuation_missing_data"}
+    basis_status = data.get("valuationBasisStatus")
+    case_status = data.get("valuationCaseStatus")
+    valuation = data.get("valuation") if isinstance(data.get("valuation"), dict) else {}
+    transparency = valuation.get("assumptionTransparency") if isinstance(valuation.get("assumptionTransparency"), dict) else {}
+    baseline_status = transparency.get("baselineUseStatus")
+    unresolved_basis = basis_status in {"pro_forma_cash_missing", "gross_proceeds_estimate_only"}
+    clean_label = case_status == "clean_valuation_case" or baseline_status == "validated_segment_weighted"
+    missing_status = not basis_status or not case_status
+    ok = not missing_status and not (unresolved_basis and clean_label)
+    status = f"basis={basis_status or 'missing'} case={case_status or 'missing'} baseline={baseline_status or 'missing'}"
+    return {"ok": ok, "exercised": True, "status": status}
+
+
+def fallback_valuation_quality_gate(endpoint: str) -> dict:
+    gate = valuation_quality_gate(endpoint, reviewed_challenged_basis_packet())
+    expected = "basis=pro_forma_cash_missing" in gate["status"] and "case=challenged_valuation_case" in gate["status"]
+    return {
+        "ok": gate["ok"] and expected,
+        "valuation_quality_exercised": gate["exercised"],
+        "status": f"fallback_valuation_quality_gate {gate['status']}",
+    }
+
+
+def reviewed_challenged_basis_packet() -> dict:
+    provenance = {
+        "sourceClass": "primary_filing",
+        "provider": "sec-edgar-prospectus",
+        "sourceDate": "2026-06-03",
+        "periodEnd": "2025-12-31",
+        "retrievalStatus": "retrieved",
+        "crossCheckStatus": "not_applicable",
+        "sourcePolicyStatus": "prospectus_extracted",
+        "warnings": [],
+        "dataQualityWarnings": [],
+    }
+
+    def fact(field: str, label: str, value: float) -> dict:
+        return {
+            "canonicalField": field,
+            "sourceRowLabel": label,
+            "originalColumnLabel": "Year Ended December 31, 2025",
+            "tableTitle": "Compatibility Prospectus Fixture",
+            "periodEnd": "2025-12-31",
+            "periodType": "annual" if field in {"revenue", "operating_income", "research_and_development"} else "point_in_time",
+            "unit": "USD",
+            "scale": "actual",
+            "rawValue": str(value),
+            "normalizedValue": value,
+            "confidence": 0.95,
+            "sourceProvenance": provenance,
+        }
+
+    return {
+        "schemaVersion": "prospectus_financial_packet.v1",
+        "reviewStatus": "reviewed",
+        "company": {
+            "legalName": "Compatibility Prospectus Issuer",
+            "tickerOrExpectedSymbol": "COMPAT",
+            "countryOfIncorporation": "United States",
+            "currency": "USD",
+            "industryKey": "aerospace-defense",
+        },
+        "filing": {
+            "form": "S-1/A",
+            "cik": "0000000000",
+            "accession": "0000000000-26-000001",
+            "filingDate": "2026-06-03",
+        },
+        "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1181412/000162828026040364/spaceexplorationtechnologib.htm",
+        "sourceProvenance": provenance,
+        "financials": {
+            "incomeStatement": [
+                fact("revenue", "Revenue", 1_200_000_000.0),
+                fact("operating_income", "Operating income", 120_000_000.0),
+                fact("research_and_development", "Research and development", 250_000_000.0),
+            ],
+            "balanceSheet": [
+                fact("cash_and_short_term_investments", "Cash and cash equivalents", 500_000_000.0),
+                fact("total_debt", "Total debt", 300_000_000.0),
+                fact("book_value_equity", "Total stockholders' equity", 700_000_000.0),
+            ],
+            "cashFlowOrCapex": [],
+        },
+        "offering": {
+            "offeringPrice": 135.0,
+            "offeringPriceBasis": "offering_price",
+            "postOfferingShares": 400_000_000.0,
+            "shareCountBasis": "pro_forma_post_offering",
+        },
+        "shareCounts": [
+            {
+                "basis": "pro_forma_post_offering",
+                "sourceRowLabel": "Pro forma as adjusted shares",
+                "originalColumnLabel": "Pro forma as adjusted",
+                "tableTitle": "Compatibility Prospectus Fixture",
+                "rawValue": "400000000",
+                "normalizedValue": 400_000_000.0,
+                "confidence": 0.9,
+                "sourceProvenance": provenance,
+            }
+        ],
+        "segments": [],
+        "extractionIssues": [],
+    }
 
 
 def packet_fact_count(packet: dict | None) -> int:
@@ -384,20 +552,31 @@ def print_report(
     mode: str,
     target: int,
     results: list[dict],
+    quality_gate_results: list[dict],
     parser_bugs: list[str],
     fixtures: list[str],
     final: str,
 ) -> None:
+    total_quality_gates = (
+        sum(1 for result in results if result.get("valuation_quality_exercised"))
+        + sum(1 for result in quality_gate_results if result.get("valuation_quality_exercised"))
+    )
     print("== Prospectus Compatibility Report ==")
     print(f"mode: {mode}")
     print(f"required minimum: {target}")
     print(f"documents tested: {len(results)}")
+    print(f"quality gates exercised: {total_quality_gates}")
     print("extraction statuses:")
     for index, result in enumerate(results, start=1):
         candidate = result["candidate"]
         status = result["status"]
         marker = "OK" if result["ok"] else "FAIL"
         print(f"- [{marker}] {index:02d} {candidate.form} {candidate.cik} {candidate.filing_date} {status} {candidate.url}")
+    if quality_gate_results:
+        print("valuation quality gates:")
+        for result in quality_gate_results:
+            marker = "OK" if result["ok"] else "FAIL"
+            print(f"- [{marker}] {result['status']}")
     print("parser bugs fixed:")
     for bug in parser_bugs:
         print(f"- {bug}")

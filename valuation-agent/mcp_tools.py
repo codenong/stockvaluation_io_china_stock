@@ -14,6 +14,7 @@ from .accounting_and_claims import (
     validate_accounting_override,
 )
 from .evidence_packet import validate_evidence_packet
+from .guided_question_planner import build_guided_question_plan
 from .security import sanitize_for_agent
 from .segment_discovery import parse_revenue_weight, sanitize_segment_package
 from .segment_economics import validate_segment_economics
@@ -146,6 +147,7 @@ TOOL_NAMES = [
     "stockvaluation.researched_baseline",
     "stockvaluation.extract_prospectus",
     "stockvaluation.value_prospectus",
+    "stockvaluation.plan_guided_questions",
     "stockvaluation.recalculate",
     "stockvaluation.get_assumptions",
     "stockvaluation.get_growth_anchor",
@@ -277,6 +279,33 @@ def tool_definitions() -> list[dict[str, Any]]:
             "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
         },
         {
+            "name": "stockvaluation.plan_guided_questions",
+            "title": "Plan Guided Questions",
+            "description": "Build a materiality-ranked story-to-driver guided-question plan from compact valuation context.",
+            "inputSchema": _object_schema(
+                {
+                    "company": {"type": "string"},
+                    "ticker": {"type": "string"},
+                    "workflow_type": {"type": "string", "enum": ["ticker", "prospectus"]},
+                    "baseline_assumptions": {"type": "object", "additionalProperties": True},
+                    "baseline_plausibility": {"type": "object", "additionalProperties": True},
+                    "evidence_packet": {"type": "object", "additionalProperties": True},
+                    "evidence_items": {
+                        "type": "array",
+                        "description": "Compact driver-specific evidence. Each item should include driver, evidence_summary or fact, source_url/sourceUrl, source_date/sourceDate, and non-low confidence.",
+                        "items": {"type": "object", "additionalProperties": True},
+                    },
+                    "segments": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+                    "market_implied_diagnostics": {"type": "object", "additionalProperties": True},
+                    "prospectus_recalculate_supported": {"type": "boolean"},
+                    "deep_mode": {"type": "boolean"},
+                    "max_visible_questions": {"type": "integer", "minimum": 0, "maximum": 15},
+                }
+            ),
+            "outputSchema": _output_schema(),
+            "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+        },
+        {
             "name": "stockvaluation.recalculate",
             "title": "Recalculate Valuation",
             "description": "Recalculate local DCF JSON using governed scenario overrides.",
@@ -347,6 +376,7 @@ class MCPToolRegistry:
             "stockvaluation.researched_baseline": self._researched_baseline,
             "stockvaluation.extract_prospectus": self._extract_prospectus,
             "stockvaluation.value_prospectus": self._value_prospectus,
+            "stockvaluation.plan_guided_questions": self._plan_guided_questions,
             "stockvaluation.recalculate": self._recalculate,
             "stockvaluation.get_assumptions": self._get_assumptions,
             "stockvaluation.get_growth_anchor": self._get_growth_anchor,
@@ -450,6 +480,16 @@ class MCPToolRegistry:
             return prospectus_valuation_success_payload(tool, result)
         except ValuationServiceError as exc:
             return service_exception_payload(tool, exc)
+
+    def _plan_guided_questions(self, args: dict[str, Any]) -> dict[str, Any]:
+        tool = "stockvaluation.plan_guided_questions"
+        plan = build_guided_question_plan(args)
+        return {
+            "ok": True,
+            "tool": tool,
+            "guidedQuestionPlan": plan,
+            "policy": policy_metadata(),
+        }
 
     def _recalculate(self, args: dict[str, Any]) -> dict[str, Any]:
         tool = "stockvaluation.recalculate"
@@ -1297,10 +1337,20 @@ def prospectus_valuation_success_payload(tool: str, result: dict[str, Any]) -> d
     provenance = _dict(result.get("sourceProvenance") or result.get("source_provenance"))
     if not provenance:
         provenance = _dict(packet.get("sourceProvenance") or packet.get("source_provenance"))
+    valuation_basis_status = _string_or_none(result.get("valuationBasisStatus") or result.get("valuation_basis_status"))
+    valuation_case_status = _string_or_none(result.get("valuationCaseStatus") or result.get("valuation_case_status"))
+    proceeds_basis = _string_or_none(result.get("proceedsBasis") or result.get("proceeds_basis"))
+    valuation_basis_warnings = _string_list(result.get("valuationBasisWarnings") or result.get("valuation_basis_warnings"))
+    dcf = extract_dcf_summary(valuation)
+    apply_prospectus_dcf_display_policy(dcf, valuation_case_status)
     return {
         "ok": True,
         "tool": tool,
         "priceBasis": _string_or_none(result.get("priceBasis")) or _string_or_none(result.get("price_basis")) or "offering_price",
+        "valuationBasisStatus": valuation_basis_status,
+        "valuationCaseStatus": valuation_case_status,
+        "proceedsBasis": proceeds_basis,
+        "valuationBasisWarnings": valuation_basis_warnings,
         "prospectus": {
             "status": _string_or_none(result.get("status")) or "valued",
             "reviewStatus": _string_or_none(packet.get("reviewStatus")) or _string_or_none(packet.get("review_status")),
@@ -1310,7 +1360,7 @@ def prospectus_valuation_success_payload(tool: str, result: dict[str, Any]) -> d
             "packet": sanitize_for_agent(packet),
         },
         "valuation": valuation,
-        "dcf": extract_dcf_summary(valuation),
+        "dcf": dcf,
         "baseline": extract_baseline_contract(valuation, {"requestPolicyMode": "prospectus_reviewed"}),
         "assumptions": extract_assumptions(valuation),
         "accountingAndClaims": extract_accounting_and_claims(valuation),
@@ -1320,7 +1370,7 @@ def prospectus_valuation_success_payload(tool: str, result: dict[str, Any]) -> d
         "referenceData": prospectus_reference_data_status(valuation),
         "version": version_metadata(valuation),
         "policy": policy_metadata("prospectus_reviewed"),
-        "warnings": extract_warnings(valuation),
+        "warnings": dedupe(valuation_basis_warnings + extract_warnings(valuation)),
     }
 
 
@@ -1458,6 +1508,9 @@ def extract_baseline_contract(
     return {
         "baselineQuality": baseline_quality,
         "baselineUseStatus": baseline_use_status,
+        "valuationCaseStatus": _string_or_none(transparency.get("valuationCaseStatus")),
+        "valuationBasisStatus": _string_or_none(transparency.get("valuationBasisStatus")),
+        "proceedsBasis": _string_or_none(transparency.get("proceedsBasis")),
         "requestPolicyMode": _string_or_none(transparency.get("requestPolicyMode"))
         or _string_or_none(context.get("requestPolicyMode")),
         "segmentAware": segment_aware,
@@ -1587,6 +1640,19 @@ def extract_dcf_summary(valuation: dict[str, Any]) -> dict[str, Any]:
         "terminalGrowthRate": terminal.get("growthRate"),
         "terminalCostOfCapital": terminal.get("costOfCapital"),
     }
+
+
+def apply_prospectus_dcf_display_policy(dcf: dict[str, Any], valuation_case_status: str | None) -> None:
+    if valuation_case_status == "challenged_valuation_case":
+        dcf["valueVisibility"] = "diagnostic_only"
+        dcf["caseStatus"] = "challenged_diagnostic"
+        dcf["displayPolicy"] = (
+            "Do not present estimatedValuePerShare as a clean user-facing intrinsic value; "
+            "show it only when the user asks for audit/debug detail."
+        )
+        return
+    dcf["valueVisibility"] = "clean_user_facing"
+    dcf["caseStatus"] = valuation_case_status or "clean_valuation_case"
 
 
 def extract_assumptions(valuation: dict[str, Any]) -> dict[str, Any]:
@@ -2678,6 +2744,12 @@ def compact_text_content(payload: dict[str, Any], is_error: bool) -> str:
             summary += price_text + "."
         if baseline_status:
             summary += f" Baseline use {baseline_status}."
+        valuation_case_status = _string_or_none(payload.get("valuationCaseStatus")) or _string_or_none(baseline.get("valuationCaseStatus"))
+        valuation_basis_status = _string_or_none(payload.get("valuationBasisStatus")) or _string_or_none(baseline.get("valuationBasisStatus"))
+        if hide_visible_values and tool == "stockvaluation.value_prospectus":
+            summary += " No clean user-facing valuation was produced."
+            if valuation_basis_status:
+                summary += f" Basis issue {valuation_basis_status}."
         price_basis = _string_or_none(payload.get("priceBasis"))
         if price_basis:
             summary += f" Price basis {price_basis}."
@@ -2736,6 +2808,10 @@ def hide_visible_dcf_values(payload: dict[str, Any], tool: str, baseline_status:
     final_case_type = _string_or_none(audit_summary.get("final_case_type"))
     if final_case_type == "insufficient_researched_evidence":
         return True
+    baseline = _dict(payload.get("baseline"))
+    valuation_case_status = _string_or_none(payload.get("valuationCaseStatus")) or _string_or_none(baseline.get("valuationCaseStatus"))
+    if tool == "stockvaluation.value_prospectus":
+        return valuation_case_status == "challenged_valuation_case" or baseline_status == "challenged_baseline"
     internal_baseline_statuses = {"mechanical_only", "segment_evidence_insufficient", "challenged_baseline"}
     return tool == "stockvaluation.value_ticker" and baseline_status in internal_baseline_statuses
 

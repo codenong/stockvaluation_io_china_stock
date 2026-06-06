@@ -214,6 +214,10 @@ def _prospectus_valuation_payload():
     return {
         "status": "valued",
         "priceBasis": "offering_price",
+        "valuationBasisStatus": "clean_pro_forma_basis",
+        "valuationCaseStatus": "clean_valuation_case",
+        "proceedsBasis": "net_proceeds_disclosed",
+        "valuationBasisWarnings": [],
         "packet": _prospectus_packet("reviewed"),
         "sourceProvenance": _prospectus_packet()["sourceProvenance"],
         "sourceQualityGate": {
@@ -358,6 +362,7 @@ def test_mcp_tools_list_has_required_stockvaluation_contracts():
         "stockvaluation.researched_baseline",
         "stockvaluation.extract_prospectus",
         "stockvaluation.value_prospectus",
+        "stockvaluation.plan_guided_questions",
         "stockvaluation.recalculate",
         "stockvaluation.get_assumptions",
         "stockvaluation.get_growth_anchor",
@@ -468,6 +473,8 @@ def test_value_prospectus_uses_reviewed_packet_and_offering_price_basis():
     structured = result["structuredContent"]
     assert structured["tool"] == "stockvaluation.value_prospectus"
     assert structured["priceBasis"] == "offering_price"
+    assert structured["valuationBasisStatus"] == "clean_pro_forma_basis"
+    assert structured["valuationCaseStatus"] == "clean_valuation_case"
     assert structured["prospectus"]["reviewStatus"] == "reviewed"
     assert structured["dcf"]["estimatedValuePerShare"] == 412.34
     assert structured["provenance"]["sourceClass"] == "primary_filing"
@@ -478,6 +485,72 @@ def test_value_prospectus_uses_reviewed_packet_and_offering_price_basis():
     assert "offering_price" in visible_text
     assert "structuredContent" in visible_text
     assert len(visible_text) < 650
+
+
+def test_value_prospectus_challenged_basis_hides_clean_value_language():
+    payload = _prospectus_valuation_payload()
+    payload["valuationBasisStatus"] = "pro_forma_cash_missing"
+    payload["valuationCaseStatus"] = "challenged_valuation_case"
+    payload["proceedsBasis"] = None
+    payload["valuationBasisWarnings"] = [
+        "post-offering shares require pro-forma cash, but net offering proceeds were not extracted."
+    ]
+    payload["valuation"]["assumptionTransparency"]["valuationBasisStatus"] = "pro_forma_cash_missing"
+    payload["valuation"]["assumptionTransparency"]["valuationCaseStatus"] = "challenged_valuation_case"
+    payload["valuation"]["assumptionTransparency"]["baselineUseStatus"] = "challenged_baseline"
+    payload["valuation"]["assumptionTransparency"]["baselineWarnings"] = payload["valuationBasisWarnings"]
+    client = FakeClient(prospectus_valuation=payload)
+    reviewed_packet = _prospectus_packet("reviewed")
+
+    result = MCPToolRegistry(client).call(
+        "stockvaluation.value_prospectus",
+        {"packet": reviewed_packet},
+    )
+
+    assert result["isError"] is False
+    structured = result["structuredContent"]
+    assert structured["valuationBasisStatus"] == "pro_forma_cash_missing"
+    assert structured["valuationCaseStatus"] == "challenged_valuation_case"
+    assert structured["baseline"]["valuationBasisStatus"] == "pro_forma_cash_missing"
+    assert structured["baseline"]["valuationCaseStatus"] == "challenged_valuation_case"
+    visible_text = result["content"][0]["text"]
+    assert "412.34" not in visible_text
+    assert "No clean user-facing valuation was produced" in visible_text
+    assert "pro_forma_cash_missing" in visible_text
+
+
+def test_value_prospectus_clean_basis_but_challenged_case_marks_dcf_diagnostic_only():
+    payload = _prospectus_valuation_payload()
+    payload["valuationBasisStatus"] = "clean_pro_forma_basis"
+    payload["valuationCaseStatus"] = "challenged_valuation_case"
+    payload["proceedsBasis"] = "net_proceeds_disclosed_base_offering"
+    payload["valuationBasisWarnings"] = [
+        "Material unmapped prospectus segment revenue requires challenged baseline status."
+    ]
+    payload["valuation"]["assumptionTransparency"]["valuationBasisStatus"] = "clean_pro_forma_basis"
+    payload["valuation"]["assumptionTransparency"]["valuationCaseStatus"] = "challenged_valuation_case"
+    payload["valuation"]["assumptionTransparency"]["baselineUseStatus"] = "challenged_baseline"
+    payload["valuation"]["assumptionTransparency"]["baselineWarnings"] = payload["valuationBasisWarnings"]
+    client = FakeClient(prospectus_valuation=payload)
+    reviewed_packet = _prospectus_packet("reviewed")
+
+    result = MCPToolRegistry(client).call(
+        "stockvaluation.value_prospectus",
+        {"packet": reviewed_packet},
+    )
+
+    assert result["isError"] is False
+    structured = result["structuredContent"]
+    assert structured["valuationBasisStatus"] == "clean_pro_forma_basis"
+    assert structured["valuationCaseStatus"] == "challenged_valuation_case"
+    assert structured["dcf"]["estimatedValuePerShare"] == 412.34
+    assert structured["dcf"]["valueVisibility"] == "diagnostic_only"
+    assert structured["dcf"]["caseStatus"] == "challenged_diagnostic"
+    assert "clean user-facing intrinsic value" in structured["dcf"]["displayPolicy"]
+    visible_text = result["content"][0]["text"]
+    assert "412.34" not in visible_text
+    assert "No clean user-facing valuation was produced" in visible_text
+    assert "clean_pro_forma_basis" in visible_text
 
 
 def test_service_client_posts_prospectus_extract_to_api_v1_endpoint(monkeypatch):

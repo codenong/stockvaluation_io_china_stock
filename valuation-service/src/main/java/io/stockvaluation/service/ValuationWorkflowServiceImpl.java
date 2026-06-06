@@ -421,6 +421,9 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 if (adjustedParameters != null && adjustedParameters.contains("negativeValueCalibrationSkipped")) {
                         notes.add("Negative-value calibration was skipped because request_policy.mode preserves explicit user scenario assumptions.");
                 }
+                if (adjustedParameters != null && adjustedParameters.contains("negativeValueMarketCalibrationDiagnosticOnly")) {
+                        notes.add("Negative-value market calibration stayed diagnostic and did not change researched baseline assumptions.");
+                }
                 dto.setNotes(notes);
 
                 dto.setMarketImpliedExpectations(buildMarketImpliedExpectations(
@@ -1074,6 +1077,15 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                         "Segment package was present but did not pass baseline-use validation."));
                 } else {
                         dto.setBaselineUseStatus("mechanical_only");
+                }
+
+                if (adjustedParameterSet.contains("negativeValueMarketCalibrationDiagnosticOnly")) {
+                        dto.setBaselineUseStatus("challenged_baseline");
+                        warnings.add("Negative first-pass value: market calibration stayed diagnostic and did not change researched baseline assumptions.");
+                        unsupportedBaselineDrivers.add(baselineIssue(
+                                        "market_calibration",
+                                        "market_calibrated_diagnostic",
+                                        "Negative first-pass researched baseline was not repaired with market-price calibration; market-implied outputs are diagnostics only."));
                 }
 
                 dto.setBaselineWarnings(dedupeStrings(warnings));
@@ -2540,6 +2552,10 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 || adjusted.contains("isExpensesCapitalize");
         }
 
+        private boolean isAutonomousResearchedPolicy(FinancialDataInput financialDataInput) {
+                return POLICY_AUTONOMOUS_RESEARCHED.equals(resolveRequestPolicyMode(financialDataInput));
+        }
+
         private Set<String> adjustedParameterSet(List<String> adjustedParameters) {
                 if (adjustedParameters == null) {
                         return Set.of();
@@ -2647,6 +2663,15 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
 
                 // If intrinsic value is negative, apply calibration
                 if (valuationOutputDTOCheck.getCompanyDTO().getEstimatedValuePerShare() < 0) {
+                        if (isAutonomousResearchedPolicy(financialDataInput)) {
+                                log.warn("Negative intrinsic value detected for {}, keeping market calibration diagnostic-only in researched baseline mode",
+                                                ticker);
+                                adjustedParameters.add("negativeValueMarketCalibrationDiagnosticOnly");
+                                processSegmentAnalysis(financialDataInput, companyDataDTO, ticker, enableSegments,
+                                                adjustedParameters);
+                                return valuationOutputService.getValuationOutput(ticker,
+                                                financialDataInput, template);
+                        }
                         if (shouldPreserveExplicitScenarioAssumptions(financialDataInput, adjustedParameters)) {
                                 log.warn("Negative intrinsic value detected for {}, preserving explicit scenario assumptions instead of applying calibration",
                                                 ticker);

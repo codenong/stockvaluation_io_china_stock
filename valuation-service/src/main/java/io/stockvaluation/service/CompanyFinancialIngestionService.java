@@ -105,6 +105,7 @@ public class CompanyFinancialIngestionService {
         double bookValueDebtTTM = valueOrZero(mostRecentQuarterlyBalance.totalDebt());
         double cashAndMarketableTTM = valueOrZero(mostRecentQuarterlyBalance.cashAndShortTermInvestments());
         Double numberOfShareOutStanding = mostRecentQuarterlyBalance.sharesOutstanding();
+        boolean quarterlyShareCountMissing = numberOfShareOutStanding == null;
 
         Map<String, BalanceSheetSnapshot> yearlyBalanceSnapshots =
                 financialDataProvider.getBalanceSheetSnapshots(ticker, "yearly");
@@ -116,8 +117,12 @@ public class CompanyFinancialIngestionService {
         double bookValueEquityLTM = valueOrZero(recentYearlyBalanceSnapshot.bookValueEquity());
         double bookValueDebtLTM = valueOrZero(recentYearlyBalanceSnapshot.totalDebt());
         double cashAndMarketableLTM = valueOrZero(recentYearlyBalanceSnapshot.cashAndShortTermInvestments());
+        boolean usedYearlySharesWithQuarterlyBalance = false;
         if (numberOfShareOutStanding == null) {
             numberOfShareOutStanding = recentYearlyBalanceSnapshot.sharesOutstanding();
+            usedYearlySharesWithQuarterlyBalance = numberOfShareOutStanding != null
+                    && quarterlyShareCountMissing
+                    && hasAnyBalanceSheetValue(mostRecentQuarterlyBalance);
         }
 
         financialDataDTO.setRevenueTTM(totalRevenueTTM == 0.0 ? revenueLtmValue : totalRevenueTTM);
@@ -163,17 +168,26 @@ public class CompanyFinancialIngestionService {
         financialDataDTO.setLowestStockPrice(toDouble(basicInfoMap.get("dayLow")));
         financialDataDTO.setStockPrice(toDouble(basicInfoMap.get("currentPrice")));
 
+        SourceProvenance sourceProvenance = selectLatestProvenance(
+                quarterlyIncomeSnapshots,
+                yearlyIncomeSnapshots,
+                quarterlyBalanceSnapshots,
+                yearlyBalanceSnapshots);
+        if (usedYearlySharesWithQuarterlyBalance) {
+            addPeriodMixedShareCountWarning(
+                    sourceProvenance,
+                    numberOfShareOutStanding,
+                    mostRecentQuarterlyBalance,
+                    recentYearlyBalanceSnapshot);
+        }
+
         return new FinancialIngestionData(
                 financialDataDTO,
                 historicalRevenue,
                 historicalMargins,
                 taxProvision,
                 preTaxIncome,
-                selectLatestProvenance(
-                        quarterlyIncomeSnapshots,
-                        yearlyIncomeSnapshots,
-                        quarterlyBalanceSnapshots,
-                        yearlyBalanceSnapshots));
+                sourceProvenance);
     }
 
     private static int[] targetYears(int... offsets) {
@@ -213,6 +227,46 @@ public class CompanyFinancialIngestionService {
                         Map.Entry::getValue,
                         (left, right) -> left,
                         LinkedHashMap::new));
+    }
+
+    private static boolean hasAnyBalanceSheetValue(BalanceSheetSnapshot snapshot) {
+        return snapshot != null
+                && (snapshot.bookValueEquity() != null
+                        || snapshot.totalDebt() != null
+                        || snapshot.cashAndShortTermInvestments() != null
+                        || snapshot.minorityInterest() != null);
+    }
+
+    private static void addPeriodMixedShareCountWarning(
+            SourceProvenance sourceProvenance,
+            Double shareCount,
+            BalanceSheetSnapshot quarterlyBalance,
+            BalanceSheetSnapshot yearlyBalance) {
+        if (sourceProvenance == null) {
+            return;
+        }
+        SourceProvenance quarterlySource = quarterlyBalance == null ? null : quarterlyBalance.sourceProvenance();
+        SourceProvenance yearlySource = yearlyBalance == null ? null : yearlyBalance.sourceProvenance();
+        SourceProvenance.DataQualityWarning warning = new SourceProvenance.DataQualityWarning(
+                "share_count",
+                "period_mixed_quarterly_balance_yearly_shares",
+                shareCount,
+                null,
+                null,
+                null,
+                sourceProvenance.getSourceClass(),
+                sourceProvenance.getSourceDate());
+        warning.setNormalizedSourceClass(quarterlySource == null ? sourceProvenance.getSourceClass() : quarterlySource.getSourceClass());
+        warning.setNormalizedSourceDate(quarterlySource == null ? sourceProvenance.getSourceDate() : quarterlySource.getSourceDate());
+        warning.setNormalizedPeriodEnd(quarterlySource == null ? sourceProvenance.getPeriodEnd() : quarterlySource.getPeriodEnd());
+        warning.setFilingSourceClass(yearlySource == null ? sourceProvenance.getSourceClass() : yearlySource.getSourceClass());
+        warning.setFilingSourceDate(yearlySource == null ? null : yearlySource.getSourceDate());
+        warning.setFilingPeriodEnd(yearlySource == null ? null : yearlySource.getPeriodEnd());
+        List<SourceProvenance.DataQualityWarning> warnings = sourceProvenance.getDataQualityWarnings() == null
+                ? new ArrayList<>()
+                : new ArrayList<>(sourceProvenance.getDataQualityWarnings());
+        warnings.add(warning);
+        sourceProvenance.setDataQualityWarnings(warnings);
     }
 
     private static BalanceSheetSnapshot getMostRecentSnapshot(

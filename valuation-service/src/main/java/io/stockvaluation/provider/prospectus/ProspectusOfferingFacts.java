@@ -15,4 +15,6 @@ public class ProspectusOfferingFacts {
     private Double sharesOffered;
     private Double postOfferingShares;
     private String shareCountBasis;
+    private Double netProceeds;
+    private String proceedsBasis;
 }

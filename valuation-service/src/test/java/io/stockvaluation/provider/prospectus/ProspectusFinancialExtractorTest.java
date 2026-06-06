@@ -94,6 +94,36 @@ class ProspectusFinancialExtractorTest {
         assertTrue(codes.contains("missing_debt"));
     }
 
+    @Test
+    void extractsClearlyDisclosedNetOfferingProceeds() {
+        String html = """
+                <!doctype html>
+                <html>
+                <head><title>Space Exploration Technologies - S-1/A</title></head>
+                <body>
+                <div>S-1/A 1 example.htm S-1/A Space Exploration Technologies - S-1/A</div>
+                <p>As filed with the U.S. Securities and Exchange Commission on June 3, 2026</p>
+                <h1>Space Exploration Technologies Corp.</h1>
+                <table>
+                  <tr><td>(in millions, except share data)</td><td></td></tr>
+                  <tr><td>Class A common stock offered by us</td><td>555,555,555 shares</td></tr>
+                  <tr><td>Common stock outstanding immediately after this offering</td><td>13,075,865,175 shares</td></tr>
+                  <tr><td>Net proceeds to us, after underwriting discounts and commissions</td><td>$ 74,000</td></tr>
+                </table>
+                </body>
+                </html>
+                """;
+        ProspectusDocument document = new ProspectusDocument(
+                "https://www.sec.gov/Archives/edgar/data/1181412/000162828026040364/spaceexplorationtechnologib.htm",
+                html);
+        ProspectusRawTableSet tableSet = new ProspectusTableExtractor().extract(html);
+
+        ProspectusFinancialPacket packet = new ProspectusFinancialExtractor().extract(document, tableSet);
+
+        assertEquals(74_000_000_000.0, packet.getOffering().getNetProceeds());
+        assertEquals("net_proceeds_disclosed", packet.getOffering().getProceedsBasis());
+    }
+
     private static void assertFact(
             ProspectusFinancialPacket packet,
             String canonicalField,

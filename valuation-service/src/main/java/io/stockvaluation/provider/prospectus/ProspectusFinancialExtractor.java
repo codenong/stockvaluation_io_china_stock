@@ -187,6 +187,15 @@ public class ProspectusFinancialExtractor {
                     && lower.contains("common stock offered")) {
                 packet.getOffering().setSharesOffered(value);
             }
+            if (packet.getOffering().getNetProceeds() == null
+                    && lower.contains("net proceeds")
+                    && (lower.contains("to us") || lower.contains("from this offering"))) {
+                Double proceeds = firstNormalizedValue(row);
+                if (proceeds != null && proceeds > 0.0) {
+                    packet.getOffering().setNetProceeds(proceeds);
+                    packet.getOffering().setProceedsBasis("net_proceeds_disclosed");
+                }
+            }
             if (lower.contains("common stock outstanding") && lower.contains("after this offering")) {
                 if (lower.contains("class a")) {
                     postOfferingClassShares.put("class_a", new ShareRow(label, value));
@@ -478,6 +487,17 @@ public class ProspectusFinancialExtractor {
     private static Double firstNumberInText(String text) {
         Matcher matcher = NUMBER_TOKEN_PATTERN.matcher(text == null ? "" : text);
         return matcher.find() ? ProspectusTableExtractor.parseNumber(matcher.group(1)) : null;
+    }
+
+    private static Double firstNormalizedValue(ProspectusRawRow row) {
+        if (row == null || row.cells() == null) {
+            return null;
+        }
+        return row.cells().stream()
+                .map(ProspectusRawCell::normalizedValue)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
     }
 
     private static String rowText(ProspectusRawRow row) {

@@ -46,7 +46,9 @@ public final class ProspectusTestPackets {
                 "offering_price",
                 null,
                 400_000_000.0,
-                "pro_forma_post_offering"));
+                "pro_forma_post_offering",
+                null,
+                null));
         packet.setShareCounts(new ArrayList<>(List.of(shareCount("pro_forma_post_offering", 400_000_000.0))));
         return packet;
     }

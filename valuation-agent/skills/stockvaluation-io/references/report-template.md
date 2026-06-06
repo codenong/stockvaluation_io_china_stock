@@ -115,7 +115,18 @@ Lead with the scenario the user actually selected. Include compact values only w
 
 Separate market price, model intrinsic value, assumptions, and evidence. Describe the gap as a model result, not as a recommendation. The mechanical baseline value and mechanical model value are omitted from the default snapshot unless the user asks for audit/debug detail.
 
-For prospectus mode, call the comparable price input the offering price, not a trading market price. Use `stockvaluation.value_prospectus` output and the reviewed packet; do not substitute Yahoo Finance, yfinance, market-data revenue estimates, or a live market price.
+For prospectus mode, call the comparable price input the offering price, not a trading market price. The offering price is the prospectus price basis, not a live quote. Use `stockvaluation.value_prospectus` output and the reviewed packet; do not substitute Yahoo Finance, yfinance, market-data revenue estimates, or a live market price.
+
+For prospectus mode, read `valuationBasisStatus`, `valuationCaseStatus`, `proceedsBasis`, and `valuationBasisWarnings` before presenting any value. Use these plain labels:
+
+- `clean_pro_forma_basis` and `clean_valuation_case`: post-offering shares and cash/proceeds are on a clean basis.
+- `pro_forma_cash_missing`: post-offering shares require pro-forma cash, but net proceeds or pro-forma cash were not resolved.
+- `gross_proceeds_estimate_only`: only gross proceeds could be inferred; that is a challenged basis, not clean net cash.
+- `challenged_valuation_case`: no clean user-facing valuation was produced.
+
+If the case is challenged, or if `dcf.valueVisibility = diagnostic_only`, do not show the internal diagnostic value by default. Put the blocker in `Valuation View`, `Data Limits`, and `Bottom Line` in plain English.
+
+A clean cash/share basis is not enough to headline a value. If `valuationBasisStatus = clean_pro_forma_basis` but `valuationCaseStatus = challenged_valuation_case` or `baseline.baselineUseStatus = challenged_baseline`, the report must say the cash/share basis was fixed but no clean user-facing valuation case was produced. Do not use labels such as `Evidence-reviewed prospectus base`, `Intrinsic value per share`, or `StockValuation.io estimated` for the diagnostic value unless the user explicitly asks for audit/debug detail.
 
 ## What Was Reviewed
 
@@ -162,6 +173,8 @@ SEC filing facts are primary. External news is report-only context and may confi
 For non-US researched valuations, Yahoo-normalized financials may be the main normalized source when the report labels the source class and gives the company-report or filing cross-check status. If `primary_adapter_not_supported_yahoo_normalized` is returned, say no supported deterministic primary-filing adapter covered this listing and company-report cross-check is required. If cross-checks are pending, say so plainly and treat material accounting or segment claims as limitations until checked.
 
 If Yahoo-normalized data and filing/company-report data differ materially, include the returned data-quality warning and treat it as a limitation, not as an automatic assumption override. For field-specific interpretation, use `financial-field-definitions.md`; do not invent definitions for revenue, operating income, cash, debt, shares, R&D, SBC, tax, pretax income, minority interest, or book equity.
+
+If a returned data-quality warning has `period_mixed_quarterly_balance_yearly_shares`, say the model mixed quarterly cash/debt/equity with a yearly share count because quarterly shares were missing. Treat it as a data limitation, not as a user-refined assumption.
 
 ## Business Story
 
