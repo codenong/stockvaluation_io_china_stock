@@ -170,14 +170,24 @@ def _prospectus_packet(review_status="review_required"):
                 "sourceRowLabel": "Shares outstanding after this offering",
             }
         ],
-        "segments": [
+        "segments": [],
+        "segmentCandidateTables": [
             {
-                "segmentName": "Launch and space services",
-                "sectorKey": "aerospace-defense",
-                "revenue": 4_900_000_000.0,
-                "revenueWeight": 0.563,
-                "mappingConfidence": "medium",
-                "sourceTableTitle": "Segment revenue",
+                "title": "Segment revenue",
+                "currency": "USD",
+                "scale": "actual",
+                "columns": ["Year Ended December 31, 2025"],
+                "rows": [
+                    {
+                        "label": "Launch and space services",
+                        "cells": [{"rawValue": "$ 4,900", "normalizedValue": 4_900_000_000.0}],
+                    },
+                    {
+                        "label": "Connectivity",
+                        "cells": [{"rawValue": "$ 3,700", "normalizedValue": 3_700_000_000.0}],
+                    },
+                ],
+                "sourceAnchor": "table-segment-revenue",
             }
         ],
         "sourceProvenance": {
@@ -436,6 +446,9 @@ def test_extract_prospectus_returns_review_required_packet_with_source_gate():
     assert structured["prospectus"]["status"] == "requires_review"
     assert structured["prospectus"]["reviewStatus"] == "review_required"
     assert structured["prospectus"]["packet"]["reviewStatus"] == "review_required"
+    candidate_tables = structured["prospectus"]["packet"]["segmentCandidateTables"]
+    assert candidate_tables[0]["rows"][0]["label"] == "Launch and space services"
+    assert candidate_tables[0]["rows"][1]["cells"][0]["normalizedValue"] == 3_700_000_000.0
     assert structured["sourceQualityGate"]["reason"] == "prospectus_extraction_review_required"
     assert structured["provenance"]["sourceClass"] == "primary_filing"
     assert structured["provenance"]["provider"] == "sec-edgar-prospectus"
@@ -545,7 +558,7 @@ def test_value_prospectus_challenged_basis_hides_clean_value_language():
     visible_text = result["content"][0]["text"]
     assert "Estimated value/share" not in visible_text
     assert "Mechanical diagnostic value is about $412.34/share" in visible_text
-    assert "No clean user-facing valuation was produced" in visible_text
+    assert "No clean prospectus valuation yet" in visible_text
     assert "A story scenario is required" in visible_text
     assert "pro_forma_cash_missing" in visible_text
 
@@ -581,7 +594,7 @@ def test_value_prospectus_clean_basis_but_challenged_case_marks_dcf_diagnostic_o
     visible_text = result["content"][0]["text"]
     assert "Estimated value/share" not in visible_text
     assert "Mechanical diagnostic value is about $412.34/share" in visible_text
-    assert "No clean user-facing valuation was produced" in visible_text
+    assert "No clean prospectus valuation yet" in visible_text
     assert "A story scenario is required" in visible_text
     assert "clean_pro_forma_basis" in visible_text
 
@@ -613,10 +626,10 @@ def test_value_prospectus_uses_recommended_intrinsic_value_as_challenged_diagnos
     visible_text = result["content"][0]["text"]
     assert "5.871407929880455" not in visible_text
     assert "Mechanical diagnostic value is about $5.87/share" in visible_text
-    assert "No clean user-facing valuation was produced" in visible_text
+    assert "No clean prospectus valuation yet" in visible_text
 
 
-def test_value_prospectus_spacex_challenged_text_names_story_scenario_requirement():
+def test_value_prospectus_challenged_text_names_story_scenario_requirement():
     payload = _prospectus_valuation_payload()
     payload["valuationBasisStatus"] = "clean_pro_forma_basis"
     payload["valuationCaseStatus"] = "challenged_valuation_case"
@@ -634,7 +647,7 @@ def test_value_prospectus_spacex_challenged_text_names_story_scenario_requiremen
     )
 
     visible_text = result["content"][0]["text"]
-    assert "No clean SpaceX valuation yet" in visible_text
+    assert "No clean prospectus valuation yet" in visible_text
     assert "Mechanical diagnostic value is about $11.61/share" in visible_text
     assert "A story scenario is required" in visible_text
     assert "intrinsic" not in visible_text.lower()

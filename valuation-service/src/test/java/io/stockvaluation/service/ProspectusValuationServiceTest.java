@@ -167,6 +167,47 @@ class ProspectusValuationServiceTest {
     }
 
     @Test
+    void rawSegmentCandidateTablesRequireExplicitScenarioForCleanValuationCase() {
+        ProspectusCompanyDataAssembler assembler = mock(ProspectusCompanyDataAssembler.class);
+        CommonService commonService = mock(CommonService.class);
+        ValuationTemplateService templateService = mock(ValuationTemplateService.class);
+        ValuationOutputService outputService = mock(ValuationOutputService.class);
+        ProspectusValuationService service = new ProspectusValuationService(
+                new ProspectusPacketValidator(),
+                assembler,
+                commonService,
+                templateService,
+                outputService);
+        var packet = ProspectusTestPackets.reviewedPacket();
+        packet.getOffering().setNetProceeds(75_000_000_000.0);
+        packet.getOffering().setProceedsBasis("net_proceeds_disclosed");
+        packet.setSegmentCandidateTables(List.of(ProspectusTestPackets.segmentCandidateTable()));
+        CompanyDataDTO companyData = companyData();
+        ValuationOutputDTO output = valuationOutput();
+        when(assembler.assemble(packet)).thenReturn(companyData);
+        when(templateService.determineTemplate(any(), eq(companyData))).thenReturn(null);
+        when(outputService.getValuationOutput(eq("SPCX"), any(), eq(null))).thenAnswer(invocation -> {
+            FinancialDataInput projectionInput = invocation.getArgument(1);
+            assertNull(projectionInput.getSegments());
+            return output;
+        });
+
+        ProspectusValuationResult result = service.value(new ProspectusValuationRequest(packet));
+
+        assertEquals("clean_pro_forma_basis", result.valuationBasisStatus());
+        assertEquals("challenged_valuation_case", result.valuationCaseStatus());
+        AssumptionTransparencyDTO transparency = result.valuation().getAssumptionTransparency();
+        assertEquals("challenged_valuation_case", transparency.getValuationCaseStatus());
+        assertEquals("challenged_baseline", transparency.getBaselineUseStatus());
+        assertTrue(transparency.getBaselineWarnings().stream()
+                .anyMatch(warning -> warning.contains("raw segment candidate tables")));
+        assertTrue(transparency.getUnsupportedBaselineDrivers().stream()
+                .anyMatch(issue -> "segments".equals(issue.getField())
+                        && "segment_candidates_require_scenario".equals(issue.getStatus())));
+        verify(commonService, never()).applySegmentWeightedParameters(any(), any(), anyList());
+    }
+
+    @Test
     void grossProceedsEstimateDoesNotReturnCleanProFormaBasis() {
         ProspectusCompanyDataAssembler assembler = mock(ProspectusCompanyDataAssembler.class);
         CommonService commonService = mock(CommonService.class);

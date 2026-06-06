@@ -78,8 +78,8 @@ public class ProspectusFinancialExtractor {
             if (isOfferingOrCapitalizationTable(title)) {
                 extractOfferingAndShares(packet, table, provenance);
             }
-            if (title.contains("segment") || title.contains("business line")) {
-                extractSegments(packet, table, provenance);
+            if (isSegmentCandidateTable(table, title)) {
+                packet.getSegmentCandidateTables().add(candidateSegmentTable(table));
             }
         }
 
@@ -234,40 +234,6 @@ public class ProspectusFinancialExtractor {
         share.setConfidence(0.9);
         share.setSourceProvenance(provenance);
         packet.getShareCounts().add(share);
-    }
-
-    private static void extractSegments(
-            ProspectusFinancialPacket packet,
-            ProspectusRawTable table,
-            SourceProvenance provenance) {
-        List<ProspectusSegmentFact> segments = new ArrayList<>();
-        for (ProspectusRawRow row : table.rows()) {
-            if (!isTopLevelSegmentRow(table, row)) {
-                continue;
-            }
-            ValueCell value = firstUsableIncomeCell(table, row);
-            if (value == null) {
-                continue;
-            }
-            ProspectusSegmentFact segment = new ProspectusSegmentFact();
-            segment.setSegmentName(row.label());
-            segment.setRevenueAmount(value.cell().normalizedValue());
-            segment.setSourceRowLabel(row.label());
-            segment.setTableTitle(table.title());
-            segment.setPeriodEnd(periodEnd(value.columnLabel()));
-            segment.setSourceProvenance(provenance);
-            segment.setMappingConfidence("requires_agent_mapping");
-            segments.add(segment);
-        }
-        double total = segments.stream()
-                .map(ProspectusSegmentFact::getRevenueAmount)
-                .filter(Objects::nonNull)
-                .mapToDouble(Double::doubleValue)
-                .sum();
-        if (total > 0) {
-            segments.forEach(segment -> segment.setRevenueWeight(segment.getRevenueAmount() / total));
-        }
-        packet.getSegments().addAll(segments);
     }
 
     private static ProspectusFact fact(
@@ -547,19 +513,6 @@ public class ProspectusFinancialExtractor {
         return table.scale() != null && !table.scale().isBlank();
     }
 
-    private static ValueCell firstUsableIncomeCell(ProspectusRawTable table, ProspectusRawRow row) {
-        for (int i = 0; i < row.cells().size() && i < table.columns().size(); i++) {
-            if (!isUsableIncomeColumn(table, i)) {
-                continue;
-            }
-            ProspectusRawCell cell = row.cells().get(i);
-            if (cell.normalizedValue() != null) {
-                return new ValueCell(cell, table.columns().get(i));
-            }
-        }
-        return null;
-    }
-
     private static ValueCell firstUsableFinancialCell(ProspectusRawTable table, ProspectusRawRow row) {
         for (int i = 0; i < row.cells().size() && i < table.columns().size(); i++) {
             if (!isUsableFinancialColumn(table, i)) {
@@ -571,30 +524,6 @@ public class ProspectusFinancialExtractor {
             }
         }
         return null;
-    }
-
-    private static boolean isTopLevelSegmentRow(ProspectusRawTable table, ProspectusRawRow row) {
-        String label = lower(row.label());
-        boolean hasTopLevelRows = table.rows().stream()
-                .map(ProspectusRawRow::label)
-                .map(ProspectusFinancialExtractor::lower)
-                .anyMatch("space"::equals)
-                && table.rows().stream()
-                        .map(ProspectusRawRow::label)
-                        .map(ProspectusFinancialExtractor::lower)
-                        .anyMatch("connectivity"::equals)
-                && table.rows().stream()
-                        .map(ProspectusRawRow::label)
-                        .map(ProspectusFinancialExtractor::lower)
-                        .anyMatch("ai"::equals);
-        if (hasTopLevelRows) {
-            return (label.equals("space") || label.equals("connectivity") || label.equals("ai"))
-                    && firstUsableSegmentCell(table, row) != null;
-        }
-        if ("segment revenue".equalsIgnoreCase(table.title())) {
-            return false;
-        }
-        return !row.cells().isEmpty() && firstUsableSegmentCell(table, row) != null;
     }
 
     private static ValueCell firstUsableSegmentCell(ProspectusRawTable table, ProspectusRawRow row) {
@@ -610,6 +539,55 @@ public class ProspectusFinancialExtractor {
             }
         }
         return null;
+    }
+
+    private static boolean isSegmentCandidateTable(ProspectusRawTable table, String lowerTitle) {
+        if (!hasMultipleCandidateRows(table)) {
+            return false;
+        }
+        if (lowerTitle.contains("segment") || lowerTitle.contains("business line") || lowerTitle.contains("disaggregated")) {
+            return true;
+        }
+        if (isIncomeTable(lowerTitle)
+                || isBalanceTable(lowerTitle)
+                || isDebtTable(lowerTitle)
+                || isCashFlowOrCapexTable(lowerTitle)
+                || isOfferingOrCapitalizationTable(lowerTitle)) {
+            return false;
+        }
+        return hasScale(table) && hasAnnualColumns(table);
+    }
+
+    private static boolean hasMultipleCandidateRows(ProspectusRawTable table) {
+        return table.rows().stream()
+                .filter(row -> isCandidateSegmentRow(table, row))
+                .limit(2)
+                .count() >= 2;
+    }
+
+    private static boolean isCandidateSegmentRow(ProspectusRawTable table, ProspectusRawRow row) {
+        return row != null
+                && row.label() != null
+                && !row.label().isBlank()
+                && firstUsableSegmentCell(table, row) != null;
+    }
+
+    private static boolean hasAnnualColumns(ProspectusRawTable table) {
+        return table.columns().stream()
+                .anyMatch(column -> periodEnd(column) != null && isAnnualIncomeColumn(column));
+    }
+
+    private static ProspectusRawTable candidateSegmentTable(ProspectusRawTable table) {
+        List<ProspectusRawRow> rows = table.rows().stream()
+                .filter(row -> isCandidateSegmentRow(table, row))
+                .toList();
+        return new ProspectusRawTable(
+                table.title(),
+                table.currency(),
+                table.scale(),
+                table.columns(),
+                rows,
+                table.sourceAnchor());
     }
 
     private static void addExtractionIssues(ProspectusFinancialPacket packet) {

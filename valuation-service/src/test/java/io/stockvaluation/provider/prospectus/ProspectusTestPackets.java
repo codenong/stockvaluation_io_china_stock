@@ -62,6 +62,20 @@ public final class ProspectusTestPackets {
         return packet;
     }
 
+    public static ProspectusRawTable segmentCandidateTable() {
+        return new ProspectusRawTable(
+                "Untitled prospectus table",
+                "USD",
+                "millions",
+                List.of("Year Ended December 31, 2025"),
+                List.of(
+                        new ProspectusRawRow("Launch Services", List.of(new ProspectusRawCell("$ 2,576", 2_576_000_000.0))),
+                        new ProspectusRawRow("Space", List.of(new ProspectusRawCell("4,086", 4_086_000_000.0))),
+                        new ProspectusRawRow("Connectivity", List.of(new ProspectusRawCell("11,387", 11_387_000_000.0))),
+                        new ProspectusRawRow("AI", List.of(new ProspectusRawCell("3,201", 3_201_000_000.0)))),
+                "table-raw-segments");
+    }
+
     public static ProspectusFact fact(
             String canonicalField,
             String rowLabel,

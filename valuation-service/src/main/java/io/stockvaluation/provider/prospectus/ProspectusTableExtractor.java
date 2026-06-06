@@ -213,9 +213,6 @@ public class ProspectusTableExtractor {
         if (lower.contains("total capital expenditures")) {
             return "Capital Expenditures";
         }
-        if (lower.contains("launch services") && lower.contains("connectivity") && lower.contains("ai")) {
-            return "Segment Revenue";
-        }
         return "Untitled prospectus table";
     }
 

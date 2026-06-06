@@ -469,8 +469,10 @@ def test_prospectus_guided_defaults_do_not_claim_recalculated_user_refined_value
 
     for phrase in [
         "deterministic explicit scenarios",
-        "service extracts raw prospectus segment facts",
-        "does not hard-code segment-to-industry mapping",
+        "service extracts raw prospectus segment candidate tables and rows",
+        "does not choose segment rows",
+        "segment candidate tables",
+        "hard-code segment-to-industry mapping",
         "use the agent's search tools",
         "scenario.segments",
         "all remaining default answers must be summarized",

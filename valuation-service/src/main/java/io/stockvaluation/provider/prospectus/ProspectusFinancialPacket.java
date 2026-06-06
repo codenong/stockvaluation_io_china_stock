@@ -18,6 +18,7 @@ public class ProspectusFinancialPacket {
     private ProspectusOfferingFacts offering = new ProspectusOfferingFacts();
     private List<ProspectusShareCountFact> shareCounts = new ArrayList<>();
     private List<ProspectusSegmentFact> segments = new ArrayList<>();
+    private List<ProspectusRawTable> segmentCandidateTables = new ArrayList<>();
     private List<ProspectusExtractionIssue> extractionIssues = new ArrayList<>();
     private SourceProvenance sourceProvenance;
     private String reviewStatus = "review_required";

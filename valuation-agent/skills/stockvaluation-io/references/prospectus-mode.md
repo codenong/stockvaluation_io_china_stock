@@ -21,7 +21,7 @@ Prospectus extraction review is not the evidence review gate. It only checks whe
 
 Prospectus mode has a deterministic explicit scenario path through `stockvaluation.value_prospectus.scenario`. Use it when the user/model supplies story assumptions such as net proceeds, target revenue, margin, sales-to-capital, R&D capitalization, terminal cost of capital, terminal growth, and terminal return on capital.
 
-The valuation service extracts raw prospectus segment facts, revenue amounts, revenue weights, source rows, and source tables. It does not hard-code segment-to-industry mapping. When material segments are present, use the agent's search tools and the normal `segment-discovery.md` workflow to research what each segment actually does. Then pass a deterministic `scenario.segments` object to `stockvaluation.value_prospectus` with explicit `name`, `sector_key`, `mapped_industry`, revenue path or target revenue, target margin, sales-to-capital, and any segment-specific terminal assumptions. Keep the source rationale in the evidence packet and report, not as hidden Java mapping.
+The valuation service extracts raw prospectus segment candidate tables and rows. It does not choose segment rows, compute final segment weights, or hard-code segment-to-industry mapping. When material candidate rows are present, use the agent's search tools and the normal `segment-discovery.md` workflow to research what each row actually means, distinguish totals from subrows, and decide which rows belong in the model. Then pass a deterministic `scenario.segments` object to `stockvaluation.value_prospectus` with explicit `name`, `sector_key`, `mapped_industry`, revenue path or target revenue, target margin, sales-to-capital, and any segment-specific terminal assumptions. Keep the source rationale in the evidence packet and report, not as hidden Java mapping.
 
 For unusual IPOs, do not force all business lines into a single industry. If a material raw segment cannot be mapped with source-backed evidence, leave it unmapped in the review and say a clean segment scenario is not ready. If the segment is an optional future business or expansion option, keep it as an explicit upside scenario rather than the default case unless the prospectus or other source-backed evidence supports making it part of the base story.
 
@@ -38,14 +38,14 @@ Before calling `stockvaluation.value_prospectus`, review the extracted `Prospect
 - Company legal name, expected symbol, CIK, accession number, form type, filing date, and source URL.
 - Offering price, offering-price unit, share-count basis, and post-offering share count.
 - Revenue, operating income or operating loss, cash, debt, operating cash flow, capital expenditures, and source table titles.
-- Segment revenue weights, raw segment names, source rows, source tables, and any researched mappings supplied by the agent or user.
+- Raw segment candidate tables and rows, candidate revenue amounts, source rows, source tables, and any researched mappings supplied by the agent or user.
 - Any unresolved pro forma basis, missing units, ambiguous scales, or conflicting share-count facts.
 
 User approval is a modeling-input review, not financial advice. User corrections are not external evidence unless they are backed by filing rows or additional cited primary sources.
 
 Do not show the user only a bare list of allowed actions. Show a compact review card first:
 
-- What was extracted: company, filing metadata, price basis, share basis, core financial facts, segments, and source provenance.
+- What was extracted: company, filing metadata, price basis, share basis, core financial facts, raw segment candidate tables and rows, and source provenance.
 - What looks usable: source-backed fields with units, scale, period, row labels, and table titles.
 - What needs review: missing fields, ambiguous units/scale, conflicting share counts, pro forma basis, weak provenance, and extraction issues.
 - Recommended next action: one of the numbered choices below, with one plain sentence explaining why.

@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ProspectusFinancialExtractorTest {
 
     @Test
-    void extractsSpaceXLikeS1AFinancialPacketWithOfferingAndSegments() throws Exception {
+    void extractsSpaceXLikeS1AFinancialPacketWithOfferingAndRawSegmentCandidates() throws Exception {
         String html = Files.readString(Path.of("src/test/resources/prospectus/spacex_s1a_trimmed.html"));
         ProspectusDocument document = new ProspectusDocument(
                 "https://www.sec.gov/Archives/edgar/data/1181412/000162828026040364/spaceexplorationtechnologib.htm",
@@ -53,14 +53,19 @@ class ProspectusFinancialExtractorTest {
         assertTrue(packet.getShareCounts().get(0).getSourceRowLabel().contains("Class B common stock outstanding"));
         assertTrue(packet.getExtractionIssues().isEmpty());
 
-        assertEquals(3, packet.getSegments().size());
-        assertEquals(0.218, packet.getSegments().get(0).getRevenueWeight(), 0.001);
-        assertTrue(packet.getSegments().stream().anyMatch(segment -> "Space".equals(segment.getSegmentName())));
-        assertTrue(packet.getSegments().stream().anyMatch(segment -> "Connectivity".equals(segment.getSegmentName())));
-        assertTrue(packet.getSegments().stream().anyMatch(segment -> "AI".equals(segment.getSegmentName())));
-        assertTrue(packet.getSegments().stream().allMatch(segment -> "requires_agent_mapping".equals(segment.getMappingConfidence())));
-        assertTrue(packet.getSegments().stream().allMatch(segment -> segment.getSectorKey() == null));
-        assertTrue(packet.getSegments().stream().allMatch(segment -> segment.getMappedIndustry() == null));
+        assertTrue(packet.getSegments().isEmpty());
+        assertFalse(packet.getSegmentCandidateTables().isEmpty());
+        ProspectusRawTable candidate = packet.getSegmentCandidateTables().stream()
+                .filter(table -> table.rows().stream().anyMatch(row -> "Launch Services".equals(row.label())))
+                .findFirst()
+                .orElseThrow();
+        assertTrue(candidate.rows().stream().anyMatch(row -> "Launch Services".equals(row.label())));
+        assertTrue(candidate.rows().stream().anyMatch(row -> "Space".equals(row.label())));
+        assertTrue(candidate.rows().stream().anyMatch(row -> "Connectivity".equals(row.label())));
+        assertTrue(candidate.rows().stream().anyMatch(row -> "AI".equals(row.label())));
+        assertEquals(4_086_000_000.0, candidateRow(candidate, "Space").cells().get(0).normalizedValue());
+        assertEquals(11_387_000_000.0, candidateRow(candidate, "Connectivity").cells().get(0).normalizedValue());
+        assertEquals(3_201_000_000.0, candidateRow(candidate, "AI").cells().get(0).normalizedValue());
     }
 
     @Test
@@ -141,5 +146,12 @@ class ProspectusFinancialExtractorTest {
         assertEquals(normalizedValue, fact.getNormalizedValue());
         assertEquals(rowLabel, fact.getSourceRowLabel());
         assertTrue(fact.getTableTitle().contains(tableTitle));
+    }
+
+    private static ProspectusRawRow candidateRow(ProspectusRawTable table, String label) {
+        return table.rows().stream()
+                .filter(row -> label.equals(row.label()))
+                .findFirst()
+                .orElseThrow();
     }
 }

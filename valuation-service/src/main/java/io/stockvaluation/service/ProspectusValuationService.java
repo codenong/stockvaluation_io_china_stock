@@ -9,6 +9,7 @@ import io.stockvaluation.dto.ValuationOutputDTO;
 import io.stockvaluation.dto.valuationoutput.AssumptionTransparencyDTO;
 import io.stockvaluation.form.FinancialDataInput;
 import io.stockvaluation.provider.prospectus.ProspectusFinancialPacket;
+import io.stockvaluation.provider.prospectus.ProspectusRawTable;
 import io.stockvaluation.provider.prospectus.ProspectusSegmentFact;
 import io.stockvaluation.provider.prospectus.ProspectusScenario;
 import io.stockvaluation.provider.prospectus.ProspectusSegmentScenario;
@@ -63,7 +64,11 @@ public class ProspectusValuationService {
             var template = templateService.determineTemplate(input, companyData);
             String ticker = companyData.getBasicInfoDataDTO().getTicker();
             ValuationOutputDTO output = outputService.getValuationOutput(ticker, input, template);
-            output.setAssumptionTransparency(buildProspectusTransparency(output, input, packet, basis, scenario));
+            AssumptionTransparencyDTO transparency = buildProspectusTransparency(output, input, packet, basis, scenario);
+            output.setAssumptionTransparency(transparency);
+            String valuationCaseStatus = transparency.getValuationCaseStatus() == null
+                    ? basis.valuationCaseStatus()
+                    : transparency.getValuationCaseStatus();
             output.setSourceQualityGate(notRequiredGate());
             return new ProspectusValuationResult(
                     "valued",
@@ -73,7 +78,7 @@ public class ProspectusValuationService {
                     packet.getSourceProvenance(),
                     notRequiredGate(),
                     basis.status(),
-                    basis.valuationCaseStatus(),
+                    valuationCaseStatus,
                     basis.proceedsBasis(),
                     basis.warnings(),
                     output);
@@ -579,7 +584,6 @@ public class ProspectusValuationService {
         dto.setIndustryGlobal(output.getIndustryGlobal());
         dto.setCurrency(output.getCurrency());
         dto.setRequestPolicyMode(scenario == null ? "prospectus_reviewed" : "prospectus_explicit_scenario");
-        dto.setValuationCaseStatus(basis.valuationCaseStatus());
         dto.setValuationBasisStatus(basis.status());
         dto.setProceedsBasis(basis.proceedsBasis());
         dto.setSegmentCount(input.getSegments() == null || input.getSegments().getSegments() == null
@@ -613,6 +617,7 @@ public class ProspectusValuationService {
             warnings.add(issue.getReason());
         }
         boolean challenged = !basis.clean() || !segmentMaterialityIssues.isEmpty();
+        dto.setValuationCaseStatus(challenged ? "challenged_valuation_case" : basis.valuationCaseStatus());
 
         if (segmentParams != null && segmentParams.hasValidParameters()) {
             dto.setBaselineQuality(explicitSegmentScenario ? "prospectus_explicit_scenario" : "segment_weighted_baseline");
@@ -655,6 +660,13 @@ public class ProspectusValuationService {
                 ? List.of()
                 : packet.getSegments();
         List<AssumptionTransparencyDTO.BaselineIssue> issues = new ArrayList<>();
+        if (facts.isEmpty() && hasSegmentCandidateTables(packet)) {
+            issues.add(baselineIssue(
+                    "segments",
+                    "segment_candidates_require_scenario",
+                    "prospectus returned raw segment candidate tables; explicit scenario.segments is required to choose material rows and mappings before this can be a clean valuation case."));
+            return issues;
+        }
         for (ProspectusSegmentFact fact : facts) {
             Double weight = fact.getRevenueWeight();
             if (weight == null || !Double.isFinite(weight)) {
@@ -682,6 +694,15 @@ public class ProspectusValuationService {
             }
         }
         return issues;
+    }
+
+    private static boolean hasSegmentCandidateTables(ProspectusFinancialPacket packet) {
+        return packet != null
+                && packet.getSegmentCandidateTables() != null
+                && packet.getSegmentCandidateTables().stream()
+                        .filter(Objects::nonNull)
+                        .map(ProspectusRawTable::rows)
+                        .anyMatch(rows -> rows != null && !rows.isEmpty());
     }
 
     private static List<String> mappedIndustries(SegmentWeightedParameters segmentParams) {

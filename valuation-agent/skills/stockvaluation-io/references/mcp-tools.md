@@ -177,12 +177,13 @@ Rules:
 Use these output sections:
 
 - `prospectus.packet`: the extracted `ProspectusFinancialPacket` for user review.
+- `prospectus.packet.segmentCandidateTables`: raw candidate tables and rows for agent-side segment selection, search, and mapping. These are not final model segments.
 - `prospectus.company` and `prospectus.filing`: compact identity and filing metadata.
 - `sourceQualityGate`: the review stop point.
 - `provenance`: primary filing provenance.
 - `policy`: educational-use and no-advice guardrails.
 
-After this call, stop. Review company identity, form type, filing date, source URL, `offering_price`, share-count basis, extracted financial facts, segment revenue weights, units, scale, and extraction issues. User approval is a packet-review control, not financial advice.
+After this call, stop. Review company identity, form type, filing date, source URL, `offering_price`, share-count basis, extracted financial facts, raw segment candidate tables and rows, units, scale, and extraction issues. User approval is a packet-review control, not financial advice.
 
 Do not show the user only a bare list of allowed actions. Show a compact review card with what was extracted, what is missing or ambiguous, source provenance, extraction issues, and the recommended next action. Then show numbered human choices with explanations:
 

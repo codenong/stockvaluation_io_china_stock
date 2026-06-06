@@ -10,7 +10,7 @@ The goal is a segment-aware mechanical baseline when credible segment revenue we
 2. Latest 10-Q, interim report, earnings release, or investor presentation.
 3. Official company IR, corporate, annual-report, SEC, exchange, and newsroom pages.
 
-For prospectus mode, start from the raw segment facts returned by `stockvaluation.extract_prospectus`. Treat those names, revenue amounts, revenue weights, source rows, and source tables as filing facts. Then use search and company/prospectus evidence to map each material segment to a valuation-service sector key or to an explicit scenario segment. Do not rely on service-side hard-coded name matching for prospectus segments.
+For prospectus mode, start from `prospectus.packet.segmentCandidateTables` returned by `stockvaluation.extract_prospectus`. Treat the table titles, candidate row labels, raw values, normalized values, source rows, and source tables as filing facts. Then use search and company/prospectus evidence to decide which rows are true model segments, which rows are subrows or totals, and how each material segment maps to a valuation-service sector key or to an explicit scenario segment. Do not rely on service-side hard-coded name matching for prospectus segments.
 
 ## Output
 

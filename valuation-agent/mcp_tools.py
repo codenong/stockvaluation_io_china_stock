@@ -2766,10 +2766,7 @@ def compact_text_content(payload: dict[str, Any], is_error: bool) -> str:
         valuation_case_status = _string_or_none(payload.get("valuationCaseStatus")) or _string_or_none(baseline.get("valuationCaseStatus"))
         valuation_basis_status = _string_or_none(payload.get("valuationBasisStatus")) or _string_or_none(baseline.get("valuationBasisStatus"))
         if hide_visible_values and tool == "stockvaluation.value_prospectus":
-            if company_name and "space" in company_name.lower():
-                summary += " No clean SpaceX valuation yet."
-            else:
-                summary += " No clean user-facing valuation was produced."
+            summary += " No clean prospectus valuation yet."
             if estimated_value is not None:
                 summary += f" Mechanical diagnostic value is about {currency_amount(estimated_value, currency)}/share."
             summary += " A story scenario is required."

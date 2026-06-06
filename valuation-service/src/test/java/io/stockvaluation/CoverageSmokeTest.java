@@ -24,7 +24,6 @@ import io.stockvaluation.form.FinancialDataInput;
 import io.stockvaluation.provider.BalanceSheetSnapshot;
 import io.stockvaluation.provider.DataProviderException;
 import io.stockvaluation.provider.IncomeStatementSnapshot;
-import io.stockvaluation.service.SpecialCompanies;
 import io.stockvaluation.service.ValuationOutputService;
 import io.stockvaluation.service.ValuationWorkflowServiceImpl;
 import org.junit.jupiter.api.Test;
@@ -190,7 +189,7 @@ class CoverageSmokeTest {
     }
 
     @Test
-    void configPropertiesSnapshotsExceptionsAndSpecialCompaniesBehaveAsExpected() {
+    void configPropertiesSnapshotsAndExceptionsBehaveAsExpected() {
         ValuationTemplateProperties templateProperties = new ValuationTemplateProperties();
         assertEquals(0.03, templateProperties.getExpectedInflation());
         templateProperties.setDefaultProjectionYears(12);
@@ -213,16 +212,6 @@ class CoverageSmokeTest {
 
         assertNull(BalanceSheetSnapshot.empty().bookValueEquity());
         assertNull(IncomeStatementSnapshot.empty().totalRevenue());
-
-        io.stockvaluation.dto.BasicInfoDataDTO special = new io.stockvaluation.dto.BasicInfoDataDTO();
-        special.setCurrency("USD");
-        special.setTicker("AAPL");
-        assertTrue(SpecialCompanies.isSpecialCompanies(special));
-
-        io.stockvaluation.form.FinancialDataInput input = new io.stockvaluation.form.FinancialDataInput();
-        input.setBasicInfoDataDTO(special);
-        assertEquals(20.0, SpecialCompanies.reAdjustROIC(input, 10.0), 1e-9);
-        assertEquals(5.0, SpecialCompanies.reAdjustSalesToCapitalFirstPhases(special, 10.0, 5.0), 1e-9);
     }
 
     @Test
