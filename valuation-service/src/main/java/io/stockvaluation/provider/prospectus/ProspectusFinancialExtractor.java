@@ -53,8 +53,8 @@ public class ProspectusFinancialExtractor {
         packet.setCompany(new ProspectusCompanyIdentity(
                 legalName(parsed),
                 null,
-                "United States",
-                "USD",
+                null,
+                documentCurrency(tableSet),
                 null));
         String form = form(text, parsed.title());
         packet.setFiling(new ProspectusFilingMetadata(
@@ -354,6 +354,19 @@ public class ProspectusFinancialExtractor {
                 .filter(Objects::nonNull)
                 .max(Comparator.naturalOrder())
                 .orElse(null);
+    }
+
+    private static String documentCurrency(ProspectusRawTableSet tableSet) {
+        if (tableSet == null || tableSet.tables() == null) {
+            return null;
+        }
+        List<String> currencies = tableSet.tables().stream()
+                .map(ProspectusRawTable::currency)
+                .filter(Objects::nonNull)
+                .filter(currency -> !currency.isBlank())
+                .distinct()
+                .toList();
+        return currencies.size() == 1 ? currencies.get(0) : null;
     }
 
     private static String legalName(Document parsed) {

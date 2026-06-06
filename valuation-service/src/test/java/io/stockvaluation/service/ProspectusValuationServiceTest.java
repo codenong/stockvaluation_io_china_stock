@@ -277,6 +277,98 @@ class ProspectusValuationServiceTest {
     }
 
     @Test
+    void packetDrivenFallbackDefaultsAreReturnedAsChallengedDiagnostics() {
+        ProspectusCompanyDataAssembler assembler = mock(ProspectusCompanyDataAssembler.class);
+        CommonService commonService = mock(CommonService.class);
+        ValuationTemplateService templateService = mock(ValuationTemplateService.class);
+        ValuationOutputService outputService = mock(ValuationOutputService.class);
+        ProspectusValuationService service = new ProspectusValuationService(
+                new ProspectusPacketValidator(),
+                assembler,
+                commonService,
+                templateService,
+                outputService);
+        var packet = ProspectusTestPackets.reviewedPacket();
+        packet.getCompany().setCountryOfIncorporation(null);
+        packet.getCompany().setCurrency(null);
+        packet.getOffering().setNetProceeds(75_000_000_000.0);
+        packet.getOffering().setProceedsBasis("net_proceeds_disclosed");
+        packet.getFinancials().getIncomeStatement().removeIf(fact ->
+                "operating_income".equals(fact.getCanonicalField())
+                        || "prior_revenue".equals(fact.getCanonicalField()));
+        packet.getFinancials().getBalanceSheet().removeIf(fact ->
+                "cash_and_short_term_investments".equals(fact.getCanonicalField())
+                        || "total_debt".equals(fact.getCanonicalField()));
+        CompanyDataDTO companyData = companyData();
+        ValuationOutputDTO output = valuationOutput();
+        when(assembler.assemble(packet)).thenReturn(companyData);
+        when(templateService.determineTemplate(any(), eq(companyData))).thenReturn(null);
+        when(outputService.getValuationOutput(eq("SPCX"), any(), eq(null))).thenReturn(output);
+
+        ProspectusValuationResult result = service.value(new ProspectusValuationRequest(packet));
+
+        assertEquals("challenged_valuation_case", result.valuationCaseStatus());
+        AssumptionTransparencyDTO transparency = result.valuation().getAssumptionTransparency();
+        assertEquals("challenged_baseline", transparency.getBaselineUseStatus());
+        assertTrue(hasIssue(transparency, "country_of_incorporation", "prospectus_default_used"));
+        assertTrue(hasIssue(transparency, "currency", "prospectus_default_used"));
+        assertTrue(hasIssue(transparency, "operating_income", "prospectus_zero_default"));
+        assertTrue(hasIssue(transparency, "prior_revenue", "prospectus_growth_default"));
+        assertTrue(hasIssue(transparency, "cash", "prospectus_zero_default"));
+        assertTrue(hasIssue(transparency, "debt", "prospectus_zero_default"));
+    }
+
+    @Test
+    void rdCapitalizationScenarioRequiresRdExpenseFactForCleanCase() {
+        ProspectusCompanyDataAssembler assembler = mock(ProspectusCompanyDataAssembler.class);
+        CommonService commonService = mock(CommonService.class);
+        ValuationTemplateService templateService = mock(ValuationTemplateService.class);
+        ValuationOutputService outputService = mock(ValuationOutputService.class);
+        ProspectusValuationService service = new ProspectusValuationService(
+                new ProspectusPacketValidator(),
+                assembler,
+                commonService,
+                templateService,
+                outputService);
+        var packet = ProspectusTestPackets.reviewedPacket();
+        packet.getOffering().setNetProceeds(75_000_000_000.0);
+        packet.getOffering().setProceedsBasis("net_proceeds_disclosed");
+        packet.getFinancials().getIncomeStatement().removeIf(fact ->
+                "research_and_development".equals(fact.getCanonicalField()));
+        CompanyDataDTO companyData = companyData();
+        ValuationOutputDTO output = valuationOutput();
+        ProspectusScenario scenario = new ProspectusScenario(
+                "R&D capitalization without source",
+                75_000_000_000.0,
+                null,
+                true,
+                "straight_line",
+                5,
+                10.0,
+                8.0,
+                4.0,
+                12.0,
+                20.0,
+                20.0,
+                20.0,
+                5.0,
+                10.0,
+                2.0,
+                2.0,
+                List.of());
+        when(assembler.assemble(packet)).thenReturn(companyData);
+        when(templateService.determineTemplate(any(), eq(companyData))).thenReturn(null);
+        when(outputService.getValuationOutput(eq("SPCX"), any(), eq(null))).thenReturn(output);
+
+        ProspectusValuationResult result = service.value(new ProspectusValuationRequest(packet, scenario));
+
+        assertEquals("challenged_valuation_case", result.valuationCaseStatus());
+        assertTrue(hasIssue(result.valuation().getAssumptionTransparency(),
+                "research_and_development",
+                "rd_capitalization_source_missing"));
+    }
+
+    @Test
     void valuesSpaceXStyleSegmentMixWithRevenueWeightsInsteadOfFirstMappedSegment() {
         ProspectusCompanyDataAssembler assembler = mock(ProspectusCompanyDataAssembler.class);
         CommonService commonService = mock(CommonService.class);
@@ -525,6 +617,14 @@ class ProspectusValuationServiceTest {
         params.setSectorParameters("telecom-services", telecom);
         params.setSectorParameters("aerospace-defense", aerospace);
         return params;
+    }
+
+    private static boolean hasIssue(
+            AssumptionTransparencyDTO transparency,
+            String field,
+            String status) {
+        return transparency.getUnsupportedBaselineDrivers().stream()
+                .anyMatch(issue -> field.equals(issue.getField()) && status.equals(issue.getStatus()));
     }
 
     private static ProspectusScenario damodaranStyleScenario() {

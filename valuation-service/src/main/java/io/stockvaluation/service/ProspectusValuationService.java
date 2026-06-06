@@ -625,7 +625,15 @@ public class ProspectusValuationService {
         for (AssumptionTransparencyDTO.BaselineIssue issue : industryMappingIssues) {
             warnings.add(issue.getReason());
         }
-        boolean challenged = !basis.clean() || !segmentMaterialityIssues.isEmpty() || !industryMappingIssues.isEmpty();
+        List<AssumptionTransparencyDTO.BaselineIssue> fallbackDefaultIssues = fallbackDefaultIssues(packet, scenario);
+        unsupportedIssues.addAll(fallbackDefaultIssues);
+        for (AssumptionTransparencyDTO.BaselineIssue issue : fallbackDefaultIssues) {
+            warnings.add(issue.getReason());
+        }
+        boolean challenged = !basis.clean()
+                || !segmentMaterialityIssues.isEmpty()
+                || !industryMappingIssues.isEmpty()
+                || !fallbackDefaultIssues.isEmpty();
         dto.setValuationCaseStatus(challenged ? "challenged_valuation_case" : basis.valuationCaseStatus());
 
         if (validSegmentBaseline) {
@@ -718,6 +726,82 @@ public class ProspectusValuationService {
                 "No reviewed prospectus industry mapping was provided; an agent or user must supply a company or segment industry mapping before this can be a clean valuation case."));
     }
 
+    private static List<AssumptionTransparencyDTO.BaselineIssue> fallbackDefaultIssues(
+            ProspectusFinancialPacket packet,
+            ProspectusScenario scenario) {
+        List<AssumptionTransparencyDTO.BaselineIssue> issues = new ArrayList<>();
+        var company = packet == null ? null : packet.getCompany();
+        if (company == null || blankToNull(company.getCountryOfIncorporation()) == null) {
+            issues.add(baselineIssue(
+                    "country_of_incorporation",
+                    "prospectus_default_used",
+                    "No reviewed country of incorporation was provided; the service used its diagnostic country default."));
+        }
+        if (company == null || blankToNull(company.getCurrency()) == null) {
+            issues.add(baselineIssue(
+                    "currency",
+                    "prospectus_default_used",
+                    "No reviewed valuation currency was provided; the service used its diagnostic currency default."));
+        }
+        if (!hasFinancialFact(packet, "operating_income") && !hasScenarioMargin(scenario)) {
+            issues.add(baselineIssue(
+                    "operating_income",
+                    "prospectus_zero_default",
+                    "Operating income was missing and no scenario margin was supplied; the diagnostic run used a zero-current-margin fallback."));
+        }
+        if (!hasFinancialFact(packet, "prior_revenue") && !hasScenarioGrowth(scenario)) {
+            issues.add(baselineIssue(
+                    "prior_revenue",
+                    "prospectus_growth_default",
+                    "Prior revenue was missing and no scenario growth was supplied; the diagnostic run used the prospectus growth fallback."));
+        }
+        if (!hasFinancialFact(packet, "cash_and_short_term_investments")) {
+            issues.add(baselineIssue(
+                    "cash",
+                    "prospectus_zero_default",
+                    "Cash and short-term investments were missing; the diagnostic run used zero pre-offering cash."));
+        }
+        if (!hasFinancialFact(packet, "total_debt")) {
+            issues.add(baselineIssue(
+                    "debt",
+                    "prospectus_zero_default",
+                    "Debt was missing; the diagnostic run used zero debt."));
+        }
+        if (!hasFinancialFact(packet, "book_value_equity")) {
+            issues.add(baselineIssue(
+                    "book_value_equity",
+                    "prospectus_zero_default",
+                    "Book value of equity was missing; the diagnostic run used zero book equity in the assembled inputs."));
+        }
+        if (Boolean.TRUE.equals(scenario == null ? null : scenario.rdCapitalization())
+                && !hasFinancialFact(packet, "research_and_development")) {
+            issues.add(baselineIssue(
+                    "research_and_development",
+                    "rd_capitalization_source_missing",
+                    "R&D capitalization was requested, but no R&D expense fact was supplied in the prospectus packet."));
+        }
+        return issues;
+    }
+
+    private static boolean hasScenarioMargin(ProspectusScenario scenario) {
+        return scenario != null
+                && (isFinite(scenario.operatingMarginNextYear()) || isFinite(scenario.targetOperatingMargin()));
+    }
+
+    private static boolean hasScenarioGrowth(ProspectusScenario scenario) {
+        return scenario != null
+                && (isFinite(scenario.revenueNextYear()) || isFinite(scenario.compoundAnnualGrowth2_5()));
+    }
+
+    private static boolean hasFinancialFact(ProspectusFinancialPacket packet, String canonicalField) {
+        return packet != null
+                && packet.getFinancials() != null
+                && packet.getFinancials().allFacts().stream()
+                        .anyMatch(fact -> canonicalField.equals(fact.getCanonicalField())
+                                && fact.getNormalizedValue() != null
+                                && Double.isFinite(fact.getNormalizedValue()));
+    }
+
     private static boolean isUnmappedProspectusIndustry(String industry) {
         String normalized = blankToNull(industry);
         return normalized == null || "unmapped-prospectus".equalsIgnoreCase(normalized);
@@ -806,6 +890,10 @@ public class ProspectusValuationService {
 
     private static boolean isPositiveFinite(Double value) {
         return value != null && Double.isFinite(value) && value > 0.0;
+    }
+
+    private static boolean isFinite(Double value) {
+        return value != null && Double.isFinite(value);
     }
 
     private static double round6(double value) {

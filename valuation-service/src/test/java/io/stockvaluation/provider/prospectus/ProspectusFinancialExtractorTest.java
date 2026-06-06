@@ -28,6 +28,8 @@ class ProspectusFinancialExtractorTest {
         assertEquals("prospectus_financial_packet.v1", packet.getSchemaVersion());
         assertEquals("review_required", packet.getReviewStatus());
         assertEquals("Space Exploration Technologies Corp.", packet.getCompany().getLegalName());
+        assertNull(packet.getCompany().getCountryOfIncorporation());
+        assertEquals("USD", packet.getCompany().getCurrency());
         assertEquals("S-1/A", packet.getFiling().getForm());
         assertEquals("0001181412", packet.getFiling().getCik());
         assertEquals("0001628280-26-040364", packet.getFiling().getAccession());
