@@ -265,6 +265,11 @@ public class CommonService {
 
     public RDResult calculateRDConverterValue(String industry, Double marginalTaxRate,
             Map<String, Double> researchAndDevelopmentMap) {
+        return calculateRDConverterValue(industry, marginalTaxRate, researchAndDevelopmentMap, null);
+    }
+
+    public RDResult calculateRDConverterValue(String industry, Double marginalTaxRate,
+            Map<String, Double> researchAndDevelopmentMap, Integer overrideAmortizationPeriodYears) {
         int defaultAmortization = 4;
         SectorMapping sectorMapping = sectorMappingRepository.findByIndustryName(industry);
         if (Objects.isNull(sectorMapping)) {
@@ -279,7 +284,10 @@ public class CommonService {
 
         int amortizationPeriod;
 
-        if (Objects.isNull(rdConverter)) {
+        if (overrideAmortizationPeriodYears != null && overrideAmortizationPeriodYears > 0) {
+            amortizationPeriod = Math.min(10, overrideAmortizationPeriodYears);
+            log.info("Using requested R&D amortization period for scenario: {}", amortizationPeriod);
+        } else if (Objects.isNull(rdConverter)) {
             // throw new RuntimeException("Amortization period not found for industry: " +
             // input.getIndustryUS());
             log.info("Amortization period not found for industry: {} ", industry);

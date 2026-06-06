@@ -12,6 +12,10 @@ public record ProspectusValuationBasis(
         List<String> warnings) {
 
     public static ProspectusValuationBasis evaluate(ProspectusFinancialPacket packet) {
+        return evaluate(packet, null);
+    }
+
+    public static ProspectusValuationBasis evaluate(ProspectusFinancialPacket packet, ProspectusScenario scenario) {
         ProspectusOfferingFacts offering = packet == null ? null : packet.getOffering();
         if (!usesPostOfferingShares(packet)) {
             return new ProspectusValuationBasis(
@@ -19,6 +23,14 @@ public record ProspectusValuationBasis(
                     "clean_valuation_case",
                     null,
                     null,
+                    List.of());
+        }
+        if (scenario != null && isPositiveFinite(scenario.netProceeds())) {
+            return new ProspectusValuationBasis(
+                    "clean_pro_forma_basis",
+                    "clean_valuation_case",
+                    blankToNull(scenario.proceedsBasis()) == null ? "net_proceeds_scenario" : scenario.proceedsBasis(),
+                    scenario.netProceeds(),
                     List.of());
         }
         if (offering != null && isPositiveFinite(offering.getNetProceeds())) {

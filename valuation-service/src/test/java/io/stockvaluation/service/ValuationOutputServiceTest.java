@@ -1,5 +1,8 @@
 package io.stockvaluation.service;
 
+import io.stockvaluation.constant.RDResult;
+import io.stockvaluation.domain.SectorMapping;
+import io.stockvaluation.dto.BasicInfoDataDTO;
 import io.stockvaluation.dto.LeaseResultDTO;
 import io.stockvaluation.dto.OptionValueResultDTO;
 import io.stockvaluation.dto.OverrideAssumption;
@@ -19,8 +22,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.Map;
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class ValuationOutputServiceTest {
@@ -139,6 +147,63 @@ class ValuationOutputServiceTest {
         assertEquals(0.0, result.getValuePerOption());
         assertEquals(0.0, result.getValueOfAllOptionsOutstanding());
         verifyNoInteractions(optionValueService);
+    }
+
+    @Test
+    void getValuationOutput_passesScenarioRdAmortizationPeriodToConverter() {
+        BasicInfoDataDTO basic = new BasicInfoDataDTO();
+        basic.setCompanyName("Space Exploration Technologies Corp.");
+        basic.setTicker("SPCX");
+        basic.setIndustryUs("aerospace-defense");
+        basic.setCountryOfIncorporation("United States");
+        basic.setCurrency("USD");
+        basic.setStockCurrency("USD");
+        financialDataInput.setBasicInfoDataDTO(basic);
+        financialDataInput.setIndustry("aerospace-defense");
+        financialDataInput.setIsExpensesCapitalize(true);
+        financialDataInput.setRdAmortizationPeriodYears(5);
+        financialDataInput.setHasOperatingLease(false);
+        financialDataInput.setHasEmployeeOptions(false);
+        financialDataInput.setRevenueNextYear(5.0);
+        financialDataInput.setOperatingMarginNextYear(15.0);
+        financialDataInput.setCompoundAnnualGrowth2_5(6.0);
+        financialDataInput.setConvergenceYearMargin(5.0);
+        financialDataInput.setRiskFreeRate(4.5);
+        financialDataInput.setInitialCostCapital(850.0);
+        financialDataInput.getFinancialDataDTO().setRevenueTTM(1_000.0);
+        financialDataInput.getFinancialDataDTO().setRevenueLTM(900.0);
+        financialDataInput.getFinancialDataDTO().setOperatingIncomeTTM(100.0);
+        financialDataInput.getFinancialDataDTO().setEffectiveTaxRate(0.21);
+        financialDataInput.getFinancialDataDTO().setMarginalTaxRate(25.0);
+        financialDataInput.getFinancialDataDTO().setMinorityInterestTTM(0.0);
+        financialDataInput.getFinancialDataDTO().setNonOperatingAssetTTM(0.0);
+        financialDataInput.getFinancialDataDTO().setResearchAndDevelopmentMap(Map.of(
+                "currentR&D-0", 250.0,
+                "currentR&D-1", 200.0,
+                "currentR&D-2", 150.0,
+                "currentR&D-3", 100.0,
+                "currentR&D-4", 50.0));
+
+        SectorMapping mapping = new SectorMapping();
+        mapping.setIndustryAsPerExcel("Aerospace/Defense");
+        when(sectorMappingRepository.findByIndustryName("aerospace-defense")).thenReturn(mapping);
+        when(commonService.calculateRDConverterValue(
+                "aerospace-defense",
+                25.0,
+                financialDataInput.getFinancialDataDTO().getResearchAndDevelopmentMap(),
+                5)).thenReturn(new RDResult(300.0, 60.0, 190.0, 47.5));
+        when(commonService.calculateOperatingLeaseConverter()).thenReturn(new LeaseResultDTO(0.0, 0.0, 0.0, 0.0));
+        when(commonService.resolveEquityRiskPremiumForCountry("United States")).thenReturn(4.0);
+        when(industryAvgGloRepository.findRevenueGrowth("Aerospace/Defense")).thenReturn(Optional.empty());
+        when(industryAvgGloRepository.findOperatingMargin("Aerospace/Defense")).thenReturn(Optional.empty());
+
+        valuationOutputService.getValuationOutput("SPCX", financialDataInput, null);
+
+        verify(commonService).calculateRDConverterValue(
+                "aerospace-defense",
+                25.0,
+                financialDataInput.getFinancialDataDTO().getResearchAndDevelopmentMap(),
+                5);
     }
 
     @Test

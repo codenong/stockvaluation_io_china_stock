@@ -250,8 +250,8 @@ class FakeClient:
         self.calls.append(("extract_prospectus", filing_url, expected_company, expected_symbol))
         return self.prospectus_extraction
 
-    def value_prospectus(self, packet):
-        self.calls.append(("value_prospectus", packet))
+    def value_prospectus(self, packet, scenario=None):
+        self.calls.append(("value_prospectus", packet, scenario))
         return self.prospectus_valuation
 
 
@@ -388,6 +388,8 @@ def test_prospectus_tools_are_read_only_and_schema_bounded():
     assert value["inputSchema"]["required"] == ["packet"]
     assert value["inputSchema"]["properties"]["packet"]["type"] == "object"
     assert value["inputSchema"]["properties"]["packet"]["additionalProperties"] is True
+    assert value["inputSchema"]["properties"]["scenario"]["type"] == "object"
+    assert value["inputSchema"]["properties"]["scenario"]["additionalProperties"] is True
 
 
 @pytest.mark.parametrize(
@@ -469,7 +471,7 @@ def test_value_prospectus_uses_reviewed_packet_and_offering_price_basis():
     )
 
     assert result["isError"] is False
-    assert client.calls == [("value_prospectus", reviewed_packet)]
+    assert client.calls == [("value_prospectus", reviewed_packet, None)]
     structured = result["structuredContent"]
     assert structured["tool"] == "stockvaluation.value_prospectus"
     assert structured["priceBasis"] == "offering_price"
@@ -485,6 +487,33 @@ def test_value_prospectus_uses_reviewed_packet_and_offering_price_basis():
     assert "offering_price" in visible_text
     assert "structuredContent" in visible_text
     assert len(visible_text) < 650
+
+
+def test_value_prospectus_passes_explicit_scenario_to_service():
+    scenario = {
+        "net_proceeds": 75_000_000_000.0,
+        "rd_capitalization": True,
+        "rd_amortization_period_years": 5,
+        "segments": [
+            {"name": "Launch", "target_revenue": 40_000_000_000.0},
+            {"name": "Starlink / Connectivity", "target_revenue": 120_000_000_000.0},
+            {"name": "AI", "target_revenue": 160_000_000_000.0},
+            {"name": "Other or expansion revenue", "base_revenue": 0.0, "target_revenue": 100_000_000_000.0},
+        ],
+    }
+    payload = _prospectus_valuation_payload()
+    payload["scenario"] = scenario
+    client = FakeClient(prospectus_valuation=payload)
+    reviewed_packet = _prospectus_packet("reviewed")
+
+    result = MCPToolRegistry(client).call(
+        "stockvaluation.value_prospectus",
+        {"packet": reviewed_packet, "scenario": scenario},
+    )
+
+    assert result["isError"] is False
+    assert client.calls == [("value_prospectus", reviewed_packet, scenario)]
+    assert result["structuredContent"]["scenario"] == scenario
 
 
 def test_value_prospectus_challenged_basis_hides_clean_value_language():
@@ -514,8 +543,10 @@ def test_value_prospectus_challenged_basis_hides_clean_value_language():
     assert structured["baseline"]["valuationBasisStatus"] == "pro_forma_cash_missing"
     assert structured["baseline"]["valuationCaseStatus"] == "challenged_valuation_case"
     visible_text = result["content"][0]["text"]
-    assert "412.34" not in visible_text
+    assert "Estimated value/share" not in visible_text
+    assert "Mechanical diagnostic value is about $412.34/share" in visible_text
     assert "No clean user-facing valuation was produced" in visible_text
+    assert "A story scenario is required" in visible_text
     assert "pro_forma_cash_missing" in visible_text
 
 
@@ -548,9 +579,65 @@ def test_value_prospectus_clean_basis_but_challenged_case_marks_dcf_diagnostic_o
     assert structured["dcf"]["caseStatus"] == "challenged_diagnostic"
     assert "clean user-facing intrinsic value" in structured["dcf"]["displayPolicy"]
     visible_text = result["content"][0]["text"]
-    assert "412.34" not in visible_text
+    assert "Estimated value/share" not in visible_text
+    assert "Mechanical diagnostic value is about $412.34/share" in visible_text
     assert "No clean user-facing valuation was produced" in visible_text
+    assert "A story scenario is required" in visible_text
     assert "clean_pro_forma_basis" in visible_text
+
+
+def test_value_prospectus_uses_recommended_intrinsic_value_as_challenged_diagnostic():
+    payload = _prospectus_valuation_payload()
+    payload["valuationBasisStatus"] = "gross_proceeds_estimate_only"
+    payload["valuationCaseStatus"] = "challenged_valuation_case"
+    payload["proceedsBasis"] = "gross_proceeds_estimate_only"
+    payload["valuation"]["recommendedIntrinsicValue"] = 5.871407929880455
+    payload["valuation"]["companyDTO"]["estimatedValuePerShare"] = None
+    payload["valuation"]["financialDTO"]["intrinsicValue"] = None
+    payload["valuation"]["assumptionTransparency"]["valuationBasisStatus"] = "gross_proceeds_estimate_only"
+    payload["valuation"]["assumptionTransparency"]["valuationCaseStatus"] = "challenged_valuation_case"
+    payload["valuation"]["assumptionTransparency"]["baselineUseStatus"] = "challenged_baseline"
+    client = FakeClient(prospectus_valuation=payload)
+
+    result = MCPToolRegistry(client).call(
+        "stockvaluation.value_prospectus",
+        {"packet": _prospectus_packet("reviewed")},
+    )
+
+    assert result["isError"] is False
+    structured = result["structuredContent"]
+    assert structured["dcf"]["estimatedValuePerShare"] == 5.871407929880455
+    assert structured["dcf"]["valueVisibility"] == "diagnostic_only"
+    assert structured["dcf"]["caseStatus"] == "challenged_diagnostic"
+    assert "challenged diagnostic value" in structured["dcf"]["displayPolicy"]
+    visible_text = result["content"][0]["text"]
+    assert "5.871407929880455" not in visible_text
+    assert "Mechanical diagnostic value is about $5.87/share" in visible_text
+    assert "No clean user-facing valuation was produced" in visible_text
+
+
+def test_value_prospectus_spacex_challenged_text_names_story_scenario_requirement():
+    payload = _prospectus_valuation_payload()
+    payload["valuationBasisStatus"] = "clean_pro_forma_basis"
+    payload["valuationCaseStatus"] = "challenged_valuation_case"
+    payload["valuation"]["companyName"] = "Space Exploration Technologies Corp."
+    payload["valuation"]["companyDTO"]["estimatedValuePerShare"] = 11.61
+    payload["valuation"]["financialDTO"]["intrinsicValue"] = 11.61
+    payload["valuation"]["assumptionTransparency"]["valuationBasisStatus"] = "clean_pro_forma_basis"
+    payload["valuation"]["assumptionTransparency"]["valuationCaseStatus"] = "challenged_valuation_case"
+    payload["valuation"]["assumptionTransparency"]["baselineUseStatus"] = "challenged_baseline"
+    client = FakeClient(prospectus_valuation=payload)
+
+    result = MCPToolRegistry(client).call(
+        "stockvaluation.value_prospectus",
+        {"packet": _prospectus_packet("reviewed")},
+    )
+
+    visible_text = result["content"][0]["text"]
+    assert "No clean SpaceX valuation yet" in visible_text
+    assert "Mechanical diagnostic value is about $11.61/share" in visible_text
+    assert "A story scenario is required" in visible_text
+    assert "intrinsic" not in visible_text.lower()
 
 
 def test_service_client_posts_prospectus_extract_to_api_v1_endpoint(monkeypatch):
@@ -619,6 +706,37 @@ def test_service_client_posts_reviewed_prospectus_packet_to_valuation_endpoint(m
 
     assert captured["url"] == "http://localhost:8081/api/v1/prospectus/valuation"
     assert captured["body"] == {"packet": reviewed_packet}
+    assert result["priceBasis"] == "offering_price"
+
+
+def test_service_client_posts_prospectus_scenario_to_valuation_endpoint(monkeypatch):
+    captured = {}
+    reviewed_packet = _prospectus_packet("reviewed")
+    scenario = {"net_proceeds": 75_000_000_000.0, "rd_capitalization": True}
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self):
+            return json.dumps({"data": _prospectus_valuation_payload()}).encode("utf-8")
+
+    def fake_urlopen(req, timeout):
+        captured["url"] = req.full_url
+        captured["body"] = json.loads(req.data.decode("utf-8"))
+        return Response()
+
+    monkeypatch.setattr("valuation_agent.service_client.request.urlopen", fake_urlopen)
+
+    result = ValuationServiceClient(timeout=7).value_prospectus(reviewed_packet, scenario)
+
+    assert captured["url"] == "http://localhost:8081/api/v1/prospectus/valuation"
+    assert captured["body"] == {"packet": reviewed_packet, "scenario": scenario}
     assert result["priceBasis"] == "offering_price"
 
 

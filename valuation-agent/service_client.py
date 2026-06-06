@@ -74,8 +74,11 @@ class ValuationServiceClient:
         payload = self._post_json(self._api_v1_url("/prospectus/extract"), body)
         return self._data_object(payload, "valuation-service prospectus extraction response missing JSON data object")
 
-    def value_prospectus(self, packet: dict[str, Any]) -> dict[str, Any]:
-        payload = self._post_json(self._api_v1_url("/prospectus/valuation"), {"packet": packet})
+    def value_prospectus(self, packet: dict[str, Any], scenario: dict[str, Any] | None = None) -> dict[str, Any]:
+        body: dict[str, Any] = {"packet": packet}
+        if scenario is not None:
+            body["scenario"] = scenario
+        payload = self._post_json(self._api_v1_url("/prospectus/valuation"), body)
         return self._data_object(payload, "valuation-service prospectus valuation response missing JSON data object")
 
     def _data_object(self, payload: dict[str, Any], message: str) -> dict[str, Any]:

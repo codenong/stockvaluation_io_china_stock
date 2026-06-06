@@ -271,7 +271,12 @@ def tool_definitions() -> list[dict[str, Any]]:
                         "type": "object",
                         "description": "A ProspectusFinancialPacket returned by stockvaluation.extract_prospectus after user review.",
                         "additionalProperties": True,
-                    }
+                    },
+                    "scenario": {
+                        "type": "object",
+                        "description": "Optional explicit prospectus scenario assumptions: segment revenue paths, target margins, sales-to-capital, R&D capitalization, net proceeds, terminal growth, terminal cost of capital, and terminal return on capital.",
+                        "additionalProperties": True,
+                    },
                 },
                 ["packet"],
             ),
@@ -476,7 +481,15 @@ class MCPToolRegistry:
                 extra={"prospectus": {"reviewStatus": review_status or "missing"}},
             )
         try:
-            result = self.service_client.value_prospectus(packet)
+            scenario = args.get("scenario")
+            if scenario is not None and not isinstance(scenario, dict):
+                return error_payload(
+                    tool,
+                    "INVALID_PROSPECTUS_SCENARIO",
+                    "scenario must be an object when supplied.",
+                    "invalid_prospectus_scenario",
+                )
+            result = self.service_client.value_prospectus(packet, scenario)
             return prospectus_valuation_success_payload(tool, result)
         except ValuationServiceError as exc:
             return service_exception_payload(tool, exc)
@@ -1333,6 +1346,7 @@ def prospectus_extraction_success_payload(tool: str, result: dict[str, Any]) -> 
 
 def prospectus_valuation_success_payload(tool: str, result: dict[str, Any]) -> dict[str, Any]:
     packet = _dict(result.get("packet"))
+    scenario = _dict(result.get("scenario"))
     valuation = prospectus_valuation_for_agent(_dict(result.get("valuation")))
     provenance = _dict(result.get("sourceProvenance") or result.get("source_provenance"))
     if not provenance:
@@ -1359,6 +1373,7 @@ def prospectus_valuation_success_payload(tool: str, result: dict[str, Any]) -> d
             "sourceUrl": _string_or_none(packet.get("sourceUrl")) or _string_or_none(packet.get("source_url")),
             "packet": sanitize_for_agent(packet),
         },
+        "scenario": sanitize_for_agent(scenario) if scenario else None,
         "valuation": valuation,
         "dcf": dcf,
         "baseline": extract_baseline_contract(valuation, {"requestPolicyMode": "prospectus_reviewed"}),
@@ -1633,7 +1648,11 @@ def extract_dcf_summary(valuation: dict[str, Any]) -> dict[str, Any]:
         "primaryModel": valuation.get("primaryModel"),
         "growthPattern": valuation.get("growthPattern"),
         "projectionYears": valuation.get("projectionYears"),
-        "estimatedValuePerShare": company.get("estimatedValuePerShare") or financial.get("intrinsicValue"),
+        "estimatedValuePerShare": _first_present(
+            company.get("estimatedValuePerShare"),
+            financial.get("intrinsicValue"),
+            valuation.get("recommendedIntrinsicValue"),
+        ),
         "marketPrice": company.get("price"),
         "valueOfEquity": company.get("valueOfEquity"),
         "numberOfShares": company.get("numberOfShares"),
@@ -1648,7 +1667,7 @@ def apply_prospectus_dcf_display_policy(dcf: dict[str, Any], valuation_case_stat
         dcf["caseStatus"] = "challenged_diagnostic"
         dcf["displayPolicy"] = (
             "Do not present estimatedValuePerShare as a clean user-facing intrinsic value; "
-            "show it only when the user asks for audit/debug detail."
+            "show it only as a challenged diagnostic value after caveated continuation, valuation-detail request, or audit/debug request."
         )
         return
     dcf["valueVisibility"] = "clean_user_facing"
@@ -2747,7 +2766,13 @@ def compact_text_content(payload: dict[str, Any], is_error: bool) -> str:
         valuation_case_status = _string_or_none(payload.get("valuationCaseStatus")) or _string_or_none(baseline.get("valuationCaseStatus"))
         valuation_basis_status = _string_or_none(payload.get("valuationBasisStatus")) or _string_or_none(baseline.get("valuationBasisStatus"))
         if hide_visible_values and tool == "stockvaluation.value_prospectus":
-            summary += " No clean user-facing valuation was produced."
+            if company_name and "space" in company_name.lower():
+                summary += " No clean SpaceX valuation yet."
+            else:
+                summary += " No clean user-facing valuation was produced."
+            if estimated_value is not None:
+                summary += f" Mechanical diagnostic value is about {currency_amount(estimated_value, currency)}/share."
+            summary += " A story scenario is required."
             if valuation_basis_status:
                 summary += f" Basis issue {valuation_basis_status}."
         price_basis = _string_or_none(payload.get("priceBasis"))
@@ -2823,6 +2848,12 @@ def compact_number(value: Any) -> str | None:
     if abs(number) >= 1000:
         return f"{number:,.2f}"
     return f"{number:.2f}"
+
+
+def currency_amount(amount: str, currency: str | None) -> str:
+    if currency == "USD":
+        return f"${amount}"
+    return f"{amount} {currency}" if currency else amount
 
 
 def dedupe(items: list[str]) -> list[str]:

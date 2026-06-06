@@ -284,8 +284,9 @@ public class ProspectusTableExtractor {
         if (value.isBlank() || value.equals("-") || value.equals("—")) {
             return null;
         }
-        boolean negative = value.startsWith("(") && value.endsWith(")");
         value = value.replaceAll("\\[[^]]*]", "");
+        String signProbe = value.replaceAll("[\\s$€£¥]", "");
+        boolean negative = signProbe.startsWith("(") && signProbe.endsWith(")");
         value = value.replaceAll("[^0-9.\\-]", "");
         if (value.isBlank() || value.equals("-")) {
             return null;

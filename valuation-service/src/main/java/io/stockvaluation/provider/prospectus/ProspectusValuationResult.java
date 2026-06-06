@@ -10,6 +10,7 @@ public record ProspectusValuationResult(
         String status,
         String priceBasis,
         ProspectusFinancialPacket packet,
+        ProspectusScenario scenario,
         SourceProvenance sourceProvenance,
         SourceQualityGateDTO sourceQualityGate,
         String valuationBasisStatus,

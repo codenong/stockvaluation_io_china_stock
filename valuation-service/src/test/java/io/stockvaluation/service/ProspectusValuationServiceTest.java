@@ -12,6 +12,8 @@ import io.stockvaluation.dto.valuationoutput.CompanyDTO;
 import io.stockvaluation.form.FinancialDataInput;
 import io.stockvaluation.provider.prospectus.ProspectusPacketValidationResult;
 import io.stockvaluation.provider.prospectus.ProspectusPacketValidator;
+import io.stockvaluation.provider.prospectus.ProspectusScenario;
+import io.stockvaluation.provider.prospectus.ProspectusSegmentScenario;
 import io.stockvaluation.provider.prospectus.ProspectusTestPackets;
 import io.stockvaluation.provider.prospectus.ProspectusValuationRequest;
 import io.stockvaluation.provider.prospectus.ProspectusValuationResult;
@@ -263,6 +265,79 @@ class ProspectusValuationServiceTest {
     }
 
     @Test
+    void prospectusScenarioMapsDamodaranStyleInputsIntoDeterministicProjectionInput() {
+        ProspectusCompanyDataAssembler assembler = mock(ProspectusCompanyDataAssembler.class);
+        CommonService commonService = mock(CommonService.class);
+        ValuationTemplateService templateService = mock(ValuationTemplateService.class);
+        ValuationOutputService outputService = mock(ValuationOutputService.class);
+        ProspectusValuationService service = new ProspectusValuationService(
+                new ProspectusPacketValidator(),
+                assembler,
+                commonService,
+                templateService,
+                outputService);
+        var packet = ProspectusTestPackets.spaceXSegmentMixPacket();
+        CompanyDataDTO companyData = companyData();
+        companyData.getFinancialDataDTO().setCashAndMarkablTTM(24_747_000_000.0);
+        companyData.getFinancialDataDTO().setCashAndMarkablLTM(24_747_000_000.0);
+        ValuationOutputDTO output = valuationOutput();
+        ProspectusScenario scenario = damodaranStyleScenario();
+        when(assembler.assemble(packet)).thenReturn(companyData);
+        when(templateService.determineTemplate(any(), eq(companyData))).thenReturn(null);
+        when(outputService.getValuationOutput(eq("SPCX"), any(), eq(null))).thenAnswer(invocation -> {
+            FinancialDataInput projectionInput = invocation.getArgument(1);
+            assertEquals("prospectus_explicit_scenario", projectionInput.getRequestPolicyMode());
+            assertTrue(projectionInput.getIsExpensesCapitalize());
+            assertEquals("straight_line", projectionInput.getRdAmortizationMethod());
+            assertEquals(5, projectionInput.getRdAmortizationPeriodYears());
+            assertEquals(99_747_000_000.0, projectionInput.getFinancialDataDTO().getCashAndMarkablTTM(), 0.001);
+            assertEquals(4.56, projectionInput.getTerminalGrowthRate(), 0.0001);
+            assertTrue(projectionInput.getOverrideAssumptionCostCapital().getIsOverride());
+            assertEquals(8.25, projectionInput.getOverrideAssumptionCostCapital().getOverrideCost(), 0.0001);
+            assertTrue(projectionInput.getOverrideAssumptionReturnOnCapital().getIsOverride());
+            assertEquals(15.0, projectionInput.getOverrideAssumptionReturnOnCapital().getOverrideCost(), 0.0001);
+
+            SegmentResponseDTO projectionSegments = projectionInput.getSegments();
+            assertNotNull(projectionSegments);
+            assertEquals(4, projectionSegments.getSegments().size());
+            assertTrue(projectionSegments.getSegments().stream()
+                    .anyMatch(segment -> "launch".equals(segment.getSector())));
+            assertTrue(projectionSegments.getSegments().stream()
+                    .anyMatch(segment -> "starlink-connectivity".equals(segment.getSector())));
+            assertTrue(projectionSegments.getSegments().stream()
+                    .anyMatch(segment -> "ai".equals(segment.getSector())));
+            assertTrue(projectionSegments.getSegments().stream()
+                    .anyMatch(segment -> "other-expansion".equals(segment.getSector())));
+
+            SegmentWeightedParameters params = SegmentParameterContext.getParameters();
+            assertNotNull(params);
+            assertEquals("prospectus_explicit_scenario", params.getBaselineQuality());
+            assertEquals(100.0, params.getSegmentCoveragePct(), 0.001);
+            assertEquals(40_000_000_000.0, params.getSectorParameters("launch").getTargetRevenue(), 0.001);
+            assertEquals(0.0, params.getSectorParameters("other-expansion").getBaseRevenue(), 0.001);
+            assertEquals(100_000_000_000.0, params.getSectorParameters("other-expansion").getProjectedRevenues().get(10), 0.001);
+            return output;
+        });
+
+        ProspectusValuationResult result = service.value(new ProspectusValuationRequest(packet, scenario));
+
+        assertEquals(scenario, result.scenario());
+        assertEquals("clean_pro_forma_basis", result.valuationBasisStatus());
+        assertEquals("clean_valuation_case", result.valuationCaseStatus());
+        assertEquals("net_proceeds_scenario", result.proceedsBasis());
+        AssumptionTransparencyDTO transparency = result.valuation().getAssumptionTransparency();
+        assertEquals("prospectus_explicit_scenario", transparency.getRequestPolicyMode());
+        assertEquals("prospectus_explicit_scenario", transparency.getBaselineQuality());
+        assertEquals("scenario_supported", transparency.getBaselineUseStatus());
+        assertEquals("scenario_supported", transparency.getTargetOperatingMarginStatus());
+        assertTrue(transparency.getBaselineWarnings().stream()
+                .anyMatch(warning -> warning.contains("explicit scenario")));
+        assertTrue(transparency.getUnsupportedBaselineDrivers().stream()
+                .noneMatch(issue -> "segments".equals(issue.getField())));
+        verify(commonService, never()).applySegmentWeightedParameters(any(), any(), anyList());
+    }
+
+    @Test
     void labelsProspectusSegmentFailureAsTypedWarningNotMechanicalOnly() {
         ProspectusCompanyDataAssembler assembler = mock(ProspectusCompanyDataAssembler.class);
         CommonService commonService = mock(CommonService.class);
@@ -369,6 +444,104 @@ class ProspectusValuationServiceTest {
         params.setSectorParameters("telecom-services", telecom);
         params.setSectorParameters("aerospace-defense", aerospace);
         return params;
+    }
+
+    private static ProspectusScenario damodaranStyleScenario() {
+        return new ProspectusScenario(
+                "Damodaran workbook assumptions",
+                75_000_000_000.0,
+                null,
+                true,
+                "straight_line",
+                5,
+                8.37450225998141,
+                8.25,
+                4.56,
+                15.0,
+                null,
+                null,
+                null,
+                null,
+                10.0,
+                null,
+                null,
+                List.of(
+                        new ProspectusSegmentScenario(
+                                "Launch",
+                                "launch",
+                                "Launch",
+                                4_086_000_000.0,
+                                40_000_000_000.0,
+                                List.of(4_086_000_000.0, 5_500_000_000.0, 7_500_000_000.0, 10_000_000_000.0,
+                                        13_500_000_000.0, 18_000_000_000.0, 23_000_000_000.0,
+                                        28_000_000_000.0, 33_000_000_000.0, 37_000_000_000.0,
+                                        40_000_000_000.0),
+                                null,
+                                null,
+                                4.56,
+                                null,
+                                45.0,
+                                10.0,
+                                3.0,
+                                4.0,
+                                null),
+                        new ProspectusSegmentScenario(
+                                "Starlink / Connectivity",
+                                "starlink-connectivity",
+                                "Starlink / Connectivity",
+                                11_387_000_000.0,
+                                120_000_000_000.0,
+                                List.of(11_387_000_000.0, 18_000_000_000.0, 27_000_000_000.0,
+                                        39_000_000_000.0, 52_000_000_000.0, 65_000_000_000.0,
+                                        78_000_000_000.0, 91_000_000_000.0, 104_000_000_000.0,
+                                        114_000_000_000.0, 120_000_000_000.0),
+                                null,
+                                null,
+                                4.56,
+                                null,
+                                60.0,
+                                10.0,
+                                3.0,
+                                5.0,
+                                null),
+                        new ProspectusSegmentScenario(
+                                "AI",
+                                "ai",
+                                "AI",
+                                3_201_000_000.0,
+                                160_000_000_000.0,
+                                List.of(3_201_000_000.0, 7_500_000_000.0, 15_000_000_000.0,
+                                        28_000_000_000.0, 45_000_000_000.0, 65_000_000_000.0,
+                                        88_000_000_000.0, 112_000_000_000.0, 135_000_000_000.0,
+                                        151_000_000_000.0, 160_000_000_000.0),
+                                null,
+                                null,
+                                4.56,
+                                null,
+                                25.0,
+                                10.0,
+                                1.5,
+                                2.5,
+                                null),
+                        new ProspectusSegmentScenario(
+                                "Other or expansion revenue",
+                                "other-expansion",
+                                "Other or expansion revenue",
+                                0.0,
+                                100_000_000_000.0,
+                                List.of(0.0, 5_000_000_000.0, 12_000_000_000.0, 22_000_000_000.0,
+                                        34_000_000_000.0, 47_000_000_000.0, 60_000_000_000.0,
+                                        72_000_000_000.0, 84_000_000_000.0, 94_000_000_000.0,
+                                        100_000_000_000.0),
+                                null,
+                                null,
+                                4.56,
+                                null,
+                                30.0,
+                                10.0,
+                                5.0,
+                                5.0,
+                                null)));
     }
 
     private static CompanyDataDTO companyData() {

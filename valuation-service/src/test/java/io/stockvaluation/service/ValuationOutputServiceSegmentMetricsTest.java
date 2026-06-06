@@ -190,6 +190,113 @@ class ValuationOutputServiceSegmentMetricsTest {
         assertEquals(3.2, financial.getSalesToCapitalRatioBySector().get("software")[1], 0.0001);
     }
 
+    @Test
+    void calculateFinancialData_usesDamodaranStyleProspectusSegmentRevenueFixture() {
+        ValuationOutputService service = service();
+        when(commonService.resolveEquityRiskPremiumForCountry("United States")).thenReturn(3.69);
+
+        FinancialDataInput input = baseInput();
+        input.getFinancialDataDTO().setRevenueTTM(18_674_000_000.0);
+        input.getFinancialDataDTO().setOperatingIncomeTTM(-2_589_000_000.0);
+        input.setRevenueNextYear(20.0);
+        input.setCompoundAnnualGrowth2_5(35.0);
+        input.setOperatingMarginNextYear(20.0);
+        input.setTargetPreTaxOperatingMargin(42.0);
+        input.setSalesToCapitalYears1To5(3.0);
+        input.setSalesToCapitalYears6To10(4.0);
+        input.setRiskFreeRate(4.56);
+        input.setInitialCostCapital(837.450225998141);
+        input.setTerminalGrowthRate(4.56);
+        input.setOverrideAssumptionReturnOnCapital(new OverrideAssumption(15.0, true, 0.0, null));
+        input.setOverrideAssumptionCostCapital(new OverrideAssumption(8.25, true, 0.0, null));
+        input.setSegments(new SegmentResponseDTO(List.of(
+                new SegmentResponseDTO.Segment("launch", "Launch", List.of("Launch"), 1.0, 40_000.0 / 420_000.0, null),
+                new SegmentResponseDTO.Segment("starlink-connectivity", "Starlink / Connectivity", List.of("Starlink / Connectivity"), 1.0, 120_000.0 / 420_000.0, null),
+                new SegmentResponseDTO.Segment("ai", "AI", List.of("AI"), 1.0, 160_000.0 / 420_000.0, null),
+                new SegmentResponseDTO.Segment("other-expansion", "Other or expansion revenue", List.of("Other or expansion revenue"), 1.0, 100_000.0 / 420_000.0, null)
+        )));
+
+        SegmentWeightedParameters params = new SegmentWeightedParameters();
+        params.setSegmentWeighted(true);
+        params.setSegmentCount(4);
+        params.setWeightedRevenueNextYear(30.0);
+        params.setWeightedCompoundAnnualGrowth2_5(35.0);
+        params.setWeightedOperatingMarginNextYear(20.0);
+        params.setWeightedTargetPreTaxOperatingMargin(42.0);
+        params.setConvergenceYearMargin(10.0);
+        params.setWeightedSalesToCapitalYears1To5(2.6905);
+        params.setWeightedSalesToCapitalYears6To10(3.8095);
+        params.setWeightedInitialCostCapital(837.450225998141);
+        params.setRiskFreeRate(4.56);
+        params.setBaselineQuality("prospectus_explicit_scenario");
+        params.setSegmentCoveragePct(100.0);
+        params.setSectorParameters("launch", spacexSector(
+                "launch",
+                40_000.0 / 420_000.0,
+                4_086_000_000.0,
+                40_000_000_000.0,
+                List.of(4_086_000_000.0, 5_500_000_000.0, 7_500_000_000.0, 10_000_000_000.0, 13_500_000_000.0,
+                        18_000_000_000.0, 23_000_000_000.0, 28_000_000_000.0, 33_000_000_000.0,
+                        37_000_000_000.0, 40_000_000_000.0),
+                45.0,
+                3.0,
+                4.0));
+        params.setSectorParameters("starlink-connectivity", spacexSector(
+                "starlink-connectivity",
+                120_000.0 / 420_000.0,
+                11_387_000_000.0,
+                120_000_000_000.0,
+                List.of(11_387_000_000.0, 18_000_000_000.0, 27_000_000_000.0, 39_000_000_000.0, 52_000_000_000.0,
+                        65_000_000_000.0, 78_000_000_000.0, 91_000_000_000.0, 104_000_000_000.0,
+                        114_000_000_000.0, 120_000_000_000.0),
+                60.0,
+                3.0,
+                5.0));
+        params.setSectorParameters("ai", spacexSector(
+                "ai",
+                160_000.0 / 420_000.0,
+                3_201_000_000.0,
+                160_000_000_000.0,
+                List.of(3_201_000_000.0, 7_500_000_000.0, 15_000_000_000.0, 28_000_000_000.0, 45_000_000_000.0,
+                        65_000_000_000.0, 88_000_000_000.0, 112_000_000_000.0, 135_000_000_000.0,
+                        151_000_000_000.0, 160_000_000_000.0),
+                25.0,
+                1.5,
+                2.5));
+        params.setSectorParameters("other-expansion", spacexSector(
+                "other-expansion",
+                100_000.0 / 420_000.0,
+                0.0,
+                100_000_000_000.0,
+                List.of(0.0, 5_000_000_000.0, 12_000_000_000.0, 22_000_000_000.0, 34_000_000_000.0,
+                        47_000_000_000.0, 60_000_000_000.0, 72_000_000_000.0, 84_000_000_000.0,
+                        94_000_000_000.0, 100_000_000_000.0),
+                30.0,
+                5.0,
+                5.0));
+        SegmentParameterContext.setParameters(params);
+
+        FinancialDTO financial = service.calculateFinancialData(
+                input,
+                new RDResult(0.0, 0.0, 0.0, 0.0),
+                new io.stockvaluation.dto.LeaseResultDTO(0.0, 0.0, 0.0, 0.0),
+                "SPCX",
+                null
+        );
+
+        assertEquals(4_086_000_000.0, financial.getRevenuesBySector().get("launch")[0], 0.001);
+        assertEquals(40_000_000_000.0, financial.getRevenuesBySector().get("launch")[10], 0.001);
+        assertEquals(120_000_000_000.0, financial.getRevenuesBySector().get("starlink-connectivity")[10], 0.001);
+        assertEquals(160_000_000_000.0, financial.getRevenuesBySector().get("ai")[10], 0.001);
+        assertEquals(0.0, financial.getRevenuesBySector().get("other-expansion")[0], 0.001);
+        assertEquals(100_000_000_000.0, financial.getRevenuesBySector().get("other-expansion")[10], 0.001);
+        assertEquals(420_000_000_000.0, financial.getRevenues()[10], 0.001);
+        assertEquals(439_152_000_000.0, financial.getRevenues()[11], 0.001);
+        assertNull(financial.getRevenueGrowthRateBySector().get("other-expansion")[1]);
+        assertEquals(4.56, financial.getRevenueGrowthRateBySector().get("launch")[11], 0.0001);
+        assertEquals(15.0, financial.getRoic()[financial.getTerminalYearIndex()], 0.0001);
+    }
+
     private ValuationOutputService service() {
         return new ValuationOutputService(
                 commonService,
@@ -227,6 +334,34 @@ class ValuationOutputServiceSegmentMetricsTest {
         s.setSalesToCapitalYears6To10(salesToCapital6To10);
         s.setInitialCostCapital(8.0);
         s.setIndustryAsPerExcel("Technology");
+        return s;
+    }
+
+    private static SegmentWeightedParameters.SectorParameters spacexSector(
+            String name,
+            double share,
+            double baseRevenue,
+            double targetRevenue,
+            List<Double> projectedRevenues,
+            double targetMargin,
+            double salesToCapital1To5,
+            double salesToCapital6To10) {
+        SegmentWeightedParameters.SectorParameters s = sectorParams(
+                name,
+                share,
+                30.0,
+                35.0,
+                0.0456,
+                targetMargin,
+                targetMargin,
+                10.0,
+                salesToCapital1To5,
+                salesToCapital6To10);
+        s.setBaseRevenue(baseRevenue);
+        s.setTargetRevenue(targetRevenue);
+        s.setProjectedRevenues(projectedRevenues);
+        s.setInitialCostCapital(837.450225998141);
+        s.setIndustryAsPerExcel(name);
         return s;
     }
 

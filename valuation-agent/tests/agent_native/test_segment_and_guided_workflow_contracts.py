@@ -233,10 +233,15 @@ def test_valuation_method_consistency_statuses_are_documented_for_reports():
         "no clean user-facing valuation was produced",
         "post-offering shares require pro-forma cash",
         "offering price is the prospectus price basis",
-        "do not show the internal diagnostic value by default",
+        "do not show the diagnostic value before evidence review",
+        "continue with caveats",
+        "challenged diagnostic value",
     ]:
         assert phrase in report
         assert phrase in prospectus
+
+    assert "challenged diagnostic value per share" in report
+    assert "dcf.estimatedvaluepershare" in prospectus
 
     assert "report-only guided defaults" in guided
     assert "do not call report-only prospectus guided answers a user-refined scenario" in prospectus

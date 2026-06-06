@@ -1230,7 +1230,10 @@ public class ValuationOutputService {
         RDResult rdResult = commonService.calculateRDConverterValue(
                 valuationInputDTO.getIndustry(),
                 valuationInputDTO.getFinancialDataDTO().getMarginalTaxRate(),
-                valuationInputDTO.getFinancialDataDTO().getResearchAndDevelopmentMap());
+                valuationInputDTO.getFinancialDataDTO().getResearchAndDevelopmentMap(),
+                Boolean.TRUE.equals(valuationInputDTO.getIsExpensesCapitalize())
+                        ? valuationInputDTO.getRdAmortizationPeriodYears()
+                        : null);
         OptionValueResultDTO optionValueResultDTO = calculateOptionValueIfRequired(ticker, valuationInputDTO);
         LeaseResultDTO leaseResultDTO = calculateLeaseResult(valuationInputDTO);
 
@@ -1293,11 +1296,40 @@ public class ValuationOutputService {
 
             // Get sector-specific parameters if available
             if (SegmentParameterContext.hasSectorParameters()) {
+                SegmentWeightedParameters.SectorParameters sectorParams =
+                        SegmentParameterContext.getSectorParameters(sectorKey);
+                if (applyExplicitSegmentRevenuePath(
+                        sectorParams,
+                        segmentRevenues,
+                        segmentGrowthRates,
+                        financialDataInput,
+                        arrayLength,
+                        projectionYears)) {
+                    log.debug("Sector {}: Using explicit prospectus scenario revenue path", sectorKey);
+                    financialDTO.getRevenuesBySector().put(sectorKey, segmentRevenues);
+                    financialDTO.getRevenueGrowthRateBySector().put(sectorKey, segmentGrowthRates);
+                    continue;
+                }
+                if (applyTargetSegmentRevenuePath(
+                        sectorParams,
+                        segment,
+                        segmentRevenues,
+                        segmentGrowthRates,
+                        financialDataInput,
+                        arrayLength,
+                        projectionYears)) {
+                    log.debug("Sector {}: Using target prospectus scenario revenue path", sectorKey);
+                    financialDTO.getRevenuesBySector().put(sectorKey, segmentRevenues);
+                    financialDTO.getRevenueGrowthRateBySector().put(sectorKey, segmentGrowthRates);
+                    continue;
+                }
                 // Use sector-specific growth rates
                 segmentGrowthRates = calculateSectorRevenueGrowthRate(sectorKey, financialDataInput, arrayLength);
 
                 // Calculate segment revenues using sector-specific growth rates
-                Double baseRevenue = totalRevenues[0] * segment.getRevenueShare();
+                Double baseRevenue = sectorParams != null && sectorParams.getBaseRevenue() != null
+                        ? sectorParams.getBaseRevenue()
+                        : totalRevenues[0] * segment.getRevenueShare();
                 segmentRevenues[0] = baseRevenue;
 
                 for (int year = 1; year <= projectionYears; year++) {
@@ -1331,6 +1363,132 @@ public class ValuationOutputService {
             financialDTO.getRevenuesBySector().put(sectorKey, segmentRevenues);
             financialDTO.getRevenueGrowthRateBySector().put(sectorKey, segmentGrowthRates);
         }
+    }
+
+    private boolean applyExplicitSegmentRevenuePath(
+            SegmentWeightedParameters.SectorParameters sectorParams,
+            Double[] segmentRevenues,
+            Double[] segmentGrowthRates,
+            FinancialDataInput financialDataInput,
+            int arrayLength,
+            int projectionYears) {
+        if (sectorParams == null || sectorParams.getProjectedRevenues() == null
+                || sectorParams.getProjectedRevenues().isEmpty()) {
+            return false;
+        }
+        List<Double> projected = sectorParams.getProjectedRevenues();
+        int limit = Math.min(projected.size(), arrayLength);
+        for (int year = 0; year < limit; year++) {
+            Double value = projected.get(year);
+            if (value != null && Double.isFinite(value)) {
+                segmentRevenues[year] = value;
+            }
+        }
+        if (segmentRevenues[0] == null) {
+            segmentRevenues[0] = finiteOrDefault(sectorParams.getBaseRevenue(), 0.0);
+        }
+        int terminalIndex = arrayLength - 1;
+        if (segmentRevenues[terminalIndex] == null && segmentRevenues[projectionYears] != null) {
+            segmentRevenues[terminalIndex] = segmentRevenues[projectionYears]
+                    * (1 + sectorTerminalGrowthPercent(sectorParams, financialDataInput) / 100);
+        }
+        fillMissingSegmentRevenuesFromGrowth(
+                sectorParams,
+                segmentRevenues,
+                financialDataInput,
+                projectionYears,
+                terminalIndex);
+        deriveSegmentGrowthRates(segmentRevenues, segmentGrowthRates, arrayLength);
+        return true;
+    }
+
+    private boolean applyTargetSegmentRevenuePath(
+            SegmentWeightedParameters.SectorParameters sectorParams,
+            SegmentResponseDTO.Segment segment,
+            Double[] segmentRevenues,
+            Double[] segmentGrowthRates,
+            FinancialDataInput financialDataInput,
+            int arrayLength,
+            int projectionYears) {
+        if (sectorParams == null || sectorParams.getTargetRevenue() == null
+                || !Double.isFinite(sectorParams.getTargetRevenue())) {
+            return false;
+        }
+        double baseRevenue = finiteOrDefault(
+                sectorParams.getBaseRevenue(),
+                financialDataInput.getFinancialDataDTO().getRevenueTTM() * segment.getRevenueShare());
+        double targetRevenue = sectorParams.getTargetRevenue();
+        segmentRevenues[0] = baseRevenue;
+        if (projectionYears <= 0) {
+            return true;
+        }
+        if (baseRevenue > 0.0 && targetRevenue > 0.0) {
+            double cagr = Math.pow(targetRevenue / baseRevenue, 1.0 / projectionYears) - 1.0;
+            for (int year = 1; year <= projectionYears; year++) {
+                segmentRevenues[year] = segmentRevenues[year - 1] * (1.0 + cagr);
+            }
+        } else {
+            for (int year = 1; year <= projectionYears; year++) {
+                segmentRevenues[year] = targetRevenue * year / projectionYears;
+            }
+        }
+        segmentRevenues[projectionYears] = targetRevenue;
+        int terminalIndex = arrayLength - 1;
+        segmentRevenues[terminalIndex] = targetRevenue
+                * (1 + sectorTerminalGrowthPercent(sectorParams, financialDataInput) / 100);
+        deriveSegmentGrowthRates(segmentRevenues, segmentGrowthRates, arrayLength);
+        return true;
+    }
+
+    private void fillMissingSegmentRevenuesFromGrowth(
+            SegmentWeightedParameters.SectorParameters sectorParams,
+            Double[] segmentRevenues,
+            FinancialDataInput financialDataInput,
+            int projectionYears,
+            int terminalIndex) {
+        Double[] growthRates = calculateSectorRevenueGrowthRate(
+                sectorParams.getSectorName(),
+                financialDataInput,
+                segmentRevenues.length);
+        for (int year = 1; year <= projectionYears; year++) {
+            if (segmentRevenues[year] == null && segmentRevenues[year - 1] != null && growthRates[year] != null) {
+                segmentRevenues[year] = segmentRevenues[year - 1] * (1 + growthRates[year] / 100);
+            }
+        }
+        if (segmentRevenues[terminalIndex] == null && segmentRevenues[projectionYears] != null) {
+            segmentRevenues[terminalIndex] = segmentRevenues[projectionYears]
+                    * (1 + sectorTerminalGrowthPercent(sectorParams, financialDataInput) / 100);
+        }
+    }
+
+    private void deriveSegmentGrowthRates(Double[] segmentRevenues, Double[] segmentGrowthRates, int arrayLength) {
+        for (int year = 1; year < arrayLength; year++) {
+            Double prior = segmentRevenues[year - 1];
+            Double current = segmentRevenues[year];
+            if (prior != null && current != null && prior > 0.0) {
+                segmentGrowthRates[year] = ((current / prior) - 1.0) * 100.0;
+            } else {
+                segmentGrowthRates[year] = null;
+            }
+        }
+    }
+
+    private double sectorTerminalGrowthPercent(
+            SegmentWeightedParameters.SectorParameters sectorParams,
+            FinancialDataInput financialDataInput) {
+        if (sectorParams != null && sectorParams.getTerminalGrowthRate() != null
+                && Double.isFinite(sectorParams.getTerminalGrowthRate())) {
+            double value = sectorParams.getTerminalGrowthRate();
+            return Math.abs(value) <= 1.0 ? value * 100.0 : value;
+        }
+        if (financialDataInput.getTerminalGrowthRate() != null) {
+            return financialDataInput.getTerminalGrowthRate();
+        }
+        return financialDataInput.getRiskFreeRate();
+    }
+
+    private double finiteOrDefault(Double value, double fallback) {
+        return value != null && Double.isFinite(value) ? value : fallback;
     }
 
     /**

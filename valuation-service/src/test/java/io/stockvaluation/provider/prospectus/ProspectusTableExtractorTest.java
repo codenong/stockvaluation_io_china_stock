@@ -7,6 +7,7 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class ProspectusTableExtractorTest {
 
@@ -38,5 +39,20 @@ class ProspectusTableExtractorTest {
                 .orElseThrow();
         assertEquals(466_000_000.0, operatingLoss.cells().get(1).normalizedValue());
         assertNotNull(operations.sourceAnchor());
+    }
+
+    @Test
+    void parsesCurrencyWrappedParenthesesAsNegative() {
+        assertEquals(-657.0, ProspectusTableExtractor.parseNumber("$(657)"));
+        assertEquals(-2_589.0, ProspectusTableExtractor.parseNumber("$ (2,589)"));
+        assertEquals(-1_561.0, ProspectusTableExtractor.parseNumber("(1,561)"));
+    }
+
+    @Test
+    void stillParsesPositiveCurrencyAndBlankCells() {
+        assertEquals(4_423.0, ProspectusTableExtractor.parseNumber("$4,423"));
+        assertEquals(466.0, ProspectusTableExtractor.parseNumber("466"));
+        assertNull(ProspectusTableExtractor.parseNumber("-"));
+        assertNull(ProspectusTableExtractor.parseNumber("—"));
     }
 }

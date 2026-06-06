@@ -65,6 +65,9 @@ public class SegmentWeightedParameters {
     public static class SectorParameters {
         private String sectorName;
         private Double revenueShare;
+        private Double baseRevenue;
+        private Double targetRevenue;
+        private List<Double> projectedRevenues;
         
         // Revenue growth parameters for this sector
         private Double revenueNextYear;
@@ -124,6 +127,11 @@ public class SegmentWeightedParameters {
             SectorParameters sectorCopy = new SectorParameters();
             sectorCopy.setSectorName(original.getSectorName());
             sectorCopy.setRevenueShare(original.getRevenueShare());
+            sectorCopy.setBaseRevenue(original.getBaseRevenue());
+            sectorCopy.setTargetRevenue(original.getTargetRevenue());
+            sectorCopy.setProjectedRevenues(original.getProjectedRevenues() == null
+                    ? null
+                    : new ArrayList<>(original.getProjectedRevenues()));
             sectorCopy.setRevenueNextYear(original.getRevenueNextYear());
             sectorCopy.setCompoundAnnualGrowth2_5(original.getCompoundAnnualGrowth2_5());
             sectorCopy.setTerminalGrowthRate(original.getTerminalGrowthRate());

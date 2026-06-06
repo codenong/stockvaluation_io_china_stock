@@ -204,9 +204,29 @@ Input:
   "packet": {
     "schemaVersion": "prospectus_financial_packet.v1",
     "reviewStatus": "reviewed"
+  },
+  "scenario": {
+    "net_proceeds": 75000000000,
+    "rd_capitalization": true,
+    "rd_amortization_period_years": 5,
+    "terminal_return_on_capital": 15,
+    "terminal_cost_of_capital": 8.25,
+    "terminal_growth_rate": 4.56,
+    "segments": [
+      {
+        "name": "Launch",
+        "base_revenue": 4086000000,
+        "target_revenue": 40000000000,
+        "target_operating_margin": 45,
+        "sales_to_capital_years_1_to_5": 3,
+        "sales_to_capital_years_6_to_10": 4
+      }
+    ]
   }
 }
 ```
+
+`scenario` is optional. Use it only for explicit story assumptions. Supported fields include `net_proceeds`, `rd_capitalization`, `rd_amortization_period_years`, `initial_cost_of_capital`, `terminal_cost_of_capital`, `terminal_growth_rate`, `terminal_return_on_capital`, company-level revenue/margin/sales-to-capital fields, and `segments`. Segment entries may include `name`, `sector_key`, `mapped_industry`, `base_revenue`, `target_revenue`, `projected_revenues`, `target_operating_margin`, `sales_to_capital_years_1_to_5`, and `sales_to_capital_years_6_to_10`. Use full currency units, not millions, unless the packet itself uses a different unit.
 
 Use these output sections:
 
@@ -215,13 +235,14 @@ Use these output sections:
 - `valuationCaseStatus`: service status for whether the value can be shown as a clean case. Expected values include `clean_valuation_case` and `challenged_valuation_case`.
 - `proceedsBasis` and `valuationBasisWarnings`: net-proceeds or gross-estimate handling and plain warnings.
 - `prospectus.packet`: the reviewed packet used for valuation.
+- `scenario`: the explicit prospectus scenario used for valuation, when supplied.
 - `valuation`, `dcf`, `assumptions`, `baseline`, `growthAnchor`, and `accountingAndClaims`: valuation-service output derived from the reviewed prospectus packet. `baseline` also carries `valuationBasisStatus`, `valuationCaseStatus`, and `proceedsBasis` when returned by service transparency. For challenged prospectus cases, `dcf.valueVisibility = diagnostic_only` and `dcf.caseStatus = challenged_diagnostic`; this means `dcf.estimatedValuePerShare` is audit/debug detail, not a clean report value.
 - `provenance`: should identify `primary_filing` / `sec-edgar-prospectus`.
 - `sourceQualityGate`: should show the reviewed packet no longer needs the extraction review gate.
 
 Do not use Yahoo Finance, yfinance, market-data revenue estimates, or a live trading market price for prospectus mode unless the user explicitly leaves prospectus mode. In reports, label the price basis as `offering_price`; do not translate it into buy, sell, hold, target-price, or should-invest language.
 
-If `valuationCaseStatus = challenged_valuation_case` or `dcf.valueVisibility = diagnostic_only`, do not present `dcf.estimatedValuePerShare` as a clean investor-facing intrinsic value. This applies even when `valuationBasisStatus = clean_pro_forma_basis`; a clean cash/share basis does not make a material segment gap a clean valuation case. Say no clean user-facing valuation was produced and explain the returned basis or segment issue in plain words. Keep any internal value diagnostic-only unless the user asks for audit/debug detail.
+If `valuationCaseStatus = challenged_valuation_case` or `dcf.valueVisibility = diagnostic_only`, do not present `dcf.estimatedValuePerShare` as a clean investor-facing intrinsic value. This applies even when `valuationBasisStatus = clean_pro_forma_basis`; a clean cash/share basis does not make a material segment gap a clean valuation case. Say no clean user-facing valuation was produced and explain the returned basis or segment issue in plain words. Keep the value hidden before evidence review. After the user chooses `continue with caveats`, asks for valuation detail, or asks for audit detail, show it only as a challenged diagnostic value and keep the blockers next to the number.
 
 Prospectus extraction review is not the evidence review gate and does not replace guided valuation refinement. After `stockvaluation.value_prospectus`, continue into the normal researched workflow: build evidence, stop at `evidence-review-gate.md`, run baseline plausibility, and use `guided-valuation-refinement.md` for material user-judgment questions unless the user explicitly requested quick/no-questions/automation/smoke-test.
 

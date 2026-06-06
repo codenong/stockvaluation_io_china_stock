@@ -14,11 +14,11 @@ The default report is for an investor-reader, not an agent debugger. Use plain s
 
 Use one concise no-advice line near the start. Do not repeat "educational use only" or "not financial advice" before every table or section.
 
-Do not show the internal mechanical model value in the default report. If no evidence-constrained base, user-refined deterministic scenario, or explicit supported scenario exists, state that no reliable user-facing valuation case was produced and explain the blockers in plain English. Show the internal mechanical value only in the explicit audit/debug appendix when the user asks for it.
+Do not show the internal mechanical model value in the default report. If no evidence-constrained base, user-refined deterministic scenario, or explicit supported scenario exists, state that no clean valuation case was produced and explain the blockers in plain English. If the user explicitly continued with caveats or asked for valuation/audit detail, show any returned diagnostic value as a challenged diagnostic value with the blockers next to it. Show the internal mechanical value only in the explicit audit/debug appendix when the user asks for it.
 
 Every final report must visibly include evidence review status and guided-refinement status. If a status is unavailable, say unavailable in the relevant template section rather than omitting the section.
 
-Diagnostic scenarios stay diagnostic. Do not blend the main scenario with a diagnostic no-segment run, market-implied diagnostic, sensitivity run, or unsupported scenario into a headline valuation range. If a diagnostic run is useful, put it under `What The Price Would Need`, `Sensitivity Analysis`, or an explicit audit/debug appendix, and label why it is not the main scenario.
+Diagnostic scenarios stay diagnostic. Do not blend the main scenario with a diagnostic no-segment run, market-implied diagnostic, sensitivity run, or unsupported scenario into a headline valuation range. If a prospectus diagnostic run is useful after the user continued with caveats or asked for valuation/audit detail, show it in `Valuation View` as a challenged diagnostic value, not as intrinsic value. Other diagnostics can go under `What The Price Would Need`, `Sensitivity Analysis`, or an explicit audit/debug appendix, and must label why they are not the main scenario.
 
 Use these section names as the visible spine of the final report unless the user explicitly asks for audit/debug appendices to be added:
 
@@ -103,7 +103,8 @@ Lead with the scenario the user actually selected. Include compact values only w
 | Ticker |  |
 | Valuation status | reliable user-facing case produced, challenged, or unavailable |
 | Case shown | user-refined scenario, evidence-supported base case, explicit scenario, or unavailable |
-| Intrinsic value per share | only when a user-facing case exists |
+| Intrinsic value per share | only when a clean user-facing case exists |
+| Challenged diagnostic value per share | prospectus challenged cases only after caveated continuation or valuation/audit-detail request |
 | Market price |  |
 | Offering price | prospectus mode only |
 | Equity value |  |
@@ -122,11 +123,11 @@ For prospectus mode, read `valuationBasisStatus`, `valuationCaseStatus`, `procee
 - `clean_pro_forma_basis` and `clean_valuation_case`: post-offering shares and cash/proceeds are on a clean basis.
 - `pro_forma_cash_missing`: post-offering shares require pro-forma cash, but net proceeds or pro-forma cash were not resolved.
 - `gross_proceeds_estimate_only`: only gross proceeds could be inferred; that is a challenged basis, not clean net cash.
-- `challenged_valuation_case`: no clean user-facing valuation was produced.
+- `challenged_valuation_case`: no clean user-facing valuation was produced, but a diagnostic value may be shown after caveated continuation or valuation/audit-detail request.
 
-If the case is challenged, or if `dcf.valueVisibility = diagnostic_only`, do not show the internal diagnostic value by default. Put the blocker in `Valuation View`, `Data Limits`, and `Bottom Line` in plain English.
+If the case is challenged, or if `dcf.valueVisibility = diagnostic_only`, do not show the diagnostic value before evidence review. Put the blocker in `Valuation View`, `Data Limits`, and `Bottom Line` in plain English.
 
-A clean cash/share basis is not enough to headline a value. If `valuationBasisStatus = clean_pro_forma_basis` but `valuationCaseStatus = challenged_valuation_case` or `baseline.baselineUseStatus = challenged_baseline`, the report must say the cash/share basis was fixed but no clean user-facing valuation case was produced. Do not use labels such as `Evidence-reviewed prospectus base`, `Intrinsic value per share`, or `StockValuation.io estimated` for the diagnostic value unless the user explicitly asks for audit/debug detail.
+A clean cash/share basis is not enough to headline a value. If `valuationBasisStatus = clean_pro_forma_basis` but `valuationCaseStatus = challenged_valuation_case` or `baseline.baselineUseStatus = challenged_baseline`, the report must say the cash/share basis was fixed but no clean user-facing valuation case was produced. Do not use labels such as `Evidence-reviewed prospectus base`, `Intrinsic value per share`, or `StockValuation.io estimated` for the diagnostic value. If the user selected `continue with caveats`, accepted caveated guided defaults, or asked for valuation/audit detail, show the returned number under `Challenged diagnostic value per share` and state that it is diagnostic-only.
 
 ## What Was Reviewed
 
