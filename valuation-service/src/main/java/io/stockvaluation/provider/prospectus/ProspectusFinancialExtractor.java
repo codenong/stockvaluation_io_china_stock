@@ -31,7 +31,6 @@ public class ProspectusFinancialExtractor {
     private static final Pattern SEC_ARCHIVE_URL_PATTERN = Pattern.compile("/data/([0-9]{1,10})/([0-9]{18})/");
     private static final Pattern NUMBER_TOKEN_PATTERN = Pattern.compile("([0-9][0-9,]*(?:\\.[0-9]+)?)");
     private static final Pattern OFFERING_PRICE_PATTERN = Pattern.compile("offering price[^$]{0,80}\\$\\s*([0-9,.]+)", Pattern.CASE_INSENSITIVE);
-    private static final Pattern POST_OFFERING_SHARES_PATTERN = Pattern.compile("([0-9][0-9,]+)\\s+shares[^.]{0,120}(?:outstanding|after this offering|pro forma)", Pattern.CASE_INSENSITIVE);
     private static final DateTimeFormatter SEC_TEXT_DATE = new DateTimeFormatterBuilder()
             .parseCaseInsensitive()
             .appendPattern("MMMM d, yyyy")
@@ -267,9 +266,6 @@ public class ProspectusFinancialExtractor {
         Double offeringPrice = parseFirstNumber(OFFERING_PRICE_PATTERN, text);
         offering.setOfferingPrice(offeringPrice);
         offering.setOfferingPriceBasis(offeringPrice == null ? null : "offering_price");
-        Double shares = parseFirstNumber(POST_OFFERING_SHARES_PATTERN, text);
-        offering.setPostOfferingShares(shares);
-        offering.setShareCountBasis(shares == null ? null : "pro_forma_post_offering");
         return offering;
     }
 

@@ -609,6 +609,7 @@ public class ProspectusValuationService {
         if (scenario != null) {
             warnings.add("Prospectus explicit scenario supplied model assumptions; mechanical diagnostic value is not the headline valuation.");
         }
+        boolean validSegmentBaseline = segmentParams != null && segmentParams.hasValidParameters();
         List<AssumptionTransparencyDTO.BaselineIssue> segmentMaterialityIssues = explicitSegmentScenario
                 ? List.of()
                 : segmentMaterialityIssues(packet);
@@ -616,10 +617,18 @@ public class ProspectusValuationService {
         for (AssumptionTransparencyDTO.BaselineIssue issue : segmentMaterialityIssues) {
             warnings.add(issue.getReason());
         }
-        boolean challenged = !basis.clean() || !segmentMaterialityIssues.isEmpty();
+        List<AssumptionTransparencyDTO.BaselineIssue> industryMappingIssues = industryMappingIssues(
+                input,
+                explicitSegmentScenario,
+                validSegmentBaseline);
+        unsupportedIssues.addAll(industryMappingIssues);
+        for (AssumptionTransparencyDTO.BaselineIssue issue : industryMappingIssues) {
+            warnings.add(issue.getReason());
+        }
+        boolean challenged = !basis.clean() || !segmentMaterialityIssues.isEmpty() || !industryMappingIssues.isEmpty();
         dto.setValuationCaseStatus(challenged ? "challenged_valuation_case" : basis.valuationCaseStatus());
 
-        if (segmentParams != null && segmentParams.hasValidParameters()) {
+        if (validSegmentBaseline) {
             dto.setBaselineQuality(explicitSegmentScenario ? "prospectus_explicit_scenario" : "segment_weighted_baseline");
             dto.setBaselineUseStatus(challenged
                     ? "challenged_baseline"
@@ -694,6 +703,24 @@ public class ProspectusValuationService {
             }
         }
         return issues;
+    }
+
+    private static List<AssumptionTransparencyDTO.BaselineIssue> industryMappingIssues(
+            FinancialDataInput input,
+            boolean explicitSegmentScenario,
+            boolean validSegmentBaseline) {
+        if (explicitSegmentScenario || validSegmentBaseline || !isUnmappedProspectusIndustry(input == null ? null : input.getIndustry())) {
+            return List.of();
+        }
+        return List.of(baselineIssue(
+                "industry_mapping",
+                "industry_mapping_missing",
+                "No reviewed prospectus industry mapping was provided; an agent or user must supply a company or segment industry mapping before this can be a clean valuation case."));
+    }
+
+    private static boolean isUnmappedProspectusIndustry(String industry) {
+        String normalized = blankToNull(industry);
+        return normalized == null || "unmapped-prospectus".equalsIgnoreCase(normalized);
     }
 
     private static boolean hasSegmentCandidateTables(ProspectusFinancialPacket packet) {

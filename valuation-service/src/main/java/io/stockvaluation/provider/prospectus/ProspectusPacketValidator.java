@@ -43,6 +43,8 @@ public class ProspectusPacketValidator {
         ShareStatus shareStatus = shareStatus(packet);
         if (shareStatus == ShareStatus.MISSING) {
             blocking.add(issue("missing_share_count", "shareCounts", "A clear share-count basis is required for per-share valuation."));
+        } else if (shareStatus == ShareStatus.MISSING_BASIS) {
+            blocking.add(issue("missing_share_count_basis", "shareCounts.basis", "Share count must include a clear basis before per-share valuation."));
         } else if (shareStatus == ShareStatus.AMBIGUOUS) {
             blocking.add(issue("ambiguous_share_count", "shareCounts", "Multiple or weighted-average share-count candidates require review."));
         }
@@ -88,16 +90,34 @@ public class ProspectusPacketValidator {
                 .toList();
         if (positive.isEmpty()) {
             Double postOfferingShares = packet.getOffering() == null ? null : packet.getOffering().getPostOfferingShares();
-            return postOfferingShares != null && postOfferingShares > 0.0 ? ShareStatus.CLEAR : ShareStatus.MISSING;
+            if (postOfferingShares == null || postOfferingShares <= 0.0) {
+                return ShareStatus.MISSING;
+            }
+            String basis = packet.getOffering() == null ? null : packet.getOffering().getShareCountBasis();
+            return hasClearShareBasis(basis) ? ShareStatus.CLEAR : ShareStatus.MISSING_BASIS;
         }
         if (positive.size() > 1) {
             return ShareStatus.AMBIGUOUS;
         }
         String basis = nullToEmpty(positive.get(0).getBasis()).toLowerCase(Locale.ROOT);
+        if (basis.isBlank()) {
+            return ShareStatus.MISSING_BASIS;
+        }
         if (basis.contains("weighted_average") || basis.contains("eps") || basis.contains("before_offering")) {
             return ShareStatus.AMBIGUOUS;
         }
         return ShareStatus.CLEAR;
+    }
+
+    private static boolean hasClearShareBasis(String basis) {
+        String normalized = nullToEmpty(basis).toLowerCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            return false;
+        }
+        return !normalized.contains("weighted_average")
+                && !normalized.contains("eps")
+                && !normalized.contains("before_offering")
+                && !normalized.contains("unresolved");
     }
 
     private static boolean isSupportedForm(String form) {
@@ -124,6 +144,7 @@ public class ProspectusPacketValidator {
     private enum ShareStatus {
         CLEAR,
         MISSING,
+        MISSING_BASIS,
         AMBIGUOUS
     }
 }

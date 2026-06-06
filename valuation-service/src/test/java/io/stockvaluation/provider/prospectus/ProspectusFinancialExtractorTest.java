@@ -10,6 +10,7 @@ import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProspectusFinancialExtractorTest {
@@ -101,6 +102,37 @@ class ProspectusFinancialExtractorTest {
         assertTrue(codes.contains("missing_source_period"));
         assertTrue(codes.contains("missing_cash"));
         assertTrue(codes.contains("missing_debt"));
+    }
+
+    @Test
+    void looseTextShareCountDoesNotBecomeReviewedShareBasis() {
+        String html = """
+                <!doctype html>
+                <html>
+                <head><title>Example IPO Corp. S-1/A</title></head>
+                <body>
+                <div>S-1/A 1 example.htm S-1/A Example IPO Corp.</div>
+                <p>As filed with the U.S. Securities and Exchange Commission on June 3, 2026</p>
+                <p>The offering price is $135 per share.</p>
+                <p>There will be 13,075,865,175 shares outstanding after this offering.</p>
+                </body>
+                </html>
+                """;
+        ProspectusDocument document = new ProspectusDocument(
+                "https://www.sec.gov/Archives/edgar/data/1181412/000162828026040364/example.htm",
+                html);
+        ProspectusRawTableSet tableSet = new ProspectusTableExtractor().extract(html);
+
+        ProspectusFinancialPacket packet = new ProspectusFinancialExtractor().extract(document, tableSet);
+
+        assertEquals(135.0, packet.getOffering().getOfferingPrice());
+        assertNull(packet.getOffering().getPostOfferingShares());
+        assertNull(packet.getOffering().getShareCountBasis());
+        assertTrue(packet.getShareCounts().isEmpty());
+        Set<String> codes = packet.getExtractionIssues().stream()
+                .map(ProspectusExtractionIssue::code)
+                .collect(Collectors.toSet());
+        assertTrue(codes.contains("missing_share_count"));
     }
 
     @Test

@@ -92,6 +92,19 @@ class ProspectusPacketValidatorTest {
     }
 
     @Test
+    void blocksPostOfferingShareCountWithoutBasis() {
+        ProspectusFinancialPacket packet = ProspectusTestPackets.reviewedPacket();
+        packet.setShareCounts(List.of());
+        packet.getOffering().setPostOfferingShares(400_000_000.0);
+        packet.getOffering().setShareCountBasis(null);
+
+        ProspectusPacketValidationResult result = validator.validateForValuation(packet);
+
+        assertEquals("blocked", result.status());
+        assertTrue(result.blockingIssues().stream().anyMatch(issue -> "missing_share_count_basis".equals(issue.code())));
+    }
+
+    @Test
     void blocksReviewedPacketThatStillCarriesBlockingExtractionIssues() {
         ProspectusFinancialPacket packet = ProspectusTestPackets.reviewedPacket();
         packet.getExtractionIssues().add(new ProspectusExtractionIssue(

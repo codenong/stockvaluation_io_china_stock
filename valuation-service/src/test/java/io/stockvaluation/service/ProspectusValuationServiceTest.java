@@ -237,6 +237,46 @@ class ProspectusValuationServiceTest {
     }
 
     @Test
+    void missingProspectusIndustryMappingChallengesSingleIndustryFallback() {
+        ProspectusCompanyDataAssembler assembler = mock(ProspectusCompanyDataAssembler.class);
+        CommonService commonService = mock(CommonService.class);
+        ValuationTemplateService templateService = mock(ValuationTemplateService.class);
+        ValuationOutputService outputService = mock(ValuationOutputService.class);
+        ProspectusValuationService service = new ProspectusValuationService(
+                new ProspectusPacketValidator(),
+                assembler,
+                commonService,
+                templateService,
+                outputService);
+        var packet = ProspectusTestPackets.reviewedPacket();
+        packet.getCompany().setIndustryKey(null);
+        packet.setSegments(List.of());
+        packet.getOffering().setNetProceeds(75_000_000_000.0);
+        packet.getOffering().setProceedsBasis("net_proceeds_disclosed");
+        CompanyDataDTO companyData = companyData();
+        companyData.getBasicInfoDataDTO().setIndustryUs("unmapped-prospectus");
+        companyData.getBasicInfoDataDTO().setIndustryGlobal("unmapped-prospectus");
+        ValuationOutputDTO output = valuationOutput();
+        output.setIndustryUs("unmapped-prospectus");
+        output.setIndustryGlobal("unmapped-prospectus");
+        when(assembler.assemble(packet)).thenReturn(companyData);
+        when(templateService.determineTemplate(any(), eq(companyData))).thenReturn(null);
+        when(outputService.getValuationOutput(eq("SPCX"), any(), eq(null))).thenReturn(output);
+
+        ProspectusValuationResult result = service.value(new ProspectusValuationRequest(packet));
+
+        assertEquals("clean_pro_forma_basis", result.valuationBasisStatus());
+        assertEquals("challenged_valuation_case", result.valuationCaseStatus());
+        AssumptionTransparencyDTO transparency = result.valuation().getAssumptionTransparency();
+        assertEquals("challenged_baseline", transparency.getBaselineUseStatus());
+        assertTrue(transparency.getBaselineWarnings().stream()
+                .anyMatch(warning -> warning.contains("No reviewed prospectus industry mapping")));
+        assertTrue(transparency.getUnsupportedBaselineDrivers().stream()
+                .anyMatch(issue -> "industry_mapping".equals(issue.getField())
+                        && "industry_mapping_missing".equals(issue.getStatus())));
+    }
+
+    @Test
     void valuesSpaceXStyleSegmentMixWithRevenueWeightsInsteadOfFirstMappedSegment() {
         ProspectusCompanyDataAssembler assembler = mock(ProspectusCompanyDataAssembler.class);
         CommonService commonService = mock(CommonService.class);
