@@ -256,7 +256,7 @@ public class ProspectusFinancialExtractor {
             segment.setTableTitle(table.title());
             segment.setPeriodEnd(periodEnd(value.columnLabel()));
             segment.setSourceProvenance(provenance);
-            applySegmentMapping(segment);
+            segment.setMappingConfidence("requires_agent_mapping");
             segments.add(segment);
         }
         double total = segments.stream()
@@ -305,27 +305,6 @@ public class ProspectusFinancialExtractor {
         offering.setPostOfferingShares(shares);
         offering.setShareCountBasis(shares == null ? null : "pro_forma_post_offering");
         return offering;
-    }
-
-    private static void applySegmentMapping(ProspectusSegmentFact segment) {
-        String name = lower(segment.getSegmentName());
-        if (name.contains("launch") || name.contains("spacecraft") || name.contains("aerospace")) {
-            segment.setSectorKey("aerospace-defense");
-            segment.setMappedIndustry("Aerospace/Defense");
-            segment.setMappingConfidence("medium");
-        } else if (name.equals("space")) {
-            segment.setSectorKey("aerospace-defense");
-            segment.setMappedIndustry("Aerospace/Defense");
-            segment.setMappingConfidence("medium");
-        } else if (name.contains("starlink") || name.contains("connectivity") || name.contains("telecom")) {
-            segment.setSectorKey("telecom-services");
-            segment.setMappedIndustry("Telecom. Services");
-            segment.setMappingConfidence("medium");
-        } else {
-            segment.setSectorKey(null);
-            segment.setMappedIndustry(null);
-            segment.setMappingConfidence("low");
-        }
     }
 
     private static String incomeField(String label) {

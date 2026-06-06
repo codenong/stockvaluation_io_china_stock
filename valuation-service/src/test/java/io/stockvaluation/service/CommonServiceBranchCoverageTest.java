@@ -73,13 +73,10 @@ class CommonServiceBranchCoverageTest {
         rdMap.put("currentR&D-0", 200.0);
         rdMap.put("currentR&D-1", 180.0);
 
-        // Should not throw; sectorMapping is null → we cannot call
-        // rdConverterRepository
-        // without NPE → need graceful handling
-        assertThrows(NullPointerException.class,
-                () -> commonService.calculateRDConverterValue("UnknownIndustry", 21.0, rdMap));
-        // NOTE: This documents current behaviour. A future refactor should guard
-        // against null.
+        RDResult result = commonService.calculateRDConverterValue("UnknownIndustry", 21.0, rdMap);
+
+        assertNotNull(result);
+        assertTrue(result.getTotalResearchAsset() > 0);
     }
 
     @Test

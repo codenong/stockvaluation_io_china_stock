@@ -10,6 +10,8 @@ The goal is a segment-aware mechanical baseline when credible segment revenue we
 2. Latest 10-Q, interim report, earnings release, or investor presentation.
 3. Official company IR, corporate, annual-report, SEC, exchange, and newsroom pages.
 
+For prospectus mode, start from the raw segment facts returned by `stockvaluation.extract_prospectus`. Treat those names, revenue amounts, revenue weights, source rows, and source tables as filing facts. Then use search and company/prospectus evidence to map each material segment to a valuation-service sector key or to an explicit scenario segment. Do not rely on service-side hard-coded name matching for prospectus segments.
+
 ## Output
 
 Summarize discovered segments with:
@@ -33,6 +35,7 @@ A segment package used for a segment-aware mechanical baseline must preserve:
 - `source_date`: filing, release, or presentation date.
 - `source_url`: direct official or high-quality source URL or local source reference.
 - `mapped_industry`: supported valuation-service industry row.
+- `sector_key`: supported valuation-service sector key when the deterministic service call needs one.
 - `mapping_confidence`: medium or high confidence for baseline use.
 - `validation_warnings`: missing, partial, geographic, stale, or low-confidence evidence notes.
 

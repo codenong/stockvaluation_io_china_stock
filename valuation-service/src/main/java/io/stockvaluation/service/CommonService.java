@@ -280,7 +280,9 @@ public class CommonService {
         // TODO: handle case when sector mapping is not found and
         // also handle the duplicated data while calculations
 
-        RDConverter rdConverter = rdConverterRepository.findByIndustryName(sectorMapping.getIndustryAsPerExcel());
+        RDConverter rdConverter = sectorMapping == null
+                ? null
+                : rdConverterRepository.findByIndustryName(sectorMapping.getIndustryAsPerExcel());
 
         int amortizationPeriod;
 

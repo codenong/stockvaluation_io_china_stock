@@ -207,6 +207,57 @@ class ValuationOutputServiceTest {
     }
 
     @Test
+    void getValuationOutput_skipsIndustryComparisonWhenProspectusIndustryIsUnmapped() {
+        BasicInfoDataDTO basic = new BasicInfoDataDTO();
+        basic.setCompanyName("Space Exploration Technologies Corp.");
+        basic.setTicker("SPCX");
+        basic.setIndustryUs("unmapped-prospectus");
+        basic.setCountryOfIncorporation("United States");
+        basic.setCurrency("USD");
+        basic.setStockCurrency("USD");
+        financialDataInput.setBasicInfoDataDTO(basic);
+        financialDataInput.setIndustry("unmapped-prospectus");
+        financialDataInput.setIsExpensesCapitalize(true);
+        financialDataInput.setRdAmortizationPeriodYears(5);
+        financialDataInput.setHasOperatingLease(false);
+        financialDataInput.setHasEmployeeOptions(false);
+        financialDataInput.setRevenueNextYear(5.0);
+        financialDataInput.setOperatingMarginNextYear(15.0);
+        financialDataInput.setCompoundAnnualGrowth2_5(6.0);
+        financialDataInput.setConvergenceYearMargin(5.0);
+        financialDataInput.setRiskFreeRate(4.5);
+        financialDataInput.setInitialCostCapital(850.0);
+        financialDataInput.getFinancialDataDTO().setRevenueTTM(1_000.0);
+        financialDataInput.getFinancialDataDTO().setRevenueLTM(900.0);
+        financialDataInput.getFinancialDataDTO().setOperatingIncomeTTM(100.0);
+        financialDataInput.getFinancialDataDTO().setEffectiveTaxRate(0.21);
+        financialDataInput.getFinancialDataDTO().setMarginalTaxRate(25.0);
+        financialDataInput.getFinancialDataDTO().setMinorityInterestTTM(0.0);
+        financialDataInput.getFinancialDataDTO().setNonOperatingAssetTTM(0.0);
+        financialDataInput.getFinancialDataDTO().setResearchAndDevelopmentMap(Map.of(
+                "currentR&D-0", 250.0,
+                "currentR&D-1", 200.0,
+                "currentR&D-2", 150.0,
+                "currentR&D-3", 100.0,
+                "currentR&D-4", 50.0));
+
+        when(sectorMappingRepository.findByIndustryName("unmapped-prospectus")).thenReturn(null);
+        when(commonService.calculateRDConverterValue(
+                "unmapped-prospectus",
+                25.0,
+                financialDataInput.getFinancialDataDTO().getResearchAndDevelopmentMap(),
+                5)).thenReturn(new RDResult(300.0, 60.0, 190.0, 47.5));
+        when(commonService.calculateOperatingLeaseConverter()).thenReturn(new LeaseResultDTO(0.0, 0.0, 0.0, 0.0));
+        when(commonService.resolveEquityRiskPremiumForCountry("United States")).thenReturn(4.0);
+
+        var result = valuationOutputService.getValuationOutput("SPCX", financialDataInput, null);
+
+        assertEquals(0.0, result.getBaseYearComparison().getRevenueGrowthIndustry());
+        assertEquals(0.0, result.getBaseYearComparison().getOperatingMarginIndustry());
+        verifyNoInteractions(industryAvgGloRepository);
+    }
+
+    @Test
     void testCalculatePVCFOverNextYear() {
         Double[] pvFcff = new Double[] { 10.0, 20.0, 30.0 };
         Double result = ReflectionTestUtils.invokeMethod(valuationOutputService, "calculatePVCFOverNextYear",

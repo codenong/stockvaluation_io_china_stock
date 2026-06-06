@@ -1197,6 +1197,12 @@ public class ValuationOutputService {
 
         baseYearComparisonDTO.setRevenueGrowthCompany(revenueGrowthCompany);
 
+        if (industryExcel == null || industryExcel.isBlank()) {
+            baseYearComparisonDTO.setRevenueGrowthIndustry(0.00);
+            baseYearComparisonDTO.setOperatingMarginIndustry(0.00);
+            return baseYearComparisonDTO;
+        }
+
         Optional<Double> optionalGrowth = industryAvgGloRepository.findRevenueGrowth(industryExcel);
         baseYearComparisonDTO.setRevenueGrowthIndustry(optionalGrowth.orElse(0.00));
 
@@ -1244,7 +1250,7 @@ public class ValuationOutputService {
                 leaseResultDTO);
         TerminalValueDTO terminalValueDTO = calculateTerminalValueData(financialDTO, valuationInputDTO, companyDTO);
         BaseYearComparisonDTO baseYearComparisonDTO = calculateBaseYearData(financialDTO, valuationInputDTO,
-                sectorMapping.getIndustryAsPerExcel());
+                sectorMapping == null ? null : sectorMapping.getIndustryAsPerExcel());
 
         // setting result
         valuationOutputDTO.setCompanyDTO(companyDTO);

@@ -3,6 +3,7 @@ package io.stockvaluation.service;
 import io.stockvaluation.config.ValuationAssumptionProperties;
 import io.stockvaluation.domain.CostOfCapital;
 import io.stockvaluation.domain.SectorMapping;
+import io.stockvaluation.provider.prospectus.ProspectusCompanyIdentity;
 import io.stockvaluation.provider.prospectus.ProspectusTestPackets;
 import io.stockvaluation.provider.prospectus.ProspectusFinancialSnapshotMapper;
 import io.stockvaluation.repository.CostOfCapitalRepository;
@@ -14,6 +15,7 @@ import io.stockvaluation.repository.RiskFreeRateRepository;
 import io.stockvaluation.repository.SectorMappingRepository;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -22,6 +24,47 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class ProspectusCompanyDataAssemblerTest {
+
+    @Test
+    void leavesProspectusIndustryUnmappedWhenNoReviewedMappingExists() {
+        CountryEquityRepository countryEquityRepository = mock(CountryEquityRepository.class);
+        SectorMappingRepository sectorMappingRepository = mock(SectorMappingRepository.class);
+        IndustryAveragesUSRepository industryAvgUSRepository = mock(IndustryAveragesUSRepository.class);
+        IndustryAveragesGlobalRepository industryAvgGloRepository = mock(IndustryAveragesGlobalRepository.class);
+        InputStatRepository inputStatRepository = mock(InputStatRepository.class);
+        CostOfCapitalRepository costOfCapitalRepository = mock(CostOfCapitalRepository.class);
+        RiskFreeRateRepository riskFreeRateRepository = mock(RiskFreeRateRepository.class);
+        ValuationAssumptionProperties valuationAssumptionProperties = mock(ValuationAssumptionProperties.class);
+        when(countryEquityRepository.findCorporateTaxRateByCountry("United States")).thenReturn(Optional.of(21.0));
+        when(riskFreeRateRepository.findRiskFreeRateByCurrency("USD")).thenReturn(Optional.of(4.5));
+        when(valuationAssumptionProperties.getBaselineRiskFreeRate()).thenReturn(4.5);
+        when(valuationAssumptionProperties.getConvergenceYearMargin()).thenReturn(5.0);
+
+        var packet = ProspectusTestPackets.reviewedPacket();
+        packet.setCompany(new ProspectusCompanyIdentity(
+                "Example IPO Corp.",
+                "EXMP",
+                "United States",
+                "USD",
+                null));
+        packet.setSegments(List.of());
+
+        ProspectusCompanyDataAssembler assembler = new ProspectusCompanyDataAssembler(
+                new ProspectusFinancialSnapshotMapper(),
+                countryEquityRepository,
+                sectorMappingRepository,
+                industryAvgUSRepository,
+                industryAvgGloRepository,
+                inputStatRepository,
+                costOfCapitalRepository,
+                riskFreeRateRepository,
+                valuationAssumptionProperties);
+
+        var basic = assembler.assemble(packet).getBasicInfoDataDTO();
+
+        assertEquals("unmapped-prospectus", basic.getIndustryUs());
+        assertEquals("unmapped-prospectus", basic.getIndustryGlobal());
+    }
 
     @Test
     void preservesAllExtractedProspectusResearchAndDevelopmentYears() {

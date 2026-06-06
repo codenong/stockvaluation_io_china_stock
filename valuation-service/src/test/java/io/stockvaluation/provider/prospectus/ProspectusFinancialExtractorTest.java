@@ -55,8 +55,12 @@ class ProspectusFinancialExtractorTest {
 
         assertEquals(3, packet.getSegments().size());
         assertEquals(0.218, packet.getSegments().get(0).getRevenueWeight(), 0.001);
-        assertTrue(packet.getSegments().stream().anyMatch(segment -> "aerospace-defense".equals(segment.getSectorKey())));
-        assertTrue(packet.getSegments().stream().anyMatch(segment -> "telecom-services".equals(segment.getSectorKey())));
+        assertTrue(packet.getSegments().stream().anyMatch(segment -> "Space".equals(segment.getSegmentName())));
+        assertTrue(packet.getSegments().stream().anyMatch(segment -> "Connectivity".equals(segment.getSegmentName())));
+        assertTrue(packet.getSegments().stream().anyMatch(segment -> "AI".equals(segment.getSegmentName())));
+        assertTrue(packet.getSegments().stream().allMatch(segment -> "requires_agent_mapping".equals(segment.getMappingConfidence())));
+        assertTrue(packet.getSegments().stream().allMatch(segment -> segment.getSectorKey() == null));
+        assertTrue(packet.getSegments().stream().allMatch(segment -> segment.getMappedIndustry() == null));
     }
 
     @Test

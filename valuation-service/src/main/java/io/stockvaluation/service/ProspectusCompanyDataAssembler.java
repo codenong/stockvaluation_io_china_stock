@@ -35,6 +35,8 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class ProspectusCompanyDataAssembler {
 
+    private static final String UNMAPPED_PROSPECTUS_INDUSTRY = "unmapped-prospectus";
+
     private final ProspectusFinancialSnapshotMapper mapper;
     private final CountryEquityRepository countryEquityRepository;
     private final SectorMappingRepository sectorMappingRepository;
@@ -51,7 +53,7 @@ public class ProspectusCompanyDataAssembler {
         IncomeStatementSnapshot priorIncome = prior(snapshots.yearlyIncome());
         BalanceSheetSnapshot latestBalance = latest(snapshots.yearlyBalance());
         String industryKey = resolveIndustryKey(packet);
-        SectorMapping sectorMapping = sectorMappingRepository.findByIndustryName(industryKey);
+        SectorMapping sectorMapping = industryKey == null ? null : sectorMappingRepository.findByIndustryName(industryKey);
         String damodaranIndustry = sectorMapping == null ? null : sectorMapping.getIndustryAsPerExcel();
 
         BasicInfoDataDTO basic = new BasicInfoDataDTO();
@@ -60,8 +62,8 @@ public class ProspectusCompanyDataAssembler {
         basic.setCountryOfIncorporation(defaultString(packet.getCompany().getCountryOfIncorporation(), "United States"));
         basic.setCurrency(defaultString(packet.getCompany().getCurrency(), "USD"));
         basic.setStockCurrency(defaultString(packet.getCompany().getCurrency(), "USD"));
-        basic.setIndustryUs(industryKey);
-        basic.setIndustryGlobal(industryKey);
+        basic.setIndustryUs(defaultString(industryKey, UNMAPPED_PROSPECTUS_INDUSTRY));
+        basic.setIndustryGlobal(defaultString(industryKey, UNMAPPED_PROSPECTUS_INDUSTRY));
         basic.setDateOfValuation(LocalDate.now());
 
         FinancialDataDTO financial = new FinancialDataDTO();
@@ -199,7 +201,7 @@ public class ProspectusCompanyDataAssembler {
                 && !packet.getCompany().getIndustryKey().isBlank()) {
             return packet.getCompany().getIndustryKey();
         }
-        return "aerospace-defense";
+        return null;
     }
 
     private static String symbol(ProspectusFinancialPacket packet) {

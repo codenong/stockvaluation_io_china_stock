@@ -468,10 +468,11 @@ def test_prospectus_guided_defaults_do_not_claim_recalculated_user_refined_value
     combined = "\n".join([skill, prospectus, guide, report])
 
     for phrase in [
-        "no prospectus-specific recalculation path",
-        "report-only guided defaults",
-        "do not call report-only prospectus guided answers a user-refined scenario",
-        "deterministic prospectus recalc actually happened",
+        "deterministic explicit scenarios",
+        "service extracts raw prospectus segment facts",
+        "does not hard-code segment-to-industry mapping",
+        "use the agent's search tools",
+        "scenario.segments",
         "all remaining default answers must be summarized",
         "do not skip hidden questions silently",
         "sec filing facts are primary",
