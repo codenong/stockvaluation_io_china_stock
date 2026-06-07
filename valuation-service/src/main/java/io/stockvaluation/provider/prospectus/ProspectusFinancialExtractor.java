@@ -274,6 +274,9 @@ public class ProspectusFinancialExtractor {
         if (lower.contains("segment")) {
             return null;
         }
+        if (lower.contains("cost of revenue")) {
+            return null;
+        }
         if (lower.matches(".*\\brevenue\\b.*")) {
             return "revenue";
         }

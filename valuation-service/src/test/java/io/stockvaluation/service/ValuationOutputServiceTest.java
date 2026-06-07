@@ -6,6 +6,8 @@ import io.stockvaluation.dto.BasicInfoDataDTO;
 import io.stockvaluation.dto.LeaseResultDTO;
 import io.stockvaluation.dto.OptionValueResultDTO;
 import io.stockvaluation.dto.OverrideAssumption;
+import io.stockvaluation.dto.SegmentResponseDTO;
+import io.stockvaluation.dto.SegmentWeightedParameters;
 import io.stockvaluation.dto.valuationoutput.CompanyDTO;
 import io.stockvaluation.dto.valuationoutput.FinancialDTO;
 import io.stockvaluation.exception.InsufficientFinancialDataException;
@@ -14,6 +16,7 @@ import io.stockvaluation.repository.IndustryAveragesGlobalRepository;
 import io.stockvaluation.repository.InputStatRepository;
 import io.stockvaluation.repository.SectorMappingRepository;
 import io.stockvaluation.dto.FinancialDataDTO;
+import io.stockvaluation.utils.SegmentParameterContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -23,6 +26,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Map;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -258,11 +262,107 @@ class ValuationOutputServiceTest {
     }
 
     @Test
+    void segmentTerminalReinvestmentUsesTerminalReturnOnCapitalOverride() {
+        BasicInfoDataDTO basic = new BasicInfoDataDTO();
+        basic.setCompanyName("Scenario Company");
+        basic.setTicker("SCEN");
+        basic.setIndustryUs("unmapped-prospectus");
+        basic.setCountryOfIncorporation("United States");
+        basic.setCurrency("USD");
+        basic.setStockCurrency("USD");
+        financialDataInput.setBasicInfoDataDTO(basic);
+        financialDataInput.setIndustry("unmapped-prospectus");
+        financialDataInput.setIsExpensesCapitalize(false);
+        financialDataInput.setHasOperatingLease(false);
+        financialDataInput.setHasEmployeeOptions(false);
+        financialDataInput.setRevenueNextYear(10.0);
+        financialDataInput.setOperatingMarginNextYear(10.0);
+        financialDataInput.setCompoundAnnualGrowth2_5(10.0);
+        financialDataInput.setTargetPreTaxOperatingMargin(20.0);
+        financialDataInput.setConvergenceYearMargin(10.0);
+        financialDataInput.setRiskFreeRate(4.0);
+        financialDataInput.setInitialCostCapital(800.0);
+        financialDataInput.setSegments(new SegmentResponseDTO(List.of(
+                new SegmentResponseDTO.Segment("segment-a", "Segment A", List.of("Segment A"), 1.0, 0.5, null),
+                new SegmentResponseDTO.Segment("segment-b", "Segment B", List.of("Segment B"), 1.0, 0.5, null))));
+        financialDataInput.getOverrideAssumptionReturnOnCapital()
+                .setIsOverride(true);
+        financialDataInput.getOverrideAssumptionReturnOnCapital()
+                .setOverrideCost(15.0);
+        financialDataInput.getFinancialDataDTO().setRevenueTTM(100.0);
+        financialDataInput.getFinancialDataDTO().setRevenueLTM(90.0);
+        financialDataInput.getFinancialDataDTO().setOperatingIncomeTTM(10.0);
+        financialDataInput.getFinancialDataDTO().setEffectiveTaxRate(0.25);
+        financialDataInput.getFinancialDataDTO().setMarginalTaxRate(25.0);
+        financialDataInput.getFinancialDataDTO().setMinorityInterestTTM(0.0);
+        financialDataInput.getFinancialDataDTO().setNonOperatingAssetTTM(0.0);
+        financialDataInput.getFinancialDataDTO().setResearchAndDevelopmentMap(Map.of("currentR&D-0", 0.0));
+
+        SegmentWeightedParameters params = new SegmentWeightedParameters();
+        params.setWeightedRevenueNextYear(10.0);
+        params.setWeightedCompoundAnnualGrowth2_5(10.0);
+        params.setWeightedOperatingMarginNextYear(10.0);
+        params.setWeightedTargetPreTaxOperatingMargin(20.0);
+        params.setConvergenceYearMargin(10.0);
+        params.setWeightedSalesToCapitalYears1To5(2.0);
+        params.setWeightedSalesToCapitalYears6To10(2.0);
+        params.setWeightedInitialCostCapital(800.0);
+        params.setRiskFreeRate(4.0);
+        params.setSegmentWeighted(true);
+        params.setSegmentCount(2);
+        params.setBaselineQuality("prospectus_explicit_scenario");
+        params.setSegmentCoveragePct(100.0);
+        params.setSectorParameters("segment-a", sectorParams("segment-a", 0.5));
+        params.setSectorParameters("segment-b", sectorParams("segment-b", 0.5));
+
+        when(commonService.calculateRDConverterValue(
+                "unmapped-prospectus",
+                25.0,
+                financialDataInput.getFinancialDataDTO().getResearchAndDevelopmentMap(),
+                null)).thenReturn(new RDResult(0.0, 0.0, 0.0, 0.0));
+        when(commonService.calculateOperatingLeaseConverter()).thenReturn(new LeaseResultDTO(0.0, 0.0, 0.0, 0.0));
+        when(commonService.resolveEquityRiskPremiumForCountry("United States")).thenReturn(4.0);
+
+        try {
+            SegmentParameterContext.setParameters(params);
+            var output = valuationOutputService.getValuationOutput("SCEN", financialDataInput, null);
+            int terminalIndex = output.getFinancialDTO().getArrayLength() - 1;
+            double ebitAfterTax = output.getFinancialDTO().getEbit1MinusTaxBySector().values().stream()
+                    .mapToDouble(values -> values[terminalIndex])
+                    .sum();
+            double reinvestment = output.getFinancialDTO().getReinvestment()[terminalIndex];
+
+            assertEquals((4.0 / 15.0) * ebitAfterTax, reinvestment, 0.0001);
+        } finally {
+            SegmentParameterContext.clear();
+        }
+    }
+
+    @Test
     void testCalculatePVCFOverNextYear() {
         Double[] pvFcff = new Double[] { 10.0, 20.0, 30.0 };
         Double result = ReflectionTestUtils.invokeMethod(valuationOutputService, "calculatePVCFOverNextYear",
                 (Object) pvFcff);
         assertEquals(60.0, result);
+    }
+
+    private static SegmentWeightedParameters.SectorParameters sectorParams(String sectorName, double revenueShare) {
+        SegmentWeightedParameters.SectorParameters params = new SegmentWeightedParameters.SectorParameters();
+        params.setSectorName(sectorName);
+        params.setRevenueShare(revenueShare);
+        params.setBaseRevenue(50.0);
+        params.setTargetRevenue(100.0);
+        params.setRevenueNextYear(10.0);
+        params.setCompoundAnnualGrowth2_5(10.0);
+        params.setTerminalGrowthRate(0.04);
+        params.setOperatingMarginNextYear(10.0);
+        params.setTargetPreTaxOperatingMargin(20.0);
+        params.setConvergenceYearMargin(10.0);
+        params.setSalesToCapitalYears1To5(2.0);
+        params.setSalesToCapitalYears6To10(2.0);
+        params.setInitialCostCapital(800.0);
+        params.setIndustryAsPerExcel(sectorName);
+        return params;
     }
 
     @Test

@@ -44,6 +44,9 @@ class ProspectusFinancialExtractorTest {
         assertFact(packet, "total_debt", 22_049_000_000.0, "Total debt", "Debt Schedule");
         assertFact(packet, "operating_cash_flow", 6_785_000_000.0, "Net cash provided by operating activities", "Consolidated Statements of Cash Flows");
         assertFact(packet, "capital_expenditures", 20_737_000_000.0, "Total Capital Expenditures", "Capital Expenditures");
+        assertFalse(packet.getFinancials().allFacts().stream()
+                .anyMatch(fact -> "revenue".equals(fact.getCanonicalField())
+                        && "Cost of revenue".equals(fact.getSourceRowLabel())));
 
         assertEquals(135.0, packet.getOffering().getOfferingPrice());
         assertEquals("offering_price", packet.getOffering().getOfferingPriceBasis());

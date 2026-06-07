@@ -228,7 +228,9 @@ public class ProspectusValuationService {
         segmentParams.setSegmentCount(segmentAssumptions.size());
         segmentParams.setBaselineQuality("prospectus_explicit_scenario");
         segmentParams.setSegmentCoveragePct(100.0);
-        segmentParams.setRiskFreeRate(valueOrDefault(percentAssumption(scenario.terminalGrowthRate()), input.getRiskFreeRate()));
+        segmentParams.setRiskFreeRate(valueOrDefault(
+                percentAssumption(scenario.terminalGrowthRate()),
+                normalizedInputRiskFreeRatePercent(input)));
         segmentParams.setIndustry("prospectus_explicit_scenario");
         segmentParams.setSegmentWarnings(List.of(
                 "Prospectus scenario supplied segment-level assumptions; mechanical diagnostic baseline is not the headline valuation."));
@@ -280,7 +282,11 @@ public class ProspectusValuationService {
                     segment.compoundAnnualGrowth2_5(),
                     revenueCagrFromProjection(segment, 1, 5),
                     scenario.compoundAnnualGrowth2_5())));
-            sectorParams.setTerminalGrowthRate(decimalAssumption(firstPresent(segment.terminalGrowthRate(), scenario.terminalGrowthRate())));
+            Double terminalGrowthRate = decimalAssumption(firstPresent(segment.terminalGrowthRate(), scenario.terminalGrowthRate()));
+            if (terminalGrowthRate == null) {
+                terminalGrowthRate = normalizedInputRiskFreeRatePercent(input) / 100.0;
+            }
+            sectorParams.setTerminalGrowthRate(terminalGrowthRate);
             sectorParams.setOperatingMarginNextYear(percentAssumption(firstPresent(segment.operatingMarginNextYear(), scenario.operatingMarginNextYear())));
             sectorParams.setTargetPreTaxOperatingMargin(percentAssumption(firstPresent(segment.targetOperatingMargin(), scenario.targetOperatingMargin())));
             sectorParams.setConvergenceYearMargin(firstPresent(segment.marginConvergenceYear(), scenario.marginConvergenceYear()));
@@ -557,6 +563,17 @@ public class ProspectusValuationService {
     private static Double engineInitialCostOfCapital(Double value) {
         Double percent = percentAssumption(value);
         return percent == null ? null : percent * 100.0;
+    }
+
+    private static double normalizedInputRiskFreeRatePercent(FinancialDataInput input) {
+        Double value = input == null ? null : input.getRiskFreeRate();
+        if (value == null || !Double.isFinite(value)) {
+            return 0.0;
+        }
+        if (Math.abs(value) <= 1.0) {
+            return value * 100.0;
+        }
+        return Math.abs(value) > 100.0 ? value / 100.0 : value;
     }
 
     private static Double valueOrDefault(Double value, Double fallback) {

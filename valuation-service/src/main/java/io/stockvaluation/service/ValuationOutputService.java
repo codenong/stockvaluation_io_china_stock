@@ -1956,8 +1956,26 @@ public class ValuationOutputService {
                     sectorKey, sectorSalesToCapitalValue1To5, sectorSalesToCapitalValue6To10,
                     effectiveSalesToCapitalValue6To10);
 
+            Double terminalRoicValue = financialDTO.getCostOfCapital()[lastProjectionIndex];
+            if (financialDataInput.getOverrideAssumptionReturnOnCapital().getIsOverride()) {
+                terminalRoicValue = financialDataInput.getOverrideAssumptionReturnOnCapital().getOverrideCost();
+            }
+
             // Calculate Reinvestment per sector
             for (int year = 1; year <= terminalIndex; year++) {
+                if (year == terminalIndex) {
+                    Double[] sectorGrowthRates = financialDTO.getRevenueGrowthRateBySector().get(sectorKey);
+                    Double terminalGrowth = sectorGrowthRates == null ? null : sectorGrowthRates[terminalIndex];
+                    if (terminalGrowth != null && terminalGrowth > 0.0
+                            && terminalRoicValue != null && terminalRoicValue > 0.0
+                            && sectorEbit1MinusTax[year] != null) {
+                        sectorReinvestment[year] = ((terminalGrowth / 100.0) / (terminalRoicValue / 100.0))
+                                * sectorEbit1MinusTax[year];
+                    } else {
+                        sectorReinvestment[year] = 0.0;
+                    }
+                    continue;
+                }
                 if (sectorSalesToCapital[year] != null && sectorSalesToCapital[year] > 0) {
                     Double revenueChange = segmentRevenues[year] - segmentRevenues[year - 1];
                     sectorReinvestment[year] = revenueChange / sectorSalesToCapital[year];
@@ -1996,10 +2014,6 @@ public class ValuationOutputService {
             }
 
             // Terminal year ROIC: use the same override logic as company level
-            Double terminalRoicValue = financialDTO.getCostOfCapital()[lastProjectionIndex];
-            if (financialDataInput.getOverrideAssumptionReturnOnCapital().getIsOverride()) {
-                terminalRoicValue = financialDataInput.getOverrideAssumptionReturnOnCapital().getOverrideCost();
-            }
             sectorRoic[terminalIndex] = terminalRoicValue;
 
             // Calculate PV FCFF per sector

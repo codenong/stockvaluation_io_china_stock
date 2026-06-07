@@ -8,6 +8,7 @@ from typing import Any
 from .security import sanitize_for_agent
 
 MAX_VISIBLE_QUESTIONS = 15
+MATERIAL_VALUE_IMPACT_THRESHOLD_PCT = 20.0
 PLANNING_RULE = "story_to_driver_materiality_cap_15_no_minimum"
 
 SUPPORTED_USER_SCENARIO_FIELDS = {
@@ -42,6 +43,7 @@ DRIVER_TO_OVERRIDE_FIELD = {
     "reinvestment_sales_to_capital": "sales_to_capital",
     "segment_sales_to_capital": "sector_overrides",
     "business_definition": "segments",
+    "segment_mix": "sector_overrides",
 }
 
 DRIVER_ALIASES = {
@@ -54,7 +56,7 @@ DRIVER_ALIASES = {
     "reinvestment": "reinvestment_sales_to_capital",
     "capital_intensity": "reinvestment_sales_to_capital",
     "segments": "business_definition",
-    "segment_mix": "business_definition",
+    "segment_mix": "segment_mix",
     "share_basis": "capital_claims",
 }
 
@@ -63,6 +65,11 @@ QUESTION_FAMILIES = {
         "driver": "business_definition",
         "title": "Business definition",
         "business_tension": "The valuation has to decide which businesses are real model segments and which are report-only options.",
+    },
+    "segment_mix": {
+        "driver": "segment_mix",
+        "title": "Segment mix",
+        "business_tension": "The valuation has to decide whether different segments deserve different growth, margin, and reinvestment assumptions.",
     },
     "revenue_runway": {
         "driver": "revenue_growth",
@@ -119,6 +126,7 @@ DRIVER_TO_FAMILY = {
     "accounting_adjustments": "accounting_cleanup",
     "capital_claims": "capital_claims",
     "business_definition": "business_definition",
+    "segment_mix": "segment_mix",
     "market_implied_diagnostics": "market_implied",
 }
 
@@ -154,6 +162,7 @@ def build_guided_question_plan(raw: dict[str, Any]) -> dict[str, Any]:
     deduped = _dedupe_questions(candidates)
     ranked = sorted(deduped, key=lambda item: (PRIORITY_ORDER.get(item["priority"], 99), -item["materiality_score"], item["id"]))
     visible = _visible_questions(ranked, deep_mode, max_visible)
+    materiality_gate = _materiality_gate(context, ranked, visible, workflow_type)
     return {
         "plan_id": f"{_slug(ticker or company)}_guided_refinement",
         "company": company,
@@ -166,6 +175,8 @@ def build_guided_question_plan(raw: dict[str, Any]) -> dict[str, Any]:
         "candidate_question_count": len(ranked),
         "planned_visible_question_count": len(visible),
         "question_count_rationale": _question_count_rationale(visible, ranked, deep_mode, evidence_input_quality),
+        "materiality_gate": materiality_gate,
+        "scenario_range": _scenario_range_recommendation(materiality_gate, visible),
         "question_order": [item["id"] for item in visible],
         "questions": visible,
         "hidden_candidate_questions": ranked,
@@ -217,8 +228,8 @@ def build_user_judgment_package(
             "confidence": choice.get("confidence") or question.get("confidence"),
         }
         if model_action == "user scenario override" and field and value is not None:
-            requested_assumptions[field] = value
-            mapped_assumptions[field] = value
+            _merge_mapped_assumption(requested_assumptions, field, value)
+            _merge_mapped_assumption(mapped_assumptions, field, value)
         elif model_action == "report-only user judgment":
             answer_record["unsupported_or_report_only_reason"] = "report_only_user_judgment"
             report_only_assumptions[question_id] = {
@@ -289,6 +300,31 @@ def _questions_from_segments(
                 priority_reason="Material segments can change growth, margin, and reinvestment assumptions.",
             )
         )
+    if len(material_segments) >= 2:
+        names = ", ".join(
+            _string(item.get("segment_name") or item.get("segmentName") or item.get("name") or "unnamed segment")
+            for item in material_segments[:4]
+        )
+        questions.append(
+            _question(
+                company=company,
+                workflow_type=workflow_type,
+                prospectus_recalc_supported=prospectus_recalc_supported,
+                family="segment_mix",
+                driver="segment_mix",
+                priority="P1",
+                materiality_score=84,
+                rationale=f"{company} has multiple material segments whose economics may not match a single company-wide baseline.",
+                evidence_summary=f"Material segments: {names}.",
+                evidence_used=[],
+                baseline_assumption="The current valuation may blend segments into one company-wide growth, margin, or reinvestment path.",
+                default_story="Model material segments separately when their economics differ and the service contract supports the mapping.",
+                override_field="sector_overrides",
+                candidate_value=_segment_mix_candidate(material_segments),
+                confidence="medium",
+                priority_reason="Segment mix can change revenue runway, mature margins, and reinvestment needs.",
+            )
+        )
     return questions
 
 
@@ -306,8 +342,17 @@ def _questions_from_evidence(
         family = DRIVER_TO_FAMILY.get(driver)
         if family is None:
             continue
-        priority = "P1" if driver not in REPORT_ONLY_DRIVERS else "P2"
+        value_impact_pct = _evidence_value_impact_pct(item)
+        material_report_only = (
+            driver in REPORT_ONLY_DRIVERS
+            and driver != "market_implied_diagnostics"
+            and value_impact_pct is not None
+            and abs(value_impact_pct) >= MATERIAL_VALUE_IMPACT_THRESHOLD_PCT
+        )
+        priority = "P1" if driver not in REPORT_ONLY_DRIVERS or material_report_only else "P2"
         materiality_score = 82 if priority == "P1" else 68
+        if value_impact_pct is not None and abs(value_impact_pct) >= MATERIAL_VALUE_IMPACT_THRESHOLD_PCT:
+            materiality_score += min(10, int(abs(value_impact_pct) / 10))
         if _string(item.get("confidence")).lower() == "high":
             materiality_score += 4
         if "material" in _string(item.get("evidence_summary") or item.get("claim")).lower():
@@ -318,6 +363,8 @@ def _questions_from_evidence(
             _string_or_none(override.get("field")) or DRIVER_TO_OVERRIDE_FIELD.get(driver)
         )
         candidate_value = override.get("value")
+        if driver == "segment_mix" and candidate_value is None:
+            candidate_value = _segment_mix_candidate(_list(context.get("segments") or _dict(context.get("baseline")).get("segments")))
         questions.append(
             _question(
                 company=company,
@@ -339,6 +386,7 @@ def _questions_from_evidence(
                 candidate_value=candidate_value,
                 confidence=_confidence(item),
                 priority_reason="Driver-specific evidence creates a material valuation judgment.",
+                value_impact_pct=value_impact_pct,
             )
         )
     return questions
@@ -475,6 +523,7 @@ def _question(
     candidate_value: Any,
     confidence: str,
     priority_reason: str,
+    value_impact_pct: float | None = None,
 ) -> dict[str, Any]:
     family_info = QUESTION_FAMILIES[family]
     status, model_action, effective_override_field = _model_action(
@@ -492,6 +541,7 @@ def _question(
         "driver": driver,
         "priority": priority,
         "materiality_score": materiality_score,
+        "value_impact_pct": value_impact_pct,
         "status": status,
         "company_specific_title": f"{company} - {family_info['title']}",
         "company_specific_rationale": rationale,
@@ -583,6 +633,15 @@ def _bounded_choices(default_story: str, field: str | None, value: Any, model_ac
             "confidence": "low",
             "report_label": "Higher-conviction case",
         },
+        {
+            "label": "D",
+            "story": "Use a custom scenario note.",
+            "assumption_effect": "Requires a user-supplied assumption before it can become a model override.",
+            "override_candidate": {"field": None, "value": None},
+            "model_action": "unsupported" if model_action == "unsupported" else "report-only user judgment",
+            "confidence": "low",
+            "report_label": "Custom user judgment",
+        },
     ]
 
 
@@ -628,6 +687,182 @@ def _candidate_allowed_by_contract(field: str | None, value: Any) -> bool:
         return False
     minimum, maximum = FIELD_BOUNDS[field]
     return minimum <= number <= maximum
+
+
+def _materiality_gate(
+    context: dict[str, Any],
+    ranked: list[dict[str, Any]],
+    visible: list[dict[str, Any]],
+    workflow_type: str,
+) -> dict[str, Any]:
+    plausibility = _dict(context.get("baseline_plausibility") or context.get("baselinePlausibility"))
+    baseline_quality = _string(
+        plausibility.get("baseline_quality")
+        or plausibility.get("baselineQuality")
+        or "unknown"
+    )
+    baseline_use_status = _string(
+        plausibility.get("baseline_use_status")
+        or plausibility.get("baselineUseStatus")
+        or "unknown"
+    )
+    p0_questions = [item for item in ranked if item.get("priority") == "P0"]
+    fragile_drivers = [
+        _materiality_driver(item)
+        for item in ranked
+        if item.get("priority") in {"P0", "P1"}
+    ][:MAX_VISIBLE_QUESTIONS]
+
+    challenged_or_blocked_statuses = {
+        "blocked",
+        "challenged",
+        "challenged_baseline",
+        "mechanical_only",
+        "not_calculated",
+        "segment_evidence_insufficient",
+        "segment_mapping_blocked",
+        "unsupported_mechanical_only",
+    }
+    baseline_statuses = {baseline_quality, baseline_use_status}
+    if p0_questions or bool(baseline_statuses & challenged_or_blocked_statuses):
+        status = "blocked_or_challenged"
+    elif visible:
+        status = "material_questions_required"
+    else:
+        status = "no_material_questions"
+
+    return {
+        "status": status,
+        "workflow_type": workflow_type,
+        "baseline_quality": baseline_quality,
+        "baseline_use_status": baseline_use_status,
+        "threshold_value_impact_pct": MATERIAL_VALUE_IMPACT_THRESHOLD_PCT,
+        "candidate_question_count": len(ranked),
+        "visible_question_count": len(visible),
+        "question_policy": "ask_before_final_report" if visible else "no_questions_required",
+        "fragile_drivers": fragile_drivers,
+        "blocking_driver_count": len(p0_questions),
+        "supported_driver_count": sum(1 for item in visible if item.get("model_action") == "user scenario override"),
+        "report_only_driver_count": sum(1 for item in visible if item.get("model_action") == "report-only user judgment"),
+        "unsupported_driver_count": sum(1 for item in visible if item.get("model_action") == "unsupported"),
+    }
+
+
+def _scenario_range_recommendation(materiality_gate: dict[str, Any], visible: list[dict[str, Any]]) -> dict[str, Any]:
+    if not visible:
+        return {
+            "status": "not_needed",
+            "calculation_policy": "do_not_hand_compute",
+            "reason": "No material guided questions were selected.",
+            "drivers": [],
+        }
+    supported = [item for item in visible if item.get("model_action") == "user scenario override"]
+    report_only = [item for item in visible if item.get("model_action") != "user scenario override"]
+    if not supported:
+        return {
+            "status": "not_supported",
+            "calculation_policy": "report_only_no_service_inputs",
+            "reason": "Material guided questions exist, but none map to governed recalculation inputs.",
+            "drivers": [item.get("driver") for item in visible],
+            "range_cases": [],
+            "supported_driver_count": 0,
+            "report_only_or_unsupported_driver_count": len(report_only),
+            "baseline_gate_status": materiality_gate.get("status"),
+        }
+    return {
+        "status": "recommended",
+        "calculation_policy": "deterministic_service_required",
+        "reason": "Material guided questions exist; show a range only when service output or service-validated scenarios are available.",
+        "drivers": [item.get("driver") for item in visible],
+        "range_cases": [
+            _scenario_range_case("guided_low", "Guided low case", "A", visible),
+            _scenario_range_case("guided_default", "Guided default case", "B", visible),
+            _scenario_range_case("guided_high", "Guided high case", "C", visible),
+        ],
+        "supported_driver_count": len(supported),
+        "report_only_or_unsupported_driver_count": len(report_only),
+        "baseline_gate_status": materiality_gate.get("status"),
+    }
+
+
+def _scenario_range_case(
+    case_id: str,
+    label: str,
+    supported_choice_label: str,
+    visible: list[dict[str, Any]],
+) -> dict[str, Any]:
+    mapped_assumptions: dict[str, Any] = {}
+    answer_policy: dict[str, str] = {}
+    for question in visible:
+        question_id = _string(question.get("id"))
+        if question.get("model_action") != "user scenario override":
+            answer_policy[question_id] = "default"
+            continue
+        choice = _choice_by_label(question, supported_choice_label) or _choice_by_label(question, "B")
+        if _string(choice.get("model_action")) != "user scenario override":
+            choice = _choice_by_label(question, "B")
+        override = _dict(choice.get("override_candidate") if choice else None)
+        field = _string_or_none(override.get("field"))
+        value = override.get("value")
+        answer_policy[question_id] = _string(choice.get("label")) or supported_choice_label
+        if field and value is not None and choice.get("model_action") == "user scenario override":
+            _merge_mapped_assumption(mapped_assumptions, field, value)
+    return {
+        "case_id": case_id,
+        "label": label,
+        "answer_policy": answer_policy,
+        "mapped_assumptions": mapped_assumptions,
+        "calculation_policy": "send_mapped_assumptions_to_deterministic_service",
+    }
+
+
+def _materiality_driver(question: dict[str, Any]) -> dict[str, Any]:
+    priority = _string(question.get("priority"))
+    if priority == "P0":
+        level = "blocker"
+    elif priority == "P1":
+        level = "material"
+    elif priority == "P2":
+        level = "watchlist"
+    else:
+        level = "hidden"
+    return {
+        "driver": question.get("driver"),
+        "family": question.get("family"),
+        "priority": priority,
+        "materiality_level": level,
+        "materiality_score": question.get("materiality_score"),
+        "value_impact_pct": question.get("value_impact_pct"),
+        "model_action": question.get("model_action"),
+        "reason": question.get("priority_reason") or question.get("company_specific_rationale"),
+        "report_label": question.get("company_specific_title"),
+    }
+
+
+def _segment_mix_candidate(segments: list[Any]) -> list[dict[str, Any]] | None:
+    candidate: list[dict[str, Any]] = []
+    for item in segments:
+        if not isinstance(item, dict):
+            continue
+        override = _dict(item.get("override_candidate") or item.get("suggested_override") or item.get("sector_override"))
+        if not override:
+            continue
+        if _string(override.get("field")) == "sector_overrides" and isinstance(override.get("value"), list):
+            candidate.extend(dict(value) for value in override["value"] if isinstance(value, dict))
+            continue
+        candidate.append(dict(override))
+    return candidate or None
+
+
+def _merge_mapped_assumption(target: dict[str, Any], field: str, value: Any) -> None:
+    if field == "sector_overrides" and isinstance(value, list):
+        existing = target.get(field)
+        if isinstance(existing, list):
+            target[field] = [*existing, *value]
+        else:
+            target[field] = list(value)
+        return
+    target[field] = value
 
 
 def _visible_questions(questions: list[dict[str, Any]], deep_mode: bool, max_visible: int) -> list[dict[str, Any]]:
@@ -767,11 +1002,12 @@ def _answer_map(answers: dict[str, Any] | list[dict[str, Any]] | None) -> dict[s
 def _selected_choice(question: dict[str, Any], selected: str) -> dict[str, Any]:
     default_label = _string(_dict(question.get("default_answer")).get("choice_label") or "B")
     label = default_label if selected == "default" else selected
+    return _choice_by_label(question, label) or _choice_by_label(question, default_label) or {}
+
+
+def _choice_by_label(question: dict[str, Any], label: str) -> dict[str, Any]:
     for choice in _list(question.get("bounded_choices")):
         if _string(choice.get("label")) == label:
-            return choice
-    for choice in _list(question.get("bounded_choices")):
-        if _string(choice.get("label")) == default_label:
             return choice
     return {}
 
@@ -857,6 +1093,27 @@ def _evidence_text(item: dict[str, Any]) -> str:
         or item.get("assumption_implication")
         or item.get("assumptionImplication")
     )
+
+
+def _evidence_value_impact_pct(item: dict[str, Any]) -> float | None:
+    for key in (
+        "value_impact_pct",
+        "valueImpactPct",
+        "estimated_value_impact_pct",
+        "estimatedValueImpactPct",
+        "impact_pct",
+        "impactPct",
+    ):
+        value = item.get(key)
+        if value is None:
+            continue
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(number):
+            return number
+    return None
 
 
 def _source_date(item: dict[str, Any]) -> str | None:
