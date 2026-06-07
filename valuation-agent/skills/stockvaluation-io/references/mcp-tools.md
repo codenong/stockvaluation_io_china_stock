@@ -177,6 +177,7 @@ Rules:
 Use these output sections:
 
 - `prospectus.packet`: the extracted `ProspectusFinancialPacket` for user review.
+- `prospectus.reviewReference`: preferred input to `stockvaluation.value_prospectus` after approval, so the agent does not have to copy a large packet by hand.
 - `prospectus.packet.segmentCandidateTables`: raw candidate tables and rows for agent-side segment selection, search, and mapping. These are not final model segments.
 - `prospectus.company` and `prospectus.filing`: compact identity and filing metadata.
 - `sourceQualityGate`: the review stop point.
@@ -198,7 +199,21 @@ Map the user's number to the internal action: `1` -> `approve_extracted_packet`,
 
 Runs a local educational valuation from a user-reviewed `ProspectusFinancialPacket`. This tool is blocked unless the packet has `reviewStatus = reviewed`.
 
+Prefer the review-reference path after approval. It keeps the full extracted packet inside the MCP session and avoids losing financial snapshots when the agent summarizes a large packet.
+
 Input:
+
+```json
+{
+  "review_reference": "prospectus_abc123...",
+  "review_status": "reviewed",
+  "scenario": {
+    "net_proceeds": 75000000000
+  }
+}
+```
+
+Use the full packet path only when needed:
 
 ```json
 {
@@ -226,6 +241,8 @@ Input:
   }
 }
 ```
+
+Do not reconstruct a compact packet from visible summaries. Use `prospectus.reviewReference` when the extracted packet is approved unchanged. Use `packet_overrides` with the review reference for source-backed corrections, or pass the full reviewed `prospectus.packet` if the MCP session reference is unavailable.
 
 `scenario` is optional. Use it only for explicit story assumptions. Supported fields include `net_proceeds`, `rd_capitalization`, `rd_amortization_period_years`, `initial_cost_of_capital`, `terminal_cost_of_capital`, `terminal_growth_rate`, `terminal_return_on_capital`, company-level revenue/margin/sales-to-capital fields, and `segments`. Segment entries may include `name`, `sector_key`, `mapped_industry`, `base_revenue`, `target_revenue`, `projected_revenues`, `target_operating_margin`, `sales_to_capital_years_1_to_5`, and `sales_to_capital_years_6_to_10`. Use full currency units, not millions, unless the packet itself uses a different unit.
 
@@ -292,6 +309,8 @@ Use the returned `guidedQuestionPlan`:
 - `planner_warnings`: warnings to inspect before asking questions.
 - `model_action`: `user scenario override`, `report-only user judgment`, or `unsupported`.
 - `hidden_model_mapping`: supported override field and candidate value when available.
+- `scenario_range`: guided low/default/high cases when material supported inputs exist.
+- `scenario_range.status = candidate_values_required`: material questions map to governed fields, but numeric or structured `override_candidate` values are missing.
 
 Rules:
 
@@ -299,10 +318,42 @@ Rules:
 - Keep planner input compact, but each evidence item must include `driver`, `evidence_summary` or `fact`, `source_url`, `source_date`, and non-low `confidence`.
 - For SEC prospectus facts, repeat the SEC filing URL and filing date on each planner evidence item.
 - If `planner_warnings` is not empty or `evidence_input_quality.dropped_evidence_item_count` is nonzero, retry once with complete dated/cited evidence before asking the user.
-- Do not send planner output directly to `stockvaluation.recalculate`.
+- If `scenario_range.status = candidate_values_required`, retry once with source-backed `override_candidate` values for each listed `candidate_requirements.required_field`; if no bounded candidate can be sourced or derived, ask the user for the missing numeric assumption before final valuation.
+- Do not send planner output directly to `stockvaluation.recalculate`. After the user answers, use `stockvaluation.apply_guided_answers` when available.
 - User answers remain `user_judgment`, not evidence.
 - For prospectus mode without deterministic prospectus recalculation, planner questions must remain report-only or unsupported.
 - Market-implied diagnostics may influence question priority, but they are not evidence.
+
+## `stockvaluation.apply_guided_answers`
+
+Converts selected guided-question choices into a structured `user_judgment` package and service-input candidates. Use this after the user answers all visible guided questions or accepts defaults. This tool is read-only; it does not run valuation math.
+
+Input:
+
+```json
+{
+  "guided_question_plan": {},
+  "answers": {
+    "revenue_runway_revenue_growth": "B"
+  },
+  "use_defaults": true
+}
+```
+
+Output:
+
+- `userJudgment`: selected answers, mapped assumptions, report-only assumptions, unsupported assumptions, candidate requirements, and the statement that user answers are not evidence.
+- `tickerOverridesCandidate`: a compact candidate for `stockvaluation.recalculate` in ticker workflows.
+- `prospectusScenarioCandidate`: a compact candidate for `stockvaluation.value_prospectus.scenario` in prospectus workflows.
+- `scenarioRange`: the original planner range metadata for audit and range rendering.
+
+Rules:
+
+- If `userJudgment.scenario_status = recalculation_ready`, do not finish with a report-only final report until the deterministic service call has been attempted.
+- If `userJudgment.scenario_status = candidate_values_required`, do not write a final valuation report yet. Retry the planner with candidate values or ask the user for the listed missing numeric assumptions.
+- For ticker workflows, send `tickerOverridesCandidate.overrides` to `stockvaluation.recalculate`.
+- For prospectus workflows, send `prospectusScenarioCandidate.scenario` to `stockvaluation.value_prospectus` with the reviewed packet. Merge any reviewed explicit `scenario.segments` package first.
+- Keep report-only and unsupported assumptions in the report and metadata, not in the service payload.
 
 ## `stockvaluation.recalculate`
 
@@ -367,6 +418,7 @@ This example is intentionally minimal. For user-refined or explicit scenarios, s
 
 Supported override keys:
 
+- `net_proceeds` for prospectus workflows
 - `revenue_growth`
 - `operating_margin_next_year` (scenario-only; rejected in autonomous researched mode)
 - `operating_margin` (target operating margin only)

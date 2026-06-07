@@ -373,6 +373,7 @@ def test_mcp_tools_list_has_required_stockvaluation_contracts():
         "stockvaluation.extract_prospectus",
         "stockvaluation.value_prospectus",
         "stockvaluation.plan_guided_questions",
+        "stockvaluation.apply_guided_answers",
         "stockvaluation.recalculate",
         "stockvaluation.get_assumptions",
         "stockvaluation.get_growth_anchor",
@@ -395,9 +396,11 @@ def test_prospectus_tools_are_read_only_and_schema_bounded():
 
     value = tools["stockvaluation.value_prospectus"]
     assert value["annotations"]["readOnlyHint"] is True
-    assert value["inputSchema"]["required"] == ["packet"]
+    assert "required" not in value["inputSchema"]
+    assert "anyOf" not in value["inputSchema"]
     assert value["inputSchema"]["properties"]["packet"]["type"] == "object"
     assert value["inputSchema"]["properties"]["packet"]["additionalProperties"] is True
+    assert value["inputSchema"]["properties"]["review_reference"]["type"] == "string"
     assert value["inputSchema"]["properties"]["scenario"]["type"] == "object"
     assert value["inputSchema"]["properties"]["scenario"]["additionalProperties"] is True
 
@@ -445,6 +448,7 @@ def test_extract_prospectus_returns_review_required_packet_with_source_gate():
     structured = result["structuredContent"]
     assert structured["prospectus"]["status"] == "requires_review"
     assert structured["prospectus"]["reviewStatus"] == "review_required"
+    assert structured["prospectus"]["reviewReference"].startswith("prospectus_")
     assert structured["prospectus"]["packet"]["reviewStatus"] == "review_required"
     candidate_tables = structured["prospectus"]["packet"]["segmentCandidateTables"]
     assert candidate_tables[0]["rows"][0]["label"] == "Launch and space services"
@@ -458,6 +462,59 @@ def test_extract_prospectus_returns_review_required_packet_with_source_gate():
     assert '"packet"' not in visible_text
     assert "financials" not in visible_text
     assert len(visible_text) < 600
+
+
+def test_value_prospectus_can_use_review_reference_without_copying_large_packet():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    extract = registry.call("stockvaluation.extract_prospectus", {"filing_url": PROSPECTUS_URL})
+    review_reference = extract["structuredContent"]["prospectus"]["reviewReference"]
+    result = registry.call(
+        "stockvaluation.value_prospectus",
+        {"review_reference": review_reference, "review_status": "reviewed"},
+    )
+
+    assert result["isError"] is False
+    assert len(client.calls) == 2
+    name, packet, scenario = client.calls[1]
+    assert name == "value_prospectus"
+    assert scenario is None
+    assert packet["reviewStatus"] == "reviewed"
+    assert packet["financials"]["revenue"][0]["value"] == 8_700_000_000.0
+
+
+def test_value_prospectus_review_reference_requires_reviewed_status():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    extract = registry.call("stockvaluation.extract_prospectus", {"filing_url": PROSPECTUS_URL})
+    review_reference = extract["structuredContent"]["prospectus"]["reviewReference"]
+    result = registry.call(
+        "stockvaluation.value_prospectus",
+        {"review_reference": review_reference},
+    )
+
+    assert result["isError"] is True
+    assert result["structuredContent"]["error"]["code"] == "PROSPECTUS_REVIEW_REQUIRED"
+    assert client.calls == [("extract_prospectus", PROSPECTUS_URL, None, None)]
+
+
+def test_value_prospectus_accepts_extract_payload_wrapper_after_review():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+    extract = registry.call("stockvaluation.extract_prospectus", {"filing_url": PROSPECTUS_URL})
+    wrapped = extract["structuredContent"]
+    wrapped["prospectus"]["packet"]["reviewStatus"] = "reviewed"
+
+    result = registry.call(
+        "stockvaluation.value_prospectus",
+        {"packet": wrapped},
+    )
+
+    assert result["isError"] is False
+    assert client.calls[1][0] == "value_prospectus"
+    assert client.calls[1][1]["reviewStatus"] == "reviewed"
 
 
 def test_value_prospectus_requires_reviewed_packet_before_service_call():

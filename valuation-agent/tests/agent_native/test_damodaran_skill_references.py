@@ -404,6 +404,10 @@ def test_guided_refinement_is_default_with_quick_bypass_and_bounded_questions():
     assert "unless the user explicitly requested quick valuation, no questions, skip questions, one-shot report, automation, or smoke-test" in skill
     assert "do not treat a plain \"value company using stockvaluation.io\" request as a one-shot path" in skill
     assert "build a hidden guided question plan" in skill
+    assert "treat the returned guided-question plan as the source of truth" in skill
+    assert "stockvaluation.apply_guided_answers" in skill
+    assert "do not finish with a report-only final report" in skill
+    assert "candidate_values_required" in skill
     assert "materiality-driven" in skill
     assert "hard cap of 15" in skill
     assert "ask one question at a time" in skill
@@ -475,6 +479,13 @@ def test_prospectus_guided_defaults_do_not_claim_recalculated_user_refined_value
         "hard-code segment-to-industry mapping",
         "use the agent's search tools",
         "scenario.segments",
+        "do not ask the user to provide vague \"segment mappings\"",
+        "ask the actual story-to-numbers question",
+        "show source-backed default choices",
+        "do not leave the business-definition or segment-mix story as report-only by default",
+        "stockvaluation.apply_guided_answers",
+        "supported `prospectusscenariocandidate`",
+        "candidate_values_required",
         "all remaining default answers must be summarized",
         "do not skip hidden questions silently",
         "sec filing facts are primary",

@@ -12,6 +12,7 @@ MATERIAL_VALUE_IMPACT_THRESHOLD_PCT = 20.0
 PLANNING_RULE = "story_to_driver_materiality_cap_15_no_minimum"
 
 SUPPORTED_USER_SCENARIO_FIELDS = {
+    "net_proceeds",
     "revenue_growth",
     "operating_margin_next_year",
     "operating_margin",
@@ -27,6 +28,7 @@ SUPPORTED_USER_SCENARIO_FIELDS = {
 }
 
 FIELD_BOUNDS = {
+    "net_proceeds": (0.0, 10_000_000_000_000.0),
     "margin_convergence_year": (1.0, 10.0),
     "convergence_year_margin": (1.0, 10.0),
     "sales_to_capital": (0.05, 20.0),
@@ -35,6 +37,8 @@ FIELD_BOUNDS = {
 }
 
 DRIVER_TO_OVERRIDE_FIELD = {
+    "net_proceeds": "net_proceeds",
+    "offering_basis": "net_proceeds",
     "revenue_growth": "revenue_growth",
     "segment_revenue_growth": "sector_overrides",
     "operating_margin": "operating_margin",
@@ -50,6 +54,9 @@ DRIVER_ALIASES = {
     "business_mix": "business_definition",
     "cash_share_basis": "capital_claims",
     "capital_basis": "capital_claims",
+    "offering_basis": "offering_basis",
+    "proceeds": "net_proceeds",
+    "net_proceeds": "net_proceeds",
     "growth": "revenue_growth",
     "margin": "operating_margin",
     "profitability": "operating_margin",
@@ -114,6 +121,8 @@ QUESTION_FAMILIES = {
 }
 
 DRIVER_TO_FAMILY = {
+    "net_proceeds": "capital_claims",
+    "offering_basis": "capital_claims",
     "revenue_growth": "revenue_runway",
     "segment_revenue_growth": "revenue_runway",
     "operating_margin": "margin_path",
@@ -227,9 +236,16 @@ def build_user_judgment_package(
             "unsupported_or_report_only_reason": None,
             "confidence": choice.get("confidence") or question.get("confidence"),
         }
-        if model_action == "user scenario override" and field and value is not None:
+        if model_action == "user scenario override" and field and _candidate_allowed_by_contract(field, value):
             _merge_mapped_assumption(requested_assumptions, field, value)
             _merge_mapped_assumption(mapped_assumptions, field, value)
+        elif model_action == "user scenario override" and field:
+            answer_record["unsupported_or_report_only_reason"] = "invalid_or_missing_override_candidate"
+            unsupported_assumptions[question_id] = {
+                "driver": question.get("driver"),
+                "selected_choice": selected_choice,
+                "reason": "invalid_or_missing_override_candidate",
+            }
         elif model_action == "report-only user judgment":
             answer_record["unsupported_or_report_only_reason"] = "report_only_user_judgment"
             report_only_assumptions[question_id] = {
@@ -247,15 +263,19 @@ def build_user_judgment_package(
         recorded_answers.append(answer_record)
 
     scenario_label = _scenario_label(plan, mapped_assumptions, use_defaults)
+    scenario_status = "recalculation_ready" if mapped_assumptions else (
+        "candidate_values_required" if _candidate_requirements(questions) else "report_only_or_unsupported"
+    )
     return {
         "source_type": "user_judgment",
         "scenario_label": scenario_label,
-        "scenario_status": "recalculation_ready" if mapped_assumptions else "report_only_or_unsupported",
+        "scenario_status": scenario_status,
         "answers": recorded_answers,
         "requested_assumptions": requested_assumptions,
         "mapped_assumptions": mapped_assumptions,
         "report_only_assumptions": report_only_assumptions,
         "unsupported_assumptions": unsupported_assumptions,
+        "candidate_requirements": _candidate_requirements(questions),
         "not_evidence_statement": "User answers define a scenario; they are not independent evidence.",
     }
 
@@ -594,6 +614,8 @@ def _model_action(
         return "report-only", "report-only user judgment", None
     if override_field in SUPPORTED_USER_SCENARIO_FIELDS and _candidate_allowed_by_contract(override_field, candidate_value):
         return "supported", "user scenario override", override_field
+    if override_field in SUPPORTED_USER_SCENARIO_FIELDS and override_field not in {"segments", "sector_overrides"}:
+        return "candidate-required", "report-only user judgment", override_field
     if override_field in SUPPORTED_USER_SCENARIO_FIELDS:
         return "report-only", "report-only user judgment", None
     return "unsupported", "unsupported", None
@@ -677,7 +699,7 @@ def _contract_bounded_candidate(field: str | None, value: float) -> float | None
 def _candidate_allowed_by_contract(field: str | None, value: Any) -> bool:
     if field is None or value is None:
         return False
-    if field not in FIELD_BOUNDS:
+    if field in {"segments", "sector_overrides"}:
         return True
     try:
         number = float(value)
@@ -685,8 +707,10 @@ def _candidate_allowed_by_contract(field: str | None, value: Any) -> bool:
         return False
     if not math.isfinite(number):
         return False
-    minimum, maximum = FIELD_BOUNDS[field]
-    return minimum <= number <= maximum
+    if field in FIELD_BOUNDS:
+        minimum, maximum = FIELD_BOUNDS[field]
+        return minimum <= number <= maximum
+    return True
 
 
 def _materiality_gate(
@@ -758,6 +782,19 @@ def _scenario_range_recommendation(materiality_gate: dict[str, Any], visible: li
         }
     supported = [item for item in visible if item.get("model_action") == "user scenario override"]
     report_only = [item for item in visible if item.get("model_action") != "user scenario override"]
+    candidate_required = _candidate_requirements(visible)
+    if candidate_required:
+        return {
+            "status": "candidate_values_required",
+            "calculation_policy": "derive_or_ask_for_numeric_candidates_before_service",
+            "reason": "Material guided questions map to governed service inputs, but the plan lacks numeric or structured candidate values.",
+            "drivers": [item.get("driver") for item in visible],
+            "candidate_requirements": candidate_required,
+            "range_cases": [],
+            "supported_driver_count": len(supported),
+            "report_only_or_unsupported_driver_count": len(report_only),
+            "baseline_gate_status": materiality_gate.get("status"),
+        }
     if not supported:
         return {
             "status": "not_supported",
@@ -783,6 +820,28 @@ def _scenario_range_recommendation(materiality_gate: dict[str, Any], visible: li
         "report_only_or_unsupported_driver_count": len(report_only),
         "baseline_gate_status": materiality_gate.get("status"),
     }
+
+
+def _candidate_requirements(questions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    requirements: list[dict[str, Any]] = []
+    for question in questions:
+        if question.get("status") != "candidate-required":
+            continue
+        mapping = _dict(question.get("hidden_model_mapping"))
+        field = _string_or_none(mapping.get("supported_override_field"))
+        if not field:
+            continue
+        requirements.append(
+            {
+                "question_id": question.get("id"),
+                "driver": question.get("driver"),
+                "required_field": field,
+                "evidence_basis": question.get("evidence_basis"),
+                "baseline_assumption": question.get("baseline_assumption"),
+                "instruction": "Provide an override_candidate with this field and a bounded numeric or structured value before final valuation.",
+            }
+        )
+    return requirements
 
 
 def _scenario_range_case(

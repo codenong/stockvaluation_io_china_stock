@@ -93,6 +93,7 @@ def test_guided_refinement_reference_defines_bounded_user_judgment_flow():
         "use defaults",
         "user answers are user judgment, not external evidence",
         "one final user-refined recalculation",
+        "stockvaluation.apply_guided_answers",
         "request_policy.mode = \"user_refined_scenario\"",
         "send only supported mapped assumptions",
         "not financial advice",
@@ -135,6 +136,9 @@ def test_guided_refinement_reference_defines_bounded_user_judgment_flow():
         "choices table",
         "default marker",
         "reply options",
+        "must not downgrade a `user scenario override` to report-only text",
+        "do not end with a report-only final report",
+        "prospectusscenariocandidate.scenario",
     ]:
         assert phrase in lower
 
@@ -245,6 +249,8 @@ def test_valuation_method_consistency_statuses_are_documented_for_reports():
 
     assert "report-only guided defaults" in guided
     assert "do not call report-only prospectus guided answers a user-refined scenario" in prospectus
+    assert "prospectus mode has a deterministic explicit scenario path" in guided
+    assert "use it whenever `stockvaluation.apply_guided_answers` returns a supported `prospectusscenariocandidate`" in guided
     assert "market_calibrated_diagnostic" in baseline
     assert "market calibration stayed diagnostic" in baseline
     assert "period_mixed_quarterly_balance_yearly_shares" in report

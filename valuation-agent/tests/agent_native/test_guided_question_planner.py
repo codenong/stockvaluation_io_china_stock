@@ -275,6 +275,54 @@ def test_planner_accepts_real_agent_compact_evidence_when_dated_and_cited():
         assert question["model_action"] in {"report-only user judgment", "unsupported"}
 
 
+def test_prospectus_recalc_requires_candidate_values_for_supported_drivers():
+    source_url = "https://www.sec.gov/Archives/edgar/data/1181412/000162828026040364/spaceexplorationtechnologib.htm"
+    plan = build_guided_question_plan(
+        {
+            "company": "Space Exploration Technologies Corp.",
+            "workflow_type": "prospectus",
+            "prospectus_recalculate_supported": True,
+            "evidence_items": [
+                {
+                    "driver": "growth",
+                    "fact": "2025 revenue was $18.674B vs $14.015B in 2024, so revenue growth materially changes value.",
+                    "sourceUrl": source_url,
+                    "sourceDate": "2026-06-03",
+                    "confidence": "high",
+                    "valueImpactPct": 80,
+                }
+            ],
+        }
+    )
+
+    question = plan["questions"][0]
+    assert question["driver"] == "revenue_growth"
+    assert question["status"] == "candidate-required"
+    assert question["model_action"] == "report-only user judgment"
+    assert question["hidden_model_mapping"]["supported_override_field"] == "revenue_growth"
+    assert plan["scenario_range"]["status"] == "candidate_values_required"
+    assert plan["scenario_range"]["calculation_policy"] == "derive_or_ask_for_numeric_candidates_before_service"
+    assert plan["scenario_range"]["candidate_requirements"][0]["required_field"] == "revenue_growth"
+
+    judgment = build_user_judgment_package(plan, use_defaults=True)
+    assert judgment["scenario_status"] == "candidate_values_required"
+    assert judgment["mapped_assumptions"] == {}
+    assert judgment["candidate_requirements"][0]["required_field"] == "revenue_growth"
+
+    class FakeClient:
+        calls = []
+
+    result = MCPToolRegistry(FakeClient()).call(
+        "stockvaluation.apply_guided_answers",
+        {"guided_question_plan": plan, "use_defaults": True},
+    )["structuredContent"]
+
+    assert result["userJudgment"]["scenario_status"] == "candidate_values_required"
+    assert result["prospectusScenarioCandidate"]["supported"] is False
+    assert "numeric candidate values" in result["prospectusScenarioCandidate"]["reason"]
+    assert result["prospectusScenarioCandidate"]["candidateRequirements"][0]["required_field"] == "revenue_growth"
+
+
 def test_prospectus_user_judgment_defaults_are_not_labeled_user_refined_without_recalc():
     plan = build_guided_question_plan(
         {
@@ -836,6 +884,147 @@ def test_mcp_tool_exposes_read_only_guided_question_planner_without_service_call
 
     tool_names = {tool["name"] for tool in MCPToolRegistry(FakeClient()).list_tools()}
     assert "stockvaluation.plan_guided_questions" in tool_names
+
+
+def test_mcp_tool_applies_guided_defaults_to_prospectus_scenario_candidate():
+    class FakeClient:
+        calls = []
+
+    plan = build_guided_question_plan(
+        {
+            "company": "Space Exploration Technologies Corp.",
+            "ticker": "SPCX",
+            "workflow_type": "prospectus",
+            "prospectus_recalculate_supported": True,
+            "evidence_items": [
+                _evidence(
+                    "revenue_growth",
+                    source_url="https://www.sec.gov/Archives/edgar/data/1181412/000162828026040364/spaceexplorationtechnologib.htm",
+                    source_date="2026-06-03",
+                    evidence_summary="SpaceX filing evidence supports a bounded revenue runway.",
+                    override_candidate={"field": "revenue_growth", "value": 25.0},
+                ),
+                _evidence(
+                    "operating_margin",
+                    source_url="https://www.sec.gov/Archives/edgar/data/1181412/000162828026040364/spaceexplorationtechnologib.htm",
+                    source_date="2026-06-03",
+                    evidence_summary="Segment margins support a bounded mature margin path.",
+                    override_candidate={"field": "operating_margin", "value": 35.0},
+                ),
+                _evidence(
+                    "reinvestment_sales_to_capital",
+                    source_url="https://www.sec.gov/Archives/edgar/data/1181412/000162828026040364/spaceexplorationtechnologib.htm",
+                    source_date="2026-06-03",
+                    evidence_summary="SpaceX filing capex supports high reinvestment needs.",
+                    override_candidate={"field": "sales_to_capital", "value": 1.4},
+                ),
+            ],
+        }
+    )
+
+    result = MCPToolRegistry(FakeClient()).call(
+        "stockvaluation.apply_guided_answers",
+        {"guided_question_plan": plan, "use_defaults": True},
+    )
+
+    assert result["isError"] is False
+    structured = result["structuredContent"]
+    assert structured["tool"] == "stockvaluation.apply_guided_answers"
+    assert structured["userJudgment"]["scenario_status"] == "recalculation_ready"
+    assert structured["userJudgment"]["mapped_assumptions"] == {
+        "revenue_growth": 25.0,
+        "operating_margin": 35.0,
+        "sales_to_capital": 1.4,
+    }
+    assert structured["tickerOverridesCandidate"]["supported"] is True
+    assert structured["tickerOverridesCandidate"]["overrides"]["request_policy"]["mode"] == "user_refined_scenario"
+    assert structured["prospectusScenarioCandidate"] == {
+        "supported": True,
+        "scenario": {
+            "scenario_name": "guided_user_refined_scenario",
+            "compound_annual_growth_2_5": 25.0,
+            "target_operating_margin": 35.0,
+            "sales_to_capital_years_1_to_5": 1.4,
+            "sales_to_capital_years_6_to_10": 1.4,
+        },
+        "unsupportedMappedAssumptions": {},
+        "reason": None,
+    }
+    assert FakeClient.calls == []
+
+    tool_names = {tool["name"] for tool in MCPToolRegistry(FakeClient()).list_tools()}
+    assert "stockvaluation.apply_guided_answers" in tool_names
+
+
+def test_guided_defaults_map_prospectus_net_proceeds_to_scenario_candidate():
+    class FakeClient:
+        calls = []
+
+    plan = build_guided_question_plan(
+        {
+            "company": "Space Exploration Technologies Corp.",
+            "workflow_type": "prospectus",
+            "prospectus_recalculate_supported": True,
+            "evidence_items": [
+                _evidence(
+                    "net_proceeds",
+                    source_url="https://www.sec.gov/Archives/edgar/data/1181412/000162828026040364/spaceexplorationtechnologib.htm",
+                    source_date="2026-06-03",
+                    evidence_summary="The filing discloses full-option net proceeds as a bounded per-share basis choice.",
+                    override_candidate={"field": "net_proceeds", "value": 85_700_000_000.0},
+                ),
+            ],
+        }
+    )
+
+    result = MCPToolRegistry(FakeClient()).call(
+        "stockvaluation.apply_guided_answers",
+        {"guided_question_plan": plan, "use_defaults": True},
+    )
+
+    assert result["isError"] is False
+    structured = result["structuredContent"]
+    assert structured["userJudgment"]["mapped_assumptions"] == {"net_proceeds": 85_700_000_000.0}
+    assert structured["prospectusScenarioCandidate"]["supported"] is True
+    assert structured["prospectusScenarioCandidate"]["scenario"]["net_proceeds"] == 85_700_000_000.0
+
+
+def test_guided_answers_reject_object_candidate_for_numeric_prospectus_field():
+    class FakeClient:
+        calls = []
+
+    plan = {
+        "workflow_type": "prospectus",
+        "questions": [
+            {
+                "id": "margin_path_operating_margin",
+                "driver": "operating_margin",
+                "model_action": "user scenario override",
+                "default_answer": {"choice_label": "B"},
+                "bounded_choices": [
+                    {
+                        "label": "B",
+                        "model_action": "user scenario override",
+                        "override_candidate": {
+                            "field": "operating_margin",
+                            "value": {"bounded_default_percent": 35.0},
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+
+    result = MCPToolRegistry(FakeClient()).call(
+        "stockvaluation.apply_guided_answers",
+        {"guided_question_plan": plan, "use_defaults": True},
+    )
+
+    assert result["isError"] is False
+    structured = result["structuredContent"]
+    assert structured["userJudgment"]["mapped_assumptions"] == {}
+    assert structured["prospectusScenarioCandidate"]["supported"] is False
+    assert structured["prospectusScenarioCandidate"]["scenario"] == {}
 
 
 def test_materiality_gate_marks_spacex_style_prospectus_as_questions_required():

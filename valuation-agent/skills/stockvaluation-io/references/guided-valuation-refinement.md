@@ -18,7 +18,7 @@ Prioritize questions by valuation materiality, evidence strength, uncertainty, m
 
 ## Allowed Action
 
-Generate a hidden materiality-driven guided question plan, ask every material company-specific question up to the cap, ask one question at a time, capture selected choices as `user_judgment`, and run one final user-refined recalculation after the dialogue is complete. Use `stockvaluation.plan_guided_questions` when available to build the plan from compact baseline, evidence, plausibility, segment, and diagnostic context. The planning tool does not compute valuation math. Send only supported mapped assumptions to `stockvaluation.recalculate` with `request_policy.mode = "user_refined_scenario"`.
+Generate a hidden materiality-driven guided question plan, ask every material company-specific question up to the cap, ask one question at a time, capture selected choices as `user_judgment`, and run one final user-refined recalculation after the dialogue is complete. Use `stockvaluation.plan_guided_questions` when available to build the plan from compact baseline, evidence, plausibility, segment, and diagnostic context. The planning tool does not compute valuation math. Use `stockvaluation.apply_guided_answers` when available after the user answers or accepts defaults, so selected choices are mapped from the plan rather than rebuilt by hand. For ticker workflows, send only supported mapped assumptions to `stockvaluation.recalculate` with `request_policy.mode = "user_refined_scenario"`. For prospectus workflows, send supported mapped assumptions through `stockvaluation.value_prospectus.scenario` using the reviewed packet.
 
 ## Do Not
 
@@ -26,9 +26,11 @@ Do not ask generic checklist questions, do not invent filler questions, do not u
 
 Do not print the hidden guided question plan JSON by default. Show exact model mapping only when the user asks for audit/debug detail.
 
+Do not hand-write replacement questions when `stockvaluation.plan_guided_questions` returns visible questions. The returned `questions` array is the source of truth for question order, choice meanings, default choice, `model_action`, and supported override mapping. The agent may simplify prose for readability, but it must not downgrade a `user scenario override` to report-only text or ask a different question that loses the mapping.
+
 ## Story-To-Driver Planner Tool
 
-When available, call `stockvaluation.plan_guided_questions` after evidence review and baseline plausibility. The tool is read-only. It ranks candidate questions by materiality and labels each question as `supported`, `report-only`, or `unsupported`.
+When available, call `stockvaluation.plan_guided_questions` after evidence review and baseline plausibility. The tool is read-only. It ranks candidate questions by materiality and labels each question as `supported`, `candidate-required`, `report-only`, or `unsupported`.
 
 The planner input should stay compact:
 
@@ -58,6 +60,10 @@ After calling the planner, inspect `guidedQuestionPlan.planner_warnings` and `gu
 
 Do not pass raw filing text, broad research logs, raw Scenario Book JSON, raw audit packets, or full hidden plans into the planner. Do not treat the planner output as evidence or valuation math.
 
+When the returned `scenario_range.status` is `recommended`, the workflow has supported deterministic inputs. Do not end with a report-only final report until the selected/default mapped case or requested range has been sent to the deterministic service.
+
+When `scenario_range.status = candidate_values_required`, the planner found material questions for governed service fields but did not receive numeric or structured `override_candidate` values. Do not treat those questions as harmless report-only defaults. Retry the planner once with source-backed candidate values for each listed `candidate_requirements.required_field`; if you cannot derive bounded candidates from cited evidence, ask the user the actual story-to-number question before final valuation.
+
 ## Hidden Guided Question Plan
 
 Before asking the user anything, create an internal plan from the company evidence, baseline diagnostics, evidence-constrained base, and market-implied report-only diagnostics. The plan is hidden by default and must be auditable when the user asks.
@@ -84,7 +90,7 @@ Before asking the user anything, create an internal plan from the company eviden
     {
       "id": "short_stable_id",
       "driver": "revenue_growth|operating_margin_next_year|target_operating_margin|margin_convergence_year|sales_to_capital|segment_revenue_growth|segment_operating_margin|segment_sales_to_capital|risk_wacc|terminal_value_mature_state|accounting_adjustments",
-      "status": "supported|report-only|unsupported",
+      "status": "supported|candidate-required|report-only|unsupported",
       "company_specific_rationale": "The company-specific business tension behind the question.",
       "business_tension": "Plain-language economic tradeoff.",
       "baseline_assumption": "Mechanical or evidence-constrained assumption being tested.",
@@ -188,11 +194,15 @@ Every user-facing question must include "My analysis" or equivalent modeling-def
 
 The user may answer with a choice letter, a short explanation, `default` for the current question, or `use defaults` to accept all remaining guided defaults. If the user asks for audit/debug detail, show the hidden model mapping for the relevant question.
 
-After each answer, store it and ask the next unanswered question. Do not recalculate after each answer. Perform one final user-refined recalculation after all questions are answered or defaults are accepted only when at least one answer maps to supported recalculation input.
+After each answer, store it and ask the next unanswered question. Do not recalculate after each answer. After all questions are answered or defaults are accepted, call `stockvaluation.apply_guided_answers` when available with the hidden plan plus selected answers. If the user says `use defaults`, pass `use_defaults = true` so all remaining defaults are recorded.
+
+Perform one final user-refined recalculation only when at least one answer maps to supported recalculation input. For ticker workflows, use `tickerOverridesCandidate.overrides` from `stockvaluation.apply_guided_answers` as the basis for `stockvaluation.recalculate`. For prospectus workflows, use `prospectusScenarioCandidate.scenario` as the basis for a second `stockvaluation.value_prospectus` call with the reviewed packet. If the prospectus also needs segment modeling and a reviewed explicit `scenario.segments` package exists, merge it into that scenario before calling the service.
+
+If `stockvaluation.apply_guided_answers` returns `userJudgment.scenario_status = candidate_values_required`, do not write a final valuation report yet. Either retry `stockvaluation.plan_guided_questions` with source-backed `override_candidate` values for the listed `candidate_requirements`, or ask the user the missing numeric assumptions. If the user explicitly leaves them unresolved, report that no user-refined scenario was calculated.
 
 The Scenario Book must then contain exactly one user-refined scenario for the completed guided path only when supported mapped assumptions exist and deterministic recalculation runs. If the user says `use defaults`, record the defaults as user judgment, not evidence. If all remaining defaults are report-only or unsupported, summarize them in the report and do not fabricate a user-refined scenario.
 
-If the current workflow has no supported recalculation path, such as no prospectus-specific recalculation path in prospectus mode, keep answers as report-only guided defaults. Do not call report-only prospectus guided answers a user-refined scenario. If the visible question count says "Question 1 of 3", all remaining default answers must be summarized when `use defaults` is accepted; do not skip hidden questions silently.
+If the current workflow has no supported recalculation path, keep answers as report-only guided defaults. Prospectus mode has a deterministic explicit scenario path through `stockvaluation.value_prospectus.scenario`; use it whenever `stockvaluation.apply_guided_answers` returns a supported `prospectusScenarioCandidate`. Do not call report-only prospectus guided answers a user-refined scenario. If the visible question count says "Question 1 of 3", all remaining default answers must be summarized when `use defaults` is accepted; do not skip hidden questions silently.
 
 ## User Judgment Package
 
@@ -202,7 +212,7 @@ After the user answers, create a `user_judgment` package distinct from autonomou
 {
   "source_type": "user_judgment",
   "scenario_label": "user-refined scenario|report-only guided defaults|report-only guided judgment",
-  "scenario_status": "recalculation_ready|report_only_or_unsupported",
+  "scenario_status": "recalculation_ready|candidate_values_required|report_only_or_unsupported",
   "answers": [
     {
       "question_id": "string",
@@ -221,6 +231,7 @@ After the user answers, create a `user_judgment` package distinct from autonomou
   "mapped_assumptions": {},
   "report_only_assumptions": {},
   "unsupported_assumptions": {},
+  "candidate_requirements": [],
   "not_evidence_statement": "User answers define a scenario; they are not independent evidence."
 }
 ```
@@ -231,6 +242,7 @@ Send only supported mapped assumptions to `stockvaluation.recalculate` with `req
 
 User-refined or explicit scenarios may map directly to:
 
+- `net_proceeds` for prospectus workflows
 - `revenue_growth`
 - `operating_margin_next_year`
 - `operating_margin` or `target_operating_margin`
@@ -241,7 +253,7 @@ User-refined or explicit scenarios may map directly to:
 - `segments`
 - `sector_overrides` for sector-level revenue growth, operating margin, and sales-to-capital
 
-`margin_convergence_year` must be a finite projection year from 1 to 10. Sales-to-capital inputs must be finite positive multiples from 0.05x to 20x.
+`margin_convergence_year` must be a finite projection year from 1 to 10. Sales-to-capital inputs must be finite positive multiples from 0.05x to 20x. Scalar fields such as `net_proceeds`, growth, margin, and sales-to-capital must be numbers, not nested objects.
 
 Autonomous evidence-constrained recalculation remains stricter. Do not use user-refined scenario support to loosen `autonomous_researched` mode.
 

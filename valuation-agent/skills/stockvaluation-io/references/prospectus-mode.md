@@ -25,9 +25,11 @@ Prospectus mode has a deterministic explicit scenario path through `stockvaluati
 
 The valuation service extracts raw prospectus segment candidate tables and rows. It does not choose segment rows, compute final segment weights, or hard-code segment-to-industry mapping. When material candidate rows are present, use the agent's search tools and the normal `segment-discovery.md` workflow to research what each row actually means, distinguish totals from subrows, and decide which rows belong in the model. Then pass a deterministic `scenario.segments` object to `stockvaluation.value_prospectus` with explicit `name`, `sector_key`, `mapped_industry`, revenue path or target revenue, target margin, sales-to-capital, and any segment-specific terminal assumptions. Keep the source rationale in the evidence packet and report, not as hidden Java mapping.
 
+Do not turn a material prospectus segment gap into a vague prompt such as "provide segment mappings." Ask the actual story-to-numbers question: should the disclosed businesses be modeled separately, which disclosed rows are base businesses versus subrows or optional upside, and what bounded segment growth, margin, and reinvestment assumptions should be used. The agent must show source-backed default choices before asking the user to correct them. If the prospectus has enough segment revenue, margin, and reinvestment evidence to create a bounded default, build the explicit `scenario.segments` package and send it to `stockvaluation.value_prospectus`; do not leave the business-definition or segment-mix story as report-only by default.
+
 For unusual IPOs, do not force all business lines into a single industry. If a material raw segment cannot be mapped with source-backed evidence, leave it unmapped in the review and say a clean segment scenario is not ready. If the segment is an optional future business or expansion option, keep it as an explicit upside scenario rather than the default case unless the prospectus or other source-backed evidence supports making it part of the base story.
 
-If guided answers are not sent through `stockvaluation.value_prospectus.scenario`, they are report-only guided defaults. Do not call report-only prospectus guided answers a user-refined scenario, and do not say they changed the per-share value. A prospectus report may say user defaults were accepted for report context only; it may call the final case a scenario only when deterministic prospectus scenario valuation actually happened.
+If guided answers are not sent through `stockvaluation.value_prospectus.scenario`, they are report-only guided defaults. Do not call report-only prospectus guided answers a user-refined scenario, and do not say they changed the per-share value. When `stockvaluation.apply_guided_answers` returns a supported `prospectusScenarioCandidate`, run `stockvaluation.value_prospectus` again with that scenario before writing the final report. If it returns `userJudgment.scenario_status = candidate_values_required`, do not write the final report yet; supply source-backed candidate values for the listed requirements or ask the user for the missing story-to-number assumptions. A prospectus report may say user defaults were accepted for report context only; it may call the final case a scenario only when deterministic prospectus scenario valuation actually happened.
 
 If a visible guided card says "Question 1 of 3", then ask all three questions one at a time, or when the user chooses `use defaults`, summarize all remaining default answers before the final report. All remaining default answers must be summarized. Do not skip hidden questions silently.
 
@@ -85,8 +87,9 @@ If the user chooses 2 or 3 without details, ask one short follow-up for the corr
 - Use only SEC EDGAR Archives HTML URLs accepted by the MCP schema.
 - Use `stockvaluation.extract_prospectus` for extraction and review metadata.
 - Stop at `prospectus_extraction_review_required`, show the compact review card, and ask the user to choose numbered option 1, 2, 3, or 4.
-- Call `stockvaluation.value_prospectus` only after `reviewStatus` is `reviewed`.
+- Call `stockvaluation.value_prospectus` only after `reviewStatus` is `reviewed`. Prefer `review_reference` from the extraction result plus `review_status = reviewed`; do not rebuild a compact packet from the review summary.
 - After `stockvaluation.value_prospectus`, continue into the normal researched workflow. Build and review evidence, run baseline plausibility, ask guided valuation refinement questions when material, and only then write the final educational report unless the user explicitly requested a bypass.
+- After guided answers or accepted defaults, call `stockvaluation.apply_guided_answers` when available. If it returns supported prospectus scenario inputs, call `stockvaluation.value_prospectus` again with the reviewed packet and `prospectusScenarioCandidate.scenario` before the final report. If it returns `candidate_values_required`, resolve those candidate values or mark that no user-refined scenario was calculated.
 - Label provenance as `primary_filing` / `sec-edgar-prospectus` when returned.
 - Label the price basis as `offering_price` in the report snapshot and source summary.
 - Keep unsupported accounting and capital-claim topics report-only unless the service returns a governed path.
@@ -95,6 +98,7 @@ If the user chooses 2 or 3 without details, ask one short follow-up for the corr
 
 - Do not paste raw HTML into MCP arguments.
 - Do not call `stockvaluation.value_prospectus` on a packet with `reviewStatus = review_required`, missing, or any value other than `reviewed`.
+- Do not reconstruct the prospectus packet by hand when `prospectus.reviewReference` is available. Hand reconstruction often drops cash, debt, book equity, cash-flow, or segment-candidate snapshots.
 - Do not use `stockvaluation.value_ticker`, Yahoo Finance, yfinance, market-data revenue estimates, or a trading market price for the prospectus path unless the user explicitly leaves prospectus mode.
 - Do not infer missing units, table scale, pro forma share basis, or offering terms when the extracted packet flags ambiguity.
 - Do not convert `offering_price` into recommendation language such as buy, sell, hold, target price, or should invest.

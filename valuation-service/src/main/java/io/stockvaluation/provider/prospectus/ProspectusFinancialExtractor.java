@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -31,6 +32,19 @@ public class ProspectusFinancialExtractor {
     private static final Pattern SEC_ARCHIVE_URL_PATTERN = Pattern.compile("/data/([0-9]{1,10})/([0-9]{18})/");
     private static final Pattern NUMBER_TOKEN_PATTERN = Pattern.compile("([0-9][0-9,]*(?:\\.[0-9]+)?)");
     private static final Pattern OFFERING_PRICE_PATTERN = Pattern.compile("offering price[^$]{0,80}\\$\\s*([0-9,.]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern NET_PROCEEDS_AMOUNT_FIRST_PATTERN = Pattern.compile("\\$\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)\\s*(billion|million|thousand)?\\s+of\\s+net\\s+proceeds\\s+from\\s+this\\s+offering", Pattern.CASE_INSENSITIVE);
+    private static final Pattern NET_PROCEEDS_LABEL_FIRST_PATTERN = Pattern.compile("\\bnet\\s+proceeds\\b.{0,180}?\\$\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)\\s*(billion|million|thousand)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern INCORPORATION_JURISDICTION_PATTERN = Pattern.compile("\\b([A-Z][A-Za-z .'-]{1,40})\\s+(?:[0-9][0-9A-Za-z.-]*\\s+){0,4}\\(\\s*State or other jurisdiction of incorporation or organization\\s*\\)", Pattern.CASE_INSENSITIVE);
+    private static final Set<String> US_STATE_JURISDICTIONS = Set.of(
+            "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
+            "connecticut", "delaware", "district of columbia", "florida", "georgia",
+            "hawaii", "idaho", "illinois", "indiana", "iowa", "kansas", "kentucky",
+            "louisiana", "maine", "maryland", "massachusetts", "michigan", "minnesota",
+            "mississippi", "missouri", "montana", "nebraska", "nevada", "new hampshire",
+            "new jersey", "new mexico", "new york", "north carolina", "north dakota",
+            "ohio", "oklahoma", "oregon", "pennsylvania", "rhode island",
+            "south carolina", "south dakota", "tennessee", "texas", "utah", "vermont",
+            "virginia", "washington", "west virginia", "wisconsin", "wyoming");
     private static final DateTimeFormatter SEC_TEXT_DATE = new DateTimeFormatterBuilder()
             .parseCaseInsensitive()
             .appendPattern("MMMM d, yyyy")
@@ -53,7 +67,7 @@ public class ProspectusFinancialExtractor {
         packet.setCompany(new ProspectusCompanyIdentity(
                 legalName(parsed),
                 null,
-                null,
+                countryOfIncorporation(text),
                 documentCurrency(tableSet),
                 null));
         String form = form(text, parsed.title());
@@ -266,7 +280,48 @@ public class ProspectusFinancialExtractor {
         Double offeringPrice = parseFirstNumber(OFFERING_PRICE_PATTERN, text);
         offering.setOfferingPrice(offeringPrice);
         offering.setOfferingPriceBasis(offeringPrice == null ? null : "offering_price");
+        Double netProceeds = netProceedsFromText(text);
+        if (netProceeds != null && netProceeds > 0.0) {
+            offering.setNetProceeds(netProceeds);
+            offering.setProceedsBasis("net_proceeds_disclosed");
+        }
         return offering;
+    }
+
+    private static Double netProceedsFromText(String text) {
+        Double amountFirst = parseScaledCurrency(NET_PROCEEDS_AMOUNT_FIRST_PATTERN, text);
+        return amountFirst == null ? parseScaledCurrency(NET_PROCEEDS_LABEL_FIRST_PATTERN, text) : amountFirst;
+    }
+
+    private static Double parseScaledCurrency(Pattern pattern, String text) {
+        Matcher matcher = pattern.matcher(text == null ? "" : text);
+        if (!matcher.find()) {
+            return null;
+        }
+        Double amount = ProspectusTableExtractor.parseNumber(matcher.group(1));
+        if (amount == null) {
+            return null;
+        }
+        String scale = matcher.group(2);
+        return amount * ProspectusTableExtractor.scaleMultiplier(scale == null ? null : scale + "s");
+    }
+
+    private static String countryOfIncorporation(String text) {
+        Matcher matcher = INCORPORATION_JURISDICTION_PATTERN.matcher(text == null ? "" : text);
+        while (matcher.find()) {
+            String jurisdiction = ProspectusTableExtractor.clean(matcher.group(1)).replaceAll("\\.$", "");
+            String lower = jurisdiction.toLowerCase(Locale.ROOT);
+            if (US_STATE_JURISDICTIONS.contains(lower)
+                    || "united states".equals(lower)
+                    || "u.s.".equals(lower)
+                    || "usa".equals(lower)) {
+                return "United States";
+            }
+            if (US_STATE_JURISDICTIONS.stream().anyMatch(state -> lower.endsWith(" " + state))) {
+                return "United States";
+            }
+        }
+        return null;
     }
 
     private static String incomeField(String label) {

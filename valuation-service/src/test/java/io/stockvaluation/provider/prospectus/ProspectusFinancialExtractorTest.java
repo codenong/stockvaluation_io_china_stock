@@ -170,6 +170,34 @@ class ProspectusFinancialExtractorTest {
         assertEquals("net_proceeds_disclosed", packet.getOffering().getProceedsBasis());
     }
 
+    @Test
+    void extractsCoverPageCountryAndProseNetProceeds() {
+        String html = """
+                <!doctype html>
+                <html>
+                <head><title>Space Exploration Technologies - S-1/A</title></head>
+                <body>
+                <div>S-1/A 1 example.htm S-1/A Space Exploration Technologies - S-1/A</div>
+                <h1>Space Exploration Technologies Corp.</h1>
+                <p>Texas 7370 01-0627671 (State or other jurisdiction of incorporation or organization)</p>
+                <p>As filed with the U.S. Securities and Exchange Commission on June 3, 2026</p>
+                <p>Assuming an initial public offering price of $135.00 per share, we expect to receive approximately $74.4 billion of net proceeds from this offering (or $85.7 billion if the underwriters exercise their option to purchase additional shares in full).</p>
+                </body>
+                </html>
+                """;
+        ProspectusDocument document = new ProspectusDocument(
+                "https://www.sec.gov/Archives/edgar/data/1181412/000162828026040364/spaceexplorationtechnologib.htm",
+                html);
+        ProspectusRawTableSet tableSet = new ProspectusTableExtractor().extract(html);
+
+        ProspectusFinancialPacket packet = new ProspectusFinancialExtractor().extract(document, tableSet);
+
+        assertEquals("United States", packet.getCompany().getCountryOfIncorporation());
+        assertEquals(135.0, packet.getOffering().getOfferingPrice());
+        assertEquals(74_400_000_000.0, packet.getOffering().getNetProceeds());
+        assertEquals("net_proceeds_disclosed", packet.getOffering().getProceedsBasis());
+    }
+
     private static void assertFact(
             ProspectusFinancialPacket packet,
             String canonicalField,

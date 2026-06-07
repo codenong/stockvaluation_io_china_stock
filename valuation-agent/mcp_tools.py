@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import math
 import re
@@ -14,7 +16,7 @@ from .accounting_and_claims import (
     validate_accounting_override,
 )
 from .evidence_packet import validate_evidence_packet
-from .guided_question_planner import build_guided_question_plan
+from .guided_question_planner import build_guided_question_plan, build_user_judgment_package
 from .security import sanitize_for_agent
 from .segment_discovery import parse_revenue_weight, sanitize_segment_package
 from .segment_economics import validate_segment_economics
@@ -94,6 +96,7 @@ RECALCULATE_METADATA_FIELDS = {
 }
 AUTONOMOUS_RESEARCHED_FIELDS = {"revenue_growth", "operating_margin", "sales_to_capital", "segments", "sector_overrides"}
 USER_REFINED_SCENARIO_FIELDS = {
+    "net_proceeds",
     "revenue_growth",
     "operating_margin_next_year",
     "operating_margin",
@@ -211,6 +214,35 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": "Public equity ticker symbol, e.g. MSFT. No company names or shell syntax.",
         }
     }
+    prospectus_value_input_schema = _object_schema(
+        {
+            "packet": {
+                "type": "object",
+                "description": "A ProspectusFinancialPacket returned by stockvaluation.extract_prospectus after user review. Prefer review_reference when no packet correction is needed.",
+                "additionalProperties": True,
+            },
+            "review_reference": {
+                "type": "string",
+                "description": "Preferred after approval: prospectus.reviewReference returned by stockvaluation.extract_prospectus. Also pass review_status=reviewed.",
+            },
+            "review_status": {
+                "type": "string",
+                "enum": ["reviewed"],
+                "description": "Required when using review_reference. Set to reviewed only after the prospectus extraction packet has been approved or corrected.",
+            },
+            "packet_overrides": {
+                "type": "object",
+                "description": "Optional source-backed corrections to merge into the cached packet when using review_reference.",
+                "additionalProperties": True,
+            },
+            "scenario": {
+                "type": "object",
+                "description": "Optional explicit prospectus scenario assumptions: segment revenue paths, target margins, sales-to-capital, R&D capitalization, net proceeds, terminal growth, terminal cost of capital, and terminal return on capital.",
+                "additionalProperties": True,
+            },
+        },
+        [],
+    )
     return [
         {
             "name": "stockvaluation.health",
@@ -264,22 +296,8 @@ def tool_definitions() -> list[dict[str, Any]]:
         {
             "name": "stockvaluation.value_prospectus",
             "title": "Value Prospectus",
-            "description": "Run a local educational valuation from a user-reviewed ProspectusFinancialPacket.",
-            "inputSchema": _object_schema(
-                {
-                    "packet": {
-                        "type": "object",
-                        "description": "A ProspectusFinancialPacket returned by stockvaluation.extract_prospectus after user review.",
-                        "additionalProperties": True,
-                    },
-                    "scenario": {
-                        "type": "object",
-                        "description": "Optional explicit prospectus scenario assumptions: segment revenue paths, target margins, sales-to-capital, R&D capitalization, net proceeds, terminal growth, terminal cost of capital, and terminal return on capital.",
-                        "additionalProperties": True,
-                    },
-                },
-                ["packet"],
-            ),
+            "description": "Run a local educational valuation from a user-reviewed ProspectusFinancialPacket. Prefer review_reference from stockvaluation.extract_prospectus after review to avoid copying a large packet by hand.",
+            "inputSchema": prospectus_value_input_schema,
             "outputSchema": _output_schema(),
             "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
         },
@@ -306,6 +324,32 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "deep_mode": {"type": "boolean"},
                     "max_visible_questions": {"type": "integer", "minimum": 0, "maximum": 15},
                 }
+            ),
+            "outputSchema": _output_schema(),
+            "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+        },
+        {
+            "name": "stockvaluation.apply_guided_answers",
+            "title": "Apply Guided Answers",
+            "description": "Convert selected guided-question choices into user_judgment metadata and governed scenario-input candidates.",
+            "inputSchema": _object_schema(
+                {
+                    "guided_question_plan": {
+                        "type": "object",
+                        "description": "The guidedQuestionPlan returned by stockvaluation.plan_guided_questions.",
+                        "additionalProperties": True,
+                    },
+                    "answers": {
+                        "type": "object",
+                        "description": "Map of question id to selected choice label, such as A, B, C, D, or default.",
+                        "additionalProperties": True,
+                    },
+                    "use_defaults": {
+                        "type": "boolean",
+                        "description": "When true, accept default choices for unanswered questions.",
+                    },
+                },
+                ["guided_question_plan"],
             ),
             "outputSchema": _output_schema(),
             "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
@@ -375,6 +419,7 @@ class MCPToolRegistry:
 
     def __init__(self, service_client: Any | None = None):
         self.service_client = service_client or ValuationServiceClient()
+        self._prospectus_packet_cache: dict[str, dict[str, Any]] = {}
         self._handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
             "stockvaluation.health": self._health,
             "stockvaluation.value_ticker": self._value_ticker,
@@ -382,6 +427,7 @@ class MCPToolRegistry:
             "stockvaluation.extract_prospectus": self._extract_prospectus,
             "stockvaluation.value_prospectus": self._value_prospectus,
             "stockvaluation.plan_guided_questions": self._plan_guided_questions,
+            "stockvaluation.apply_guided_answers": self._apply_guided_answers,
             "stockvaluation.recalculate": self._recalculate,
             "stockvaluation.get_assumptions": self._get_assumptions,
             "stockvaluation.get_growth_anchor": self._get_growth_anchor,
@@ -457,18 +503,24 @@ class MCPToolRegistry:
         expected_symbol = _string_or_none(args.get("expected_symbol") or args.get("expectedSymbol"))
         try:
             result = self.service_client.extract_prospectus(filing_url, expected_company, expected_symbol)
-            return prospectus_extraction_success_payload(tool, result)
+            packet = _dict(result.get("packet"))
+            review_reference = prospectus_review_token(packet)
+            if review_reference:
+                self._prospectus_packet_cache[review_reference] = copy.deepcopy(packet)
+            return prospectus_extraction_success_payload(tool, result, review_reference=review_reference)
         except ValuationServiceError as exc:
             return service_exception_payload(tool, exc)
 
     def _value_prospectus(self, args: dict[str, Any]) -> dict[str, Any]:
         tool = "stockvaluation.value_prospectus"
-        packet = args.get("packet")
+        packet, packet_error = self._prospectus_packet_from_args(args)
+        if packet_error is not None:
+            return packet_error
         if not isinstance(packet, dict):
             return error_payload(
                 tool,
                 "INVALID_PROSPECTUS_PACKET",
-                "packet must be a ProspectusFinancialPacket object returned by stockvaluation.extract_prospectus.",
+                "packet must be a ProspectusFinancialPacket returned by stockvaluation.extract_prospectus, or use review_reference with review_status=reviewed.",
                 "prospectus_review_required",
             )
         review_status = prospectus_review_status(packet)
@@ -494,6 +546,54 @@ class MCPToolRegistry:
         except ValuationServiceError as exc:
             return service_exception_payload(tool, exc)
 
+    def _prospectus_packet_from_args(self, args: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        tool = "stockvaluation.value_prospectus"
+        review_reference = _string_or_none(
+            args.get("review_reference")
+            or args.get("reviewReference")
+            or args.get("prospectusReviewReference")
+            or args.get("review_token")
+            or args.get("reviewToken")
+            or args.get("prospectusReviewToken")
+        )
+        packet_arg = args.get("packet")
+        if review_reference:
+            review_status = _string_or_none(args.get("review_status") or args.get("reviewStatus"))
+            if review_status != "reviewed":
+                return None, error_payload(
+                    tool,
+                    "PROSPECTUS_REVIEW_REQUIRED",
+                    "review_status must be reviewed when using review_reference.",
+                    "prospectus_review_required",
+                    extra={"prospectus": {"reviewReference": review_reference, "reviewStatus": review_status or "missing"}},
+                )
+            cached_packet = self._prospectus_packet_cache.get(review_reference)
+            if cached_packet is None:
+                return None, error_payload(
+                    tool,
+                    "UNKNOWN_PROSPECTUS_REVIEW_TOKEN",
+                    "review_reference was not found in this MCP session. Call stockvaluation.extract_prospectus again, then approve and retry.",
+                    "prospectus_review_required",
+                    extra={"prospectus": {"reviewReference": review_reference}},
+                )
+            packet = copy.deepcopy(cached_packet)
+            overrides = args.get("packet_overrides") or args.get("packetOverrides") or args.get("packet_corrections")
+            if overrides is not None:
+                if not isinstance(overrides, dict):
+                    return None, error_payload(
+                        tool,
+                        "INVALID_PROSPECTUS_PACKET_OVERRIDES",
+                        "packet_overrides must be an object when supplied.",
+                        "invalid_prospectus_packet",
+                    )
+                packet = deep_merge_dict(packet, overrides)
+            packet["reviewStatus"] = "reviewed"
+            return packet, None
+        packet = unwrap_prospectus_packet(packet_arg)
+        if isinstance(packet, dict):
+            return copy.deepcopy(packet), None
+        return None, None
+
     def _plan_guided_questions(self, args: dict[str, Any]) -> dict[str, Any]:
         tool = "stockvaluation.plan_guided_questions"
         plan = build_guided_question_plan(args)
@@ -501,6 +601,36 @@ class MCPToolRegistry:
             "ok": True,
             "tool": tool,
             "guidedQuestionPlan": plan,
+            "policy": policy_metadata(),
+        }
+
+    def _apply_guided_answers(self, args: dict[str, Any]) -> dict[str, Any]:
+        tool = "stockvaluation.apply_guided_answers"
+        plan = args.get("guided_question_plan") or args.get("guidedQuestionPlan")
+        if not isinstance(plan, dict):
+            return error_payload(
+                tool,
+                "INVALID_GUIDED_QUESTION_PLAN",
+                "guided_question_plan must be the guidedQuestionPlan object returned by stockvaluation.plan_guided_questions.",
+                "invalid_guided_question_plan",
+            )
+        answers = args.get("answers")
+        if answers is not None and not isinstance(answers, (dict, list)):
+            return error_payload(
+                tool,
+                "INVALID_GUIDED_ANSWERS",
+                "answers must be an object mapping question ids to selected choices, or a list of answer records.",
+                "invalid_guided_answers",
+            )
+        use_defaults = bool(args.get("use_defaults") or args.get("useDefaults"))
+        judgment = build_user_judgment_package(plan, answers, use_defaults=use_defaults)
+        return {
+            "ok": True,
+            "tool": tool,
+            "userJudgment": judgment,
+            "tickerOverridesCandidate": guided_ticker_overrides_candidate(judgment),
+            "prospectusScenarioCandidate": guided_prospectus_scenario_candidate(judgment),
+            "scenarioRange": sanitize_for_agent(plan.get("scenario_range") or {}),
             "policy": policy_metadata(),
         }
 
@@ -686,6 +816,98 @@ def normalize_prospectus_url(raw: Any) -> tuple[str, str | None]:
 def prospectus_review_status(packet: dict[str, Any]) -> str | None:
     value = _string_or_none(packet.get("reviewStatus")) or _string_or_none(packet.get("review_status"))
     return value.lower() if value else None
+
+
+def guided_ticker_overrides_candidate(judgment: dict[str, Any]) -> dict[str, Any]:
+    mapped = _dict(judgment.get("mapped_assumptions"))
+    if not mapped:
+        if _string_or_none(judgment.get("scenario_status")) == "candidate_values_required":
+            return {
+                "supported": False,
+                "overrides": {},
+                "reason": "Guided answers require numeric candidate values before governed ticker recalculation.",
+                "candidateRequirements": sanitize_for_agent(judgment.get("candidate_requirements") or []),
+            }
+        return {
+            "supported": False,
+            "overrides": {},
+            "reason": "No guided answers mapped to governed ticker recalculation inputs.",
+        }
+    overrides = {
+        **mapped,
+        "request_policy": {"mode": "user_refined_scenario"},
+        "user_judgment": judgment,
+    }
+    return {"supported": True, "overrides": sanitize_for_agent(overrides)}
+
+
+def guided_prospectus_scenario_candidate(judgment: dict[str, Any]) -> dict[str, Any]:
+    mapped = _dict(judgment.get("mapped_assumptions"))
+    scenario: dict[str, Any] = {}
+    unsupported: dict[str, Any] = {}
+
+    for key, value in mapped.items():
+        if key == "net_proceeds":
+            _put_numeric_prospectus_scenario_value(scenario, unsupported, key, "net_proceeds", value)
+        elif key == "revenue_growth":
+            _put_numeric_prospectus_scenario_value(scenario, unsupported, key, "compound_annual_growth_2_5", value)
+        elif key == "operating_margin_next_year":
+            _put_numeric_prospectus_scenario_value(scenario, unsupported, key, "operating_margin_next_year", value)
+        elif key in {"operating_margin", "target_operating_margin", "target_pre_tax_operating_margin"}:
+            _put_numeric_prospectus_scenario_value(scenario, unsupported, key, "target_operating_margin", value)
+        elif key in {"margin_convergence_year", "convergence_year_margin"}:
+            _put_numeric_prospectus_scenario_value(scenario, unsupported, key, "margin_convergence_year", value)
+        elif key == "sales_to_capital":
+            if _put_numeric_prospectus_scenario_value(
+                scenario, unsupported, key, "sales_to_capital_years_1_to_5", value
+            ):
+                scenario["sales_to_capital_years_6_to_10"] = scenario["sales_to_capital_years_1_to_5"]
+        elif key == "sales_to_capital_years_1_to_5":
+            _put_numeric_prospectus_scenario_value(scenario, unsupported, key, "sales_to_capital_years_1_to_5", value)
+        elif key == "sales_to_capital_years_6_to_10":
+            _put_numeric_prospectus_scenario_value(scenario, unsupported, key, "sales_to_capital_years_6_to_10", value)
+        elif key == "segments":
+            scenario["segments"] = value
+        else:
+            unsupported[key] = {
+                "value": sanitize_for_agent(value),
+                "reason": "not_a_direct_prospectus_scenario_field",
+            }
+
+    if scenario:
+        scenario = {"scenario_name": "guided_user_refined_scenario", **scenario}
+    if not scenario and _string_or_none(judgment.get("scenario_status")) == "candidate_values_required":
+        return {
+            "supported": False,
+            "scenario": {},
+            "unsupportedMappedAssumptions": unsupported,
+            "reason": "Guided answers require numeric candidate values before deterministic prospectus scenario inputs can be built.",
+            "candidateRequirements": sanitize_for_agent(judgment.get("candidate_requirements") or []),
+        }
+    return {
+        "supported": bool(scenario),
+        "scenario": sanitize_for_agent(scenario),
+        "unsupportedMappedAssumptions": unsupported,
+        "reason": None if scenario else "No guided answers mapped to deterministic prospectus scenario inputs.",
+    }
+
+
+def _put_numeric_prospectus_scenario_value(
+    scenario: dict[str, Any],
+    unsupported: dict[str, Any],
+    source_key: str,
+    target_key: str,
+    value: Any,
+) -> bool:
+    number = _number_or_none(value)
+    if number is None:
+        unsupported[source_key] = {
+            "value": sanitize_for_agent(value),
+            "reason": "prospectus_scenario_field_requires_numeric_value",
+        }
+        return False
+    scenario[target_key] = number
+    return True
 
 
 def map_recalculate_overrides(requested: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
@@ -1324,7 +1546,9 @@ def valuation_success_payload(
     }
 
 
-def prospectus_extraction_success_payload(tool: str, result: dict[str, Any]) -> dict[str, Any]:
+def prospectus_extraction_success_payload(
+    tool: str, result: dict[str, Any], review_reference: str | None = None
+) -> dict[str, Any]:
     packet = _dict(result.get("packet"))
     return {
         "ok": True,
@@ -1332,6 +1556,7 @@ def prospectus_extraction_success_payload(tool: str, result: dict[str, Any]) -> 
         "prospectus": {
             "status": _string_or_none(result.get("status")) or "requires_review",
             "reviewStatus": _string_or_none(packet.get("reviewStatus")) or _string_or_none(packet.get("review_status")),
+            "reviewReference": review_reference,
             "company": sanitize_for_agent(_dict(packet.get("company"))),
             "filing": sanitize_for_agent(_dict(packet.get("filing"))),
             "sourceUrl": _string_or_none(packet.get("sourceUrl")) or _string_or_none(packet.get("source_url")),
@@ -1342,6 +1567,47 @@ def prospectus_extraction_success_payload(tool: str, result: dict[str, Any]) -> 
         "version": {"mcp": mcp_metadata()},
         "policy": policy_metadata("prospectus_extraction"),
     }
+
+
+def prospectus_review_token(packet: dict[str, Any]) -> str | None:
+    if not packet:
+        return None
+    source_url = _string_or_none(packet.get("sourceUrl") or packet.get("source_url"))
+    filing = _dict(packet.get("filing"))
+    company = _dict(packet.get("company"))
+    basis = {
+        "sourceUrl": source_url,
+        "accessionNumber": filing.get("accessionNumber") or filing.get("accession_number"),
+        "filingDate": filing.get("filingDate") or filing.get("filing_date"),
+        "legalName": company.get("legalName") or company.get("legal_name") or company.get("name"),
+    }
+    raw = json.dumps(basis, sort_keys=True, default=str)
+    return "prospectus_" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def unwrap_prospectus_packet(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    prospectus = value.get("prospectus")
+    if isinstance(prospectus, dict) and isinstance(prospectus.get("packet"), dict):
+        return prospectus["packet"]
+    nested_packet = value.get("packet")
+    if isinstance(nested_packet, dict) and (
+        nested_packet.get("schemaVersion") == "prospectus_financial_packet.v1"
+        or nested_packet.get("schema_version") == "prospectus_financial_packet.v1"
+    ):
+        return nested_packet
+    return value
+
+
+def deep_merge_dict(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
+    merged = copy.deepcopy(base)
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = deep_merge_dict(merged[key], value)
+        else:
+            merged[key] = copy.deepcopy(value)
+    return merged
 
 
 def prospectus_valuation_success_payload(tool: str, result: dict[str, Any]) -> dict[str, Any]:
