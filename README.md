@@ -8,7 +8,7 @@ Your agent can research a company, gather evidence, ask valuation questions, and
 
 ## Demo
 
-[![StockValuation.io Codex Valuation Demo](docs/media/googl-codex-valuation-demo-preview.gif)](docs/media/googl-codex-valuation-demo.mp4)
+[Watch the full MP4 demo](docs/media/googl-codex-valuation-demo.mp4)
 
 The demo shows Codex CLI using the local StockValuation.io prospectus workflow for SpaceX. Codex reviews extracted filing evidence, asks guided valuation questions, and produces an educational valuation view.
 
