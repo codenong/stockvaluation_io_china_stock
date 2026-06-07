@@ -1,67 +1,55 @@
 # StockValuation.io
 
-A local-first AI valuation workflow for people who want help thinking through a business, not a black-box stock pick.
+StockValuation.io gives Codex and Claude a local valuation workflow.
 
-StockValuation.io grew out of my own practice with Damodaran-style valuation. I wanted to take the structured way valuation connects story, assumptions, and numbers, and adapt it to an AI-assisted workflow where research can be accelerated but the math remains deterministic and auditable.
+Your agent can research a company, gather evidence, ask valuation questions, and write an educational report. The local service runs the DCF math and returns auditable numbers.
 
 > Educational use only. This is not financial advice.
 
-## Demo video
+## Demo
 
 [![GOOGL Codex Valuation Demo](docs/media/googl-codex-valuation-demo-preview.gif)](docs/media/googl-codex-valuation-demo.mp4)
 
-Codex CLI run valuing GOOGL with the local StockValuation.io workflow and guided default answers.
+The demo shows Codex CLI valuing GOOGL with the local StockValuation.io workflow and guided default answers.
 
-In practice, this repo installs a `stockvaluation.io` skill for Codex and Claude, exposes local valuation tools, and runs a local valuation service stack. The agent researches, explains, critiques, and asks questions. The local tools calculate. The user owns the final judgment.
+## Why this exists
 
-## Why I built this
+I built this because I wanted an AI workflow that respects valuation discipline.
 
-I have been practicing Damodaran-style valuation for a while, and the part I enjoy most is not the final "fair value" number. It is the discipline of the process.
+In a Damodaran-style valuation, the final value matters less than the chain from business story to assumptions to cash flows. If growth goes up, the model should show the revenue path. If margins expand, the report should explain why. If reinvestment falls, the user should see the capital-efficiency claim behind it.
 
-A good valuation forces me to slow down and ask better questions:
+An agent can help with reading filings, comparing sources, summarizing a business, and pressure-testing a story. It should not invent hidden numbers or hand-calculate a fair value.
 
-What kind of business is this?
-Where does growth actually come from?
-What margins are realistic?
-How much reinvestment does the company need?
-What risks deserve to be priced in?
-Which assumptions would completely change the conclusion?
-
-That structure is what I wanted to bring into an AI workflow.
-
-Earlier versions of this project did not always make that distinction clearly enough. The point is not the number by itself; it is the process that lets someone inspect why the number moved.
-
-I do not want an AI agent to secretly invent numbers and hand me a confident stock recommendation. I want the agent to help with research, evidence, explanation, and critique, while the actual valuation math stays deterministic, local, and auditable.
-
-StockValuation.io is my attempt to turn the valuation process I wanted for myself into a tool others can inspect, run, challenge, and improve.
+StockValuation.io keeps those jobs separate. The agent handles research and explanation. The local tools handle valuation math. You inspect the assumptions and decide which scenario deserves trust.
 
 ## The problem
 
-DCF is not hard because the formula is mysterious. It is hard because the assumptions are judgment-heavy.
+DCF valuation looks simple on paper. The hard part sits in the inputs:
 
-Growth, margins, reinvestment, risk, and terminal value all require a view of the business. Small changes can move the result meaningfully. If those assumptions are hidden, the valuation becomes difficult to trust.
+- revenue growth
+- operating margin
+- reinvestment
+- risk
+- terminal value
+- capital structure
 
-Many valuation tools hide assumptions. Many AI tools blend research, judgment, and math into one confident answer. That makes it too easy to confuse a generated valuation with investment advice.
+Small input changes can move the valuation a lot. When a tool hides those assumptions, you cannot tell whether the output came from evidence, judgment, or a model shortcut.
 
-LLMs can help with reading, summarizing, comparing, source gathering, and explanation. They are dangerous when they invent numbers or perform hidden valuation math.
+StockValuation.io makes the assumptions visible. It asks guided questions for the material drivers, recalculates scenarios through the local service, and marks weak valuation cases instead of pretending they are ready.
 
-StockValuation.io is built around a simple idea: let the agent help with research and narrative, but make the valuation math explicit, deterministic, and recalculable. The goal is to connect the business story to the numbers in a way that can be audited.
+## How the workflow splits responsibility
 
-## The core idea: separate the brain from the calculator
+Your agent handles:
 
-There are three roles in the workflow.
-
-The user agent handles:
-
-- research
+- company research
+- filing review
 - evidence gathering
-- business summary
-- segment discovery
-- assumption judgment
+- business and segment summary
 - guided valuation questions
+- scenario explanation
 - the final educational report
 
-The local tools and deterministic valuation service handle:
+The local valuation tools handle:
 
 - baseline valuation
 - DCF math
@@ -69,67 +57,76 @@ The local tools and deterministic valuation service handle:
 - growth anchors
 - reference-data status
 - effective assumptions
-- clear failure explanations
-- source and data-quality checks
+- source checks
+- data-quality warnings
+- clear failures
 
-The user:
+You handle:
 
-- challenges assumptions
-- answers guided valuation questions
-- decides which scenario is reasonable
-- owns the final judgment
+- assumption review
+- scenario selection
+- final judgment
 
-The LLM should not silently hand-calculate valuation outputs. Scenario math must come from the local valuation tools.
+The agent should call the local tools for valuation output. It should not hand-calculate valuation numbers.
 
 ## What you get
 
 - A `stockvaluation.io` skill for Codex and Claude.
-- Local valuation tools exposed to the user's agent.
-- Local Docker services for the valuation runtime.
+- Local MCP tools for valuation workflows.
+- Docker services for the valuation runtime.
 - Deterministic DCF math and scenario recalculation.
-- Structured assumptions, baseline value, growth anchors, reference-data status, and clear failures.
-- A researched workflow that stops for evidence review, then asks guided valuation questions before producing the final educational report.
-- A process designed to make assumptions visible and challengeable.
+- Baseline values, growth anchors, reference-data status, and effective assumptions.
+- A researched flow that pauses for evidence review.
+- Guided valuation questions before the final report.
+- Failure messages when the data cannot support a valuation.
 
-## What this is / what this is not
+## Use it for
 
-| This is | This is not |
-|---|---|
-| A local-first valuation workflow | Financial advice |
-| A way to audit DCF assumptions | A buy/sell/hold recommendation system |
-| A Damodaran-inspired narrative-and-numbers workflow | A guaranteed fair-value engine |
-| A tool for learning, research, and critique | A replacement for your judgment |
-| An agent toolchain for Codex / Claude-style agents | A black-box hosted stock-picking app |
-| A way to connect business story and valuation math | A promise that the output is correct |
-| A project you can inspect, run, break, and improve | A fully local LLM stack unless local provider support is explicitly added |
+- Learning valuation.
+- Reviewing DCF assumptions.
+- Connecting a business story to numbers.
+- Comparing valuation scenarios.
+- Running an inspectable local workflow with Codex or Claude.
+- Building and testing an agent-native valuation stack.
 
-## Why Damodaran-style?
+## Do not use it for
 
-The Damodaran-style approach appeals to me because it treats valuation as a bridge between story and numbers.
+- Financial advice.
+- Buy, sell, or hold recommendations.
+- Personalized investment decisions.
+- Guaranteed fair values.
+- A hosted stock-picking app.
+- A fully local LLM stack.
 
-A business story by itself can be too vague. A spreadsheet by itself can be too mechanical. A useful valuation forces the two to meet.
+This project does not know your goals, risk tolerance, portfolio, or financial situation.
 
-If the story says the company can grow quickly, the numbers should show what that means for revenue, margins, reinvestment, and risk. If the numbers imply unrealistic assumptions, the story has to be challenged.
+## Damodaran-style method
 
-The output is not "the truth." It is a structured argument that can be inspected and challenged. That is the kind of process I want AI to support.
+This project follows the Damodaran practice of tying story to numbers.
 
-This project is Damodaran-inspired. It is not affiliated with or endorsed by Aswath Damodaran.
+If the story says a company can grow fast, the numbers need to show revenue growth, margin progress, reinvestment needs, and risk. If the numbers imply an impossible story, the agent should challenge the assumptions.
 
-## How the valuation flow works
+The output is an argument you can inspect. It is not a claim that the market price is wrong.
 
-The default flow is not a one-shot report.
+Aswath Damodaran does not endorse this project, and I have no affiliation with him.
+
+## How a valuation run works
+
+The default flow uses questions. It does not produce a one-shot report unless you ask for that path.
 
 1. The agent checks that the local valuation tools are running.
-2. The agent builds a baseline from local deterministic output.
-3. The agent researches the company and gathers evidence for the key valuation drivers.
-4. The workflow pauses so you can review the evidence before assumptions are refined.
-5. The agent asks guided valuation questions, recalculates scenarios through the local tools, and writes the final educational report.
+2. The agent gets a deterministic baseline from the local service.
+3. The agent researches the company and gathers evidence for the main valuation drivers.
+4. The agent pauses so you can review the evidence.
+5. The agent asks guided valuation questions.
+6. The local service recalculates scenarios.
+7. The agent writes the final educational report.
 
-Use a quick or no-questions path only when the user explicitly asks for it.
+Ask for a quick run only when you want to skip the evidence and question loop.
 
 ## Quick start
 
-Docker Desktop or a compatible Docker Engine with Compose is required.
+You need Docker Desktop or a compatible Docker Engine with Compose.
 
 From a local checkout:
 
@@ -137,15 +134,15 @@ From a local checkout:
 ./install.sh setup
 ```
 
-Or run the installer directly from GitHub:
+Or run the installer from GitHub:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/stockvaluation-io/stockvaluation_io/main/install.sh | bash -s -- setup
 ```
 
-Setup installs or updates the skill and local tool config, starts the Docker services, and prints service status. By default it targets both Codex and Claude.
+Setup installs or updates the skill, configures the local tools, starts the Docker services, and prints service status. The installer targets Codex and Claude by default.
 
-The curl installer clones the repo to `~/.local/share/stockvaluation_io` by default, then runs setup from that checkout. Set `STOCKVALUATION_INSTALL_DIR=/path/to/dir` to use a different path.
+The curl installer clones the repo to `~/.local/share/stockvaluation_io` by default. Set `STOCKVALUATION_INSTALL_DIR=/path/to/dir` to choose another location.
 
 Useful commands:
 
@@ -160,7 +157,7 @@ The installer runs the local valuation stack through `docker-compose.local.yml`.
 
 ## Use it from Codex or Claude
 
-After setup, ask your agent for a valuation with the local workflow:
+After setup, ask your agent for a valuation:
 
 ```text
 Value MSFT using stockvaluation.io.
@@ -168,41 +165,57 @@ Value GOOGL using stockvaluation.io.
 Value META using stockvaluation.io.
 ```
 
-For the default researched flow, expect the agent to research, show you the evidence base, ask guided assumption questions, and then write the final report. The final report comes after those answers unless you explicitly ask for a quick or no-questions run.
+For the default researched flow, expect the agent to show evidence first, ask guided assumption questions, and write the report after you answer.
+
+## Prospectus valuations
+
+You can also ask for a valuation from an SEC prospectus filing:
+
+```text
+Use stockvaluation.io to value a company from this SEC prospectus: <SEC EDGAR HTML URL>
+```
+
+The workflow extracts filing facts, asks you to review the evidence, and then asks for the assumptions that drive the valuation. If the filing lacks enough support, the tool should return a clear warning or failure instead of a polished number.
 
 ## Local-first, not fully offline
 
-This repo currently targets Codex and Claude workflows.
+The valuation services and DCF math run on your machine.
 
-The valuation services and DCF math run on your machine. Market data, company filings, currency data, web research, and the model provider used by your agent may still be external. The repo does not provide a fully local LLM stack today.
+Some inputs still come from outside your machine:
+
+- market data
+- company filings
+- currency data
+- web research
+- the model provider used by your agent
+
+This repo does not ship a fully local LLM stack.
 
 For runtime, data-source, and tool details, see [Runtime and data details](docs/runtime-and-data-details.md).
 
 ## Limits
 
-- Data coverage depends on public filings, market data, and provider availability.
-- The workflow may use normalized fallback data when primary filing data is unavailable or unsupported.
-- Valuation can fail when upstream data is missing, stale, low quality, or not suitable for the model.
-- Historical coverage is limited.
-- Non-US, ADR, IFRS, and unusual filing cases may need extra source review or may be unsupported.
-- Financial-sector companies are not supported.
-- Unsupported companies should produce a clear failure, not a synthetic valuation.
-- Growth anchors and reference data are context for critique, not proof.
-- DCF outputs are sensitive to assumptions and should be challenged.
-- The tool does not know the user's financial situation, goals, risk tolerance, or portfolio.
-- The output is educational and should not be treated as a recommendation.
-
-A clear failure is better than a fake valuation.
-
-## Security and no-advice notes
-
-- Local defaults are for one developer machine.
-- Do not expose local services to the internet unless you know what you are doing.
-- Reports are educational only.
-- Do not use buy, sell, hold, target-price, or personalized recommendation language.
+- Public filings and market-data providers control data coverage.
+- The workflow may use normalized fallback data when primary filing data is missing or unsupported.
+- Valuation can fail when upstream data is missing, stale, low quality, or unsuitable for the model.
+- Historical coverage has gaps.
+- Non-US, ADR, IFRS, and unusual filing cases may need extra source review.
+- The service does not support financial-sector companies.
+- The service should return a clear failure for unsupported companies.
+- Growth anchors and reference data support critique. They do not prove the value.
+- DCF outputs move with assumptions.
 - Guided-question defaults are modeling defaults. They are not investment recommendations.
 
-## Citation / acknowledgments
+A clear failure beats a fake valuation.
+
+## Security and no-advice rules
+
+- Keep local services on your machine unless you know how to secure them.
+- Treat every report as educational material.
+- Avoid buy, sell, hold, target-price, and personalized recommendation language.
+- Review every material assumption before trusting a scenario.
+
+## Citation
 
 ```text
 @misc{stockvaluation_io,
@@ -214,7 +227,9 @@ A clear failure is better than a fake valuation.
 }
 ```
 
-Core methodology and reference data are inspired by Aswath Damodaran's public valuation resources:
+## Acknowledgments
+
+Core methodology and reference data draw on Aswath Damodaran's public valuation resources:
 
 - https://pages.stern.nyu.edu/~adamodar/New_Home_Page/data.html
 
