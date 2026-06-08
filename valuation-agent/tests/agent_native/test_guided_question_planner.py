@@ -989,6 +989,83 @@ def test_guided_defaults_map_prospectus_net_proceeds_to_scenario_candidate():
     assert structured["prospectusScenarioCandidate"]["scenario"]["net_proceeds"] == 85_700_000_000.0
 
 
+def test_spacex_style_prospectus_segments_map_to_scenario_segments_from_revenue_amounts():
+    class FakeClient:
+        calls = []
+
+    source_url = "https://www.sec.gov/Archives/edgar/data/1181412/000162828026040364/spaceexplorationtechnologib.htm"
+    plan = build_guided_question_plan(
+        {
+            "company": "Space Exploration Technologies Corp.",
+            "ticker": "SPCX",
+            "workflow_type": "prospectus",
+            "prospectus_recalculate_supported": True,
+            "segments": [
+                {
+                    "name": "Space",
+                    "revenue_2025": 4_086_000_000.0,
+                    "mappingConfidence": "medium",
+                    "candidate_mapping": "Aerospace/Defense or launch infrastructure",
+                    "source_url": source_url,
+                    "source_date": "2026-06-03",
+                },
+                {
+                    "name": "Connectivity",
+                    "revenue_2025": 11_387_000_000.0,
+                    "mappingConfidence": "medium",
+                    "candidate_mapping": "Telecom services / satellite broadband",
+                    "source_url": source_url,
+                    "source_date": "2026-06-03",
+                },
+                {
+                    "name": "AI",
+                    "revenue_2025": 3_201_000_000.0,
+                    "mappingConfidence": "high",
+                    "candidate_mapping": "AI infrastructure / cloud compute",
+                    "source_url": source_url,
+                    "source_date": "2026-06-03",
+                },
+            ],
+        }
+    )
+
+    segment_question = next(question for question in plan["questions"] if question["driver"] == "business_definition")
+    choices = {choice["label"]: choice for choice in segment_question["bounded_choices"]}
+    assert segment_question["status"] == "supported"
+    assert segment_question["hidden_model_mapping"]["supported_override_field"] == "segments"
+    assert choices["C"]["model_action"] == "user scenario override"
+
+    result = MCPToolRegistry(FakeClient()).call(
+        "stockvaluation.apply_guided_answers",
+        {
+            "guided_question_plan": plan,
+            "answers": {segment_question["id"]: "C"},
+        },
+    )
+
+    assert result["isError"] is False
+    structured = result["structuredContent"]
+    assert structured["userJudgment"]["mapped_assumptions"]["segments"] == [
+        {
+            "name": "Space",
+            "base_revenue": 4_086_000_000.0,
+            "mapped_industry": "Aerospace/Defense or launch infrastructure",
+        },
+        {
+            "name": "Connectivity",
+            "base_revenue": 11_387_000_000.0,
+            "mapped_industry": "Telecom services / satellite broadband",
+        },
+        {
+            "name": "AI",
+            "base_revenue": 3_201_000_000.0,
+            "mapped_industry": "AI infrastructure / cloud compute",
+        },
+    ]
+    assert structured["prospectusScenarioCandidate"]["supported"] is True
+    assert structured["prospectusScenarioCandidate"]["scenario"]["segments"] == structured["userJudgment"]["mapped_assumptions"]["segments"]
+
+
 def test_guided_answers_reject_object_candidate_for_numeric_prospectus_field():
     class FakeClient:
         calls = []

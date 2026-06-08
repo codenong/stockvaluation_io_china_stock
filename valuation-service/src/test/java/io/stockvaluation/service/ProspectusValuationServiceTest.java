@@ -511,6 +511,93 @@ class ProspectusValuationServiceTest {
     }
 
     @Test
+    void prospectusScenarioWithBaseOnlySegmentsKeepsGlobalGrowthPathAvailable() {
+        ProspectusCompanyDataAssembler assembler = mock(ProspectusCompanyDataAssembler.class);
+        CommonService commonService = mock(CommonService.class);
+        ValuationTemplateService templateService = mock(ValuationTemplateService.class);
+        ValuationOutputService outputService = mock(ValuationOutputService.class);
+        ProspectusValuationService service = new ProspectusValuationService(
+                new ProspectusPacketValidator(),
+                assembler,
+                commonService,
+                templateService,
+                outputService);
+        var packet = ProspectusTestPackets.spaceXSegmentMixPacket();
+        CompanyDataDTO companyData = companyData();
+        ValuationOutputDTO output = valuationOutput();
+        ProspectusScenario scenario = new ProspectusScenario(
+                "Base-only segments with global growth",
+                null,
+                null,
+                false,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                30.0,
+                null,
+                25.0,
+                null,
+                1.2,
+                1.2,
+                List.of(
+                        new ProspectusSegmentScenario(
+                                "Space",
+                                "prospectus-space",
+                                "Aerospace/Defense or launch infrastructure",
+                                4_086_000_000.0,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null),
+                        new ProspectusSegmentScenario(
+                                "Connectivity",
+                                "prospectus-connectivity",
+                                "Telecom services / satellite broadband",
+                                11_387_000_000.0,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null)));
+        when(assembler.assemble(packet)).thenReturn(companyData);
+        when(templateService.determineTemplate(any(), eq(companyData))).thenReturn(null);
+        when(outputService.getValuationOutput(eq("SPCX"), any(), eq(null))).thenAnswer(invocation -> {
+            SegmentWeightedParameters params = SegmentParameterContext.getParameters();
+            assertNotNull(params);
+            SegmentWeightedParameters.SectorParameters space = params.getSectorParameters("prospectus-space");
+            assertNotNull(space);
+            assertEquals(4_086_000_000.0, space.getBaseRevenue(), 0.001);
+            assertNull(space.getTargetRevenue());
+            assertNull(space.getProjectedRevenues());
+            assertEquals(30.0, space.getRevenueNextYear(), 0.0001);
+            assertEquals(30.0, space.getCompoundAnnualGrowth2_5(), 0.0001);
+            return output;
+        });
+
+        ProspectusValuationResult result = service.value(new ProspectusValuationRequest(packet, scenario));
+
+        assertEquals("valued", result.status());
+        verify(commonService, never()).applySegmentWeightedParameters(any(), any(), anyList());
+    }
+
+    @Test
     void prospectusScenarioDefaultsTerminalGrowthToNormalizedRiskFreeRate() {
         ProspectusCompanyDataAssembler assembler = mock(ProspectusCompanyDataAssembler.class);
         CommonService commonService = mock(CommonService.class);

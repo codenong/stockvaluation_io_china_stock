@@ -251,6 +251,7 @@ public class ProspectusValuationService {
             String industry = defaultString(segment.mappedIndustry(), name);
             Double baseRevenue = scenarioBaseRevenue(segment, packet);
             Double terminalRevenue = scenarioTerminalRevenue(segment, packet);
+            Double explicitTargetRevenue = scenarioExplicitTargetRevenue(segment);
             double weight = scenarioSegmentWeight(
                     baseRevenue,
                     terminalRevenue,
@@ -270,14 +271,15 @@ public class ProspectusValuationService {
             sectorParams.setSectorName(sectorKey);
             sectorParams.setRevenueShare(round6(weight));
             sectorParams.setBaseRevenue(valueOrDefault(baseRevenue, 0.0));
-            sectorParams.setTargetRevenue(terminalRevenue);
+            sectorParams.setTargetRevenue(explicitTargetRevenue);
             sectorParams.setProjectedRevenues(segment.projectedRevenuesOrEmpty().isEmpty()
                     ? null
                     : new ArrayList<>(segment.projectedRevenuesOrEmpty()));
             sectorParams.setRevenueNextYear(percentAssumption(firstPresent(
                     segment.revenueNextYear(),
                     revenueGrowthFromProjection(segment, baseRevenue, 1),
-                    scenario.revenueNextYear())));
+                    scenario.revenueNextYear(),
+                    scenario.compoundAnnualGrowth2_5())));
             sectorParams.setCompoundAnnualGrowth2_5(percentAssumption(firstPresent(
                     segment.compoundAnnualGrowth2_5(),
                     revenueCagrFromProjection(segment, 1, 5),
@@ -466,6 +468,17 @@ public class ProspectusValuationService {
         if (segment == null) {
             return null;
         }
+        Double explicitTargetRevenue = scenarioExplicitTargetRevenue(segment);
+        if (explicitTargetRevenue != null) {
+            return explicitTargetRevenue;
+        }
+        return scenarioBaseRevenue(segment, packet);
+    }
+
+    private static Double scenarioExplicitTargetRevenue(ProspectusSegmentScenario segment) {
+        if (segment == null) {
+            return null;
+        }
         if (segment.targetRevenue() != null && Double.isFinite(segment.targetRevenue())) {
             return segment.targetRevenue();
         }
@@ -476,7 +489,7 @@ public class ProspectusValuationService {
                 return value;
             }
         }
-        return scenarioBaseRevenue(segment, packet);
+        return null;
     }
 
     private static double scenarioSegmentWeight(

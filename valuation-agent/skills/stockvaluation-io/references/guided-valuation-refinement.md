@@ -42,6 +42,8 @@ The planner input should stay compact:
 - market-implied diagnostics,
 - whether prospectus recalculation is supported.
 
+For prospectus segment evidence, pass each material segment in the planner `segments` array with `name`, either `revenue_weight`/`revenueShare` or `revenue_amount`/`revenue_2025`, and any reviewed `sector_key`, `mapped_industry`, or `candidate_mapping`. If revenue amounts are disclosed but weights are not, pass the amounts. The planner can build `prospectusScenarioCandidate.scenario.segments` from those compact rows after the user accepts the segment question. Do not pass only a prose note that "segment mapping is missing"; that makes the segment question report-only.
+
 Every compact evidence item sent to the planner must include:
 
 ```json

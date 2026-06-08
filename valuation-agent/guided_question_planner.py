@@ -288,13 +288,23 @@ def _questions_from_segments(
 ) -> list[dict[str, Any]]:
     segments = _list(context.get("segments") or _dict(context.get("baseline")).get("segments"))
     questions: list[dict[str, Any]] = []
+    segment_amount_total = sum(
+        _segment_revenue_amount(item) or 0.0
+        for item in segments
+        if isinstance(item, dict)
+    )
     material_segments = [
-        item for item in segments if _number(item.get("revenue_weight") or item.get("revenueWeight") or item.get("revenue_share") or item.get("revenueShare"), 0) >= 0.1
+        item for item in segments if _segment_revenue_weight(item, segment_amount_total) >= 0.1
     ]
     low_confidence_material = [
-        item for item in segments if _number(item.get("revenue_weight") or item.get("revenueWeight") or item.get("revenue_share") or item.get("revenueShare"), 0) >= 0.05
+        item for item in segments if _segment_revenue_weight(item, segment_amount_total) >= 0.05
         and _string(item.get("mapping_confidence") or item.get("mappingConfidence")).lower() in {"low", "unmapped", "unknown"}
     ]
+    prospectus_segment_candidate = (
+        _prospectus_segments_candidate(material_segments)
+        if workflow_type == "prospectus" and prospectus_recalc_supported
+        else None
+    )
     if material_segments or low_confidence_material:
         names = ", ".join(
             _string(item.get("segment_name") or item.get("segmentName") or item.get("name") or "unnamed segment")
@@ -315,7 +325,7 @@ def _questions_from_segments(
                 baseline_assumption="Current baseline may rely on industry or mapped segment assumptions.",
                 default_story="Treat material disclosed businesses separately where the service can model them.",
                 override_field="segments",
-                candidate_value=None,
+                candidate_value=prospectus_segment_candidate,
                 confidence="medium",
                 priority_reason="Material segments can change growth, margin, and reinvestment assumptions.",
             )
@@ -622,6 +632,8 @@ def _model_action(
 
 
 def _bounded_choices(default_story: str, field: str | None, value: Any, model_action: str, confidence: str) -> list[dict[str, Any]]:
+    if field in {"segments", "sector_overrides"} and value is not None:
+        return _structured_bounded_choices(default_story, field, value, model_action, confidence)
     lower_value = _scaled_candidate(field, value, 0.8)
     higher_value = _scaled_candidate(field, value, 1.2)
     lower_action = _choice_model_action(model_action, field, lower_value)
@@ -661,6 +673,55 @@ def _bounded_choices(default_story: str, field: str | None, value: Any, model_ac
             "assumption_effect": "Requires a user-supplied assumption before it can become a model override.",
             "override_candidate": {"field": None, "value": None},
             "model_action": "unsupported" if model_action == "unsupported" else "report-only user judgment",
+            "confidence": "low",
+            "report_label": "Custom user judgment",
+        },
+    ]
+
+
+def _structured_bounded_choices(
+    default_story: str,
+    field: str,
+    value: Any,
+    model_action: str,
+    confidence: str,
+) -> list[dict[str, Any]]:
+    default_action = _choice_model_action(model_action, field, value)
+    higher_action = default_action if field == "segments" else "report-only user judgment"
+    return [
+        {
+            "label": "A",
+            "story": "Stay close to the current fallback.",
+            "assumption_effect": "Do not use the structured segment package.",
+            "override_candidate": {"field": None, "value": None},
+            "model_action": "report-only user judgment",
+            "confidence": "medium",
+            "report_label": "Fallback case",
+        },
+        {
+            "label": "B",
+            "story": default_story,
+            "assumption_effect": "Use the reviewed structured segment package.",
+            "override_candidate": {"field": field if default_action == "user scenario override" else None, "value": value if default_action == "user scenario override" else None},
+            "model_action": default_action,
+            "confidence": confidence,
+            "report_label": "Recommended guided default",
+        },
+        {
+            "label": "C",
+            "story": "Use the structured segment package with higher confidence.",
+            "assumption_effect": "Use the same reviewed segment package and treat the segment issue as resolved for this scenario.",
+            "override_candidate": {"field": field if higher_action == "user scenario override" else None, "value": value if higher_action == "user scenario override" else None},
+            "model_action": higher_action,
+            "confidence": "low",
+            "report_label": "Higher-conviction case",
+        },
+        {
+            "label": "D",
+            "story": "Use a custom segment note.",
+            "assumption_effect": "Requires a user-supplied segment package before it can become a model override.",
+            "override_candidate": {"field": None, "value": None},
+            "model_action": "report-only user judgment",
             "confidence": "low",
             "report_label": "Custom user judgment",
         },
@@ -911,6 +972,86 @@ def _segment_mix_candidate(segments: list[Any]) -> list[dict[str, Any]] | None:
             continue
         candidate.append(dict(override))
     return candidate or None
+
+
+def _prospectus_segments_candidate(segments: list[Any]) -> list[dict[str, Any]] | None:
+    candidate: list[dict[str, Any]] = []
+    for item in segments:
+        if not isinstance(item, dict):
+            continue
+        name = _string_or_none(item.get("segment_name") or item.get("segmentName") or item.get("name") or item.get("segment"))
+        if not name:
+            continue
+        segment: dict[str, Any] = {"name": name}
+        revenue_amount = _segment_revenue_amount(item)
+        if revenue_amount is not None:
+            segment["base_revenue"] = revenue_amount
+        sector_key = _string_or_none(
+            item.get("sector_key")
+            or item.get("sectorKey")
+            or item.get("yahoo_industry_key")
+            or item.get("yahooIndustryKey")
+            or item.get("service_sector_key")
+            or item.get("serviceSectorKey")
+            or item.get("sector")
+        )
+        if sector_key:
+            segment["sector_key"] = sector_key
+        mapped_industry = _string_or_none(
+            item.get("mapped_industry")
+            or item.get("mappedIndustry")
+            or item.get("industry")
+            or item.get("candidate_mapping")
+            or item.get("candidateMapping")
+            or item.get("mapping_candidate")
+            or item.get("mappingCandidate")
+        )
+        if mapped_industry:
+            segment["mapped_industry"] = mapped_industry
+        candidate.append(segment)
+    return candidate if len(candidate) >= 2 else None
+
+
+def _segment_revenue_weight(item: Any, amount_total: float = 0.0) -> float:
+    if not isinstance(item, dict):
+        return 0.0
+    weight = _number(
+        item.get("revenue_weight")
+        or item.get("revenueWeight")
+        or item.get("revenue_share")
+        or item.get("revenueShare"),
+        0.0,
+    )
+    if weight > 1.5:
+        weight = weight / 100.0
+    if weight > 0.0:
+        return weight
+    amount = _segment_revenue_amount(item)
+    if amount is not None and amount_total > 0.0:
+        return amount / amount_total
+    return 0.0
+
+
+def _segment_revenue_amount(item: Any) -> float | None:
+    if not isinstance(item, dict):
+        return None
+    value = (
+        item.get("revenue_amount")
+        or item.get("revenueAmount")
+        or item.get("revenue_2025")
+        or item.get("latest_revenue")
+        or item.get("latestRevenue")
+        or item.get("segment_revenue")
+        or item.get("segmentRevenue")
+        or item.get("revenue")
+    )
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) and number > 0.0 else None
 
 
 def _merge_mapped_assumption(target: dict[str, Any], field: str, value: Any) -> None:
