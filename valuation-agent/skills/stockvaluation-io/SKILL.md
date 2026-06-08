@@ -1,6 +1,6 @@
 ---
 name: stockvaluation-io
-description: Use whenever the prompt mentions stockvaluation.io, StockValuation.io, stockvaluation, the local valuation MCP, or asks to value a public company with the StockValuation workflow. Runs local MCP valuation, stops for evidence review, and asks guided valuation-refinement questions before the final report by default.
+description: Use whenever the prompt mentions stockvaluation.io, StockValuation.io, stockvaluation, the local valuation MCP, or asks to value a public company with the StockValuation workflow. Runs local MCP valuation, stops for evidence review, asks guided valuation-refinement questions, applies stop-slop prose cleanup, and can render a local HTML report link after the final report.
 version: 2.0.0-agent-native
 homepage: https://github.com/stockvaluation-io/stockvaluation_io
 ---
@@ -52,6 +52,8 @@ The product surface is the user's agent. The deterministic valuation math comes 
 17. Build and read the Scenario Book using `{baseDir}/references/scenario-book.md` and returned `structuredContent.scenarioBook` when present. Use it to separate the evidence-constrained base, user-refined scenario, explicit scenario, market-implied diagnostics, source policy, sourceQualityGate, and internal mechanical baseline references.
 18. Write the final educational report using `{baseDir}/references/report-template.md` as the canonical controlling structure. Use `{baseDir}/references/narrative-report-style.md` only as subordinate prose guidance, summarizing the judgment in prose and tables rather than printing raw JSON by default.
 19. Apply `{baseDir}/references/no-advice-policy.md` before finalizing.
+20. Apply the prose-quality gate in `{baseDir}/references/report-prose-quality.md`, using the `stop-slop` skill as the cleanup lens. Keep the report thorough: do not remove required sections, guided questions, evidence detail, caveats, or source dates while removing generic AI phrasing.
+21. When local file creation is available, create the browser report artifact in `{baseDir}/references/report-artifact.md` after the final report exists, then return a clickable local link. Do not use the HTML artifact to bypass the report-template sections, evidence review, guided-refinement gates, or prose-quality gate.
 
 ## Prospectus Workflow
 
@@ -67,7 +69,7 @@ Use this workflow when the input is a SEC EDGAR Archives HTML prospectus URL, es
 8. Prospectus extraction review is not the evidence review gate and does not replace guided valuation refinement. After `stockvaluation.value_prospectus`, continue into the normal researched workflow: build the evidence packet, stop at `{baseDir}/references/evidence-review-gate.md`, run baseline plausibility, and use `{baseDir}/references/guided-valuation-refinement.md` for material user-judgment questions unless the user explicitly requested quick/no-questions/automation/smoke-test.
 9. Prospectus mode supports deterministic explicit scenarios through `stockvaluation.value_prospectus.scenario`. The service extracts raw prospectus segment candidate tables and rows but does not choose segment rows or hard-code segment-to-industry mapping. When material candidate rows are present, the agent must use the prospectus, company disclosures, and targeted search evidence to map segment names into an explicit `scenario.segments` package with sector keys, mapped industries, revenue paths, margins, reinvestment assumptions, and source rationale. Do not ask the user to provide vague "segment mappings" before showing source-backed modeling defaults. Ask the actual story question: whether the disclosed businesses should be modeled separately, which rows belong in the base case, and which segment assumptions change the math. If the filing has enough segment revenue, margin, and reinvestment evidence to propose a bounded default, build and send the explicit `scenario.segments` package; do not leave segment story as report-only by default. Do not call guided answers a user-refined scenario unless they were sent through this deterministic scenario path. If the visible guided flow says "Question 1 of 3" and the user accepts defaults, all remaining default answers must be summarized; do not skip hidden questions silently.
 10. SEC filing facts are primary. External news is report-only context and external news must not override filing facts from the prospectus.
-11. Write the final report using `{baseDir}/references/report-template.md`, `{baseDir}/references/prospectus-mode.md`, and `{baseDir}/references/no-advice-policy.md`. Label provenance as `primary_filing` / `sec-edgar-prospectus` and keep recommendation language out of the report.
+11. Write the final report using `{baseDir}/references/report-template.md`, `{baseDir}/references/prospectus-mode.md`, `{baseDir}/references/no-advice-policy.md`, and `{baseDir}/references/report-prose-quality.md`. Label provenance as `primary_filing` / `sec-edgar-prospectus` and keep recommendation language out of the report. When local file creation is available, also create the browser report artifact in `{baseDir}/references/report-artifact.md`.
 
 ## Tool Rules
 
@@ -109,6 +111,8 @@ Use this workflow when the input is a SEC EDGAR Archives HTML prospectus URL, es
 - Include data-quality notes and service/version metadata when returned.
 - Use clear uncertainty language when Yahoo Finance coverage or reference-data matching is weak.
 - Make evidence review status and guided-refinement status visible: approved, caveated, corrected, bypassed by explicit quick/no-questions/automation/smoke-test request, or not run because of an unsupported/failed workflow.
+- Before final delivery and HTML rendering, apply `{baseDir}/references/report-prose-quality.md` and the `stop-slop` skill. Remove filler and generic AI phrasing, but keep the report complete and specific.
+- When the workflow reaches a final report and local file creation is available, render the same final report to a local HTML artifact using `{baseDir}/references/report-artifact.md`. Include all visible guided questions in `Guided Judgment`, the compressed conclusion in `Bottom Line`, and a clickable `index.html` link.
 - Do not print raw `assumption_judgment`, `valuation_audit_packet`, hidden guided question plan, or raw Scenario Book JSON by default.
 - In guided refinement, make the user-refined scenario the main scenario when it exists. Keep the mechanical baseline internal by default; expose mechanical baseline details only when the user explicitly asks for audit/debug detail.
 - Keep diagnostic scenarios diagnostic. Do not blend a user-refined scenario with a diagnostic no-segment, market-implied, or sensitivity run into a headline valuation range unless the user explicitly requested a range and the report labels each case under the template's scenario/diagnostic sections.
@@ -143,6 +147,8 @@ Use this workflow when the input is a SEC EDGAR Archives HTML prospectus URL, es
 - `{baseDir}/references/special-company-stop-rules.md`
 - `{baseDir}/references/narrative-report-style.md`
 - `{baseDir}/references/report-template.md`
+- `{baseDir}/references/report-prose-quality.md`
+- `{baseDir}/references/report-artifact.md`
 - `{baseDir}/references/no-advice-policy.md`
 - `{baseDir}/references/assumption-checks.md`
 - `{baseDir}/references/accounting-adjustments.md`

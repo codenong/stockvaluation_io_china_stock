@@ -10,6 +10,10 @@ For prospectus mode, use this same template after `stockvaluation.extract_prospe
 
 The final answer must render the required report-template headings in order. Do not replace this template with a compressed memo, even when the user asks for a concise answer. A final answer that starts with a sentence such as "Using stockvaluation.io, the user-refined case values COMPANY at PRICE" and then gives only "Key assumptions", "Main caveats", and "Sources used" is not template-compliant.
 
+Before final delivery, apply `report-prose-quality.md` and the `stop-slop` skill as a prose cleanup pass. Keep this template complete: the cleanup pass removes filler and generic AI phrasing, not evidence, guided questions, source dates, caveats, or required sections.
+
+When local file creation is available, also render the completed final report to a local browser artifact using `report-artifact.md`. The HTML artifact is a visualization of this same report, not a substitute structure. It must keep `Guided Judgment`, `Bottom Line`, sources, evidence detail, and assumption support visible.
+
 The default report is for an investor-reader, not an agent debugger. Use plain section names and plain prose. Do not use visible default headings named `Educational-Use Framing`, `Valuation Audit Packet Summary`, `Scenario Book Summary`, or `Internal Baseline Audit`. Do not print internal terms such as `MCP`, `structuredContent`, `sourceQualityGate`, `mechanical_only`, `mechanical baseline`, `mechanical model value`, `valuation_audit_packet`, or `scenario_book.v1` in the default report body unless the user explicitly asks for audit/debug detail.
 
 Use one concise no-advice line near the start. Do not repeat "educational use only" or "not financial advice" before every table or section.

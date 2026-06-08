@@ -1,5 +1,7 @@
 import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 from valuation_agent.installer import bundled_skill_dir
@@ -38,6 +40,8 @@ def test_skill_pack_contains_required_agent_native_references():
         "special-company-stop-rules.md",
         "narrative-report-style.md",
         "report-template.md",
+        "report-prose-quality.md",
+        "report-artifact.md",
         "no-advice-policy.md",
         "assumption-checks.md",
         "accounting-adjustments.md",
@@ -46,6 +50,7 @@ def test_skill_pack_contains_required_agent_native_references():
 
     assert (skill_dir / "SKILL.md").exists()
     assert required.issubset({path.name for path in (skill_dir / "references").iterdir()})
+    assert (skill_dir / "scripts" / "render_report_html.py").exists()
 
 
 def test_researched_reference_docs_govern_evidence_segments_and_judgment():
@@ -100,6 +105,93 @@ def test_main_skill_requires_mcp_json_and_agent_written_educational_report():
     assert "BullBearGPT" not in skill_text
     assert "Angular" not in skill_text
     assert "sv value" not in skill_text
+
+
+def test_skill_docs_describe_browser_report_artifact():
+    skill_dir = bundled_skill_dir()
+    skill_text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+    artifact = (skill_dir / "references" / "report-artifact.md").read_text(encoding="utf-8")
+
+    assert "report-artifact.md" in skill_text
+    assert "render_report_html.py" in artifact
+    assert "Guided Judgment" in artifact
+    assert "Bottom Line" in artifact
+    assert "tmp/valuation-reports" in artifact
+    assert "clickable local file link" in artifact
+
+
+def test_skill_docs_apply_stop_slop_before_html_artifact():
+    skill_dir = bundled_skill_dir()
+    skill_text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+    quality = (skill_dir / "references" / "report-prose-quality.md").read_text(encoding="utf-8")
+    artifact = (skill_dir / "references" / "report-artifact.md").read_text(encoding="utf-8")
+    template = (skill_dir / "references" / "report-template.md").read_text(encoding="utf-8")
+
+    assert "stop-slop" in skill_text
+    assert "report-prose-quality.md" in skill_text
+    assert "https://github.com/hardikpandya/stop-slop" in quality
+    assert "do not remove required sections" in quality.lower()
+    assert "guided questions" in quality.lower()
+    assert "passed `report-prose-quality.md`" in artifact
+    assert "the cleanup pass removes filler" in template
+
+
+def test_html_report_renderer_creates_local_artifact(tmp_path):
+    script = bundled_skill_dir() / "scripts" / "render_report_html.py"
+    markdown = """# Microsoft Valuation Report
+
+## How To Read This
+
+Educational use only. This is not financial advice.
+
+## Valuation View
+
+| Field | Value |
+| --- | --- |
+| Company | Microsoft |
+| Ticker | MSFT |
+
+## Bottom Line
+
+The conclusion depends most on growth and margin judgment.
+
+## Guided Judgment
+
+| Question | Driver | Baseline assumption | Evidence summary | User answer | Model action |
+| --- | --- | --- | --- | --- | --- |
+| Keep cloud growth above baseline? | Revenue growth | Baseline | Azure growth evidence | Accepted default | user scenario override |
+"""
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--out-dir",
+            str(tmp_path),
+            "--ticker",
+            "MSFT",
+            "--company",
+            "Microsoft",
+            "--title",
+            "Microsoft Valuation Report",
+        ],
+        input=markdown,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    match = re.search(r"HTML report: (.+)", result.stdout)
+    assert match, result.stdout
+    html_path = Path(match.group(1))
+    markdown_path = html_path.parent / "report.md"
+
+    assert html_path.exists()
+    html_text = html_path.read_text(encoding="utf-8")
+    assert markdown_path.read_text(encoding="utf-8") == markdown
+    assert "<table>" in html_text
+    assert "Guided Judgment" in html_text
+    assert "Browser link: file://" in result.stdout
 
 
 def test_main_skill_makes_full_researched_valuation_the_default_workflow():

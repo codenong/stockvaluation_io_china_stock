@@ -86,6 +86,7 @@ pg-data/
 .omx/
 .etl/
 .qa_agent_native/
+/tmp/valuation-reports/
 internal_doc/
 */prompt_dump_from_container/
 prompt_dump/
