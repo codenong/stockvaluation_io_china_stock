@@ -22,6 +22,12 @@ from .segment_discovery import parse_revenue_weight, sanitize_segment_package
 from .segment_economics import validate_segment_economics
 from .scenario_book import scenario_book_metadata, validate_scenario_book
 from .valuation_audit_packet import build_valuation_audit_packet, valuation_audit_packet_metadata
+from .workflow_run_state import (
+    GATE_EVIDENCE_REVIEW,
+    GATE_GUIDED_REFINEMENT,
+    WorkflowRunStore,
+    validate_gate_record,
+)
 from .service_client import (
     DEFAULT_SERVICE_URL,
     NonJsonServiceResponse,
@@ -207,6 +213,20 @@ def _output_schema() -> dict[str, Any]:
     }
 
 
+def _run_tracking_properties() -> dict[str, Any]:
+    return {
+        "run_id": {
+            "type": "string",
+            "description": "Optional workflow run id issued by stockvaluation.extract_prospectus, stockvaluation.researched_baseline, or stockvaluation.value_ticker. When supplied, the server enforces workflow gates for this run.",
+        },
+        "gate_records": {
+            "type": "array",
+            "description": "Explicit gate outcome records for a tracked run. Each record: {gate: evidence_review|guided_refinement, outcome: approved|corrected|caveated|applied|bypassed, reason: quick|no_questions|automation|smoke_test (required when outcome is bypassed)}. Bypasses are recorded, never inferred.",
+            "items": {"type": "object", "additionalProperties": True},
+        },
+    }
+
+
 def tool_definitions() -> list[dict[str, Any]]:
     ticker_property = {
         "ticker": {
@@ -216,6 +236,7 @@ def tool_definitions() -> list[dict[str, Any]]:
     }
     prospectus_value_input_schema = _object_schema(
         {
+            **_run_tracking_properties(),
             "packet": {
                 "type": "object",
                 "description": "A ProspectusFinancialPacket returned by stockvaluation.extract_prospectus after user review. Prefer review_reference when no packet correction is needed.",
@@ -307,6 +328,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": "Build a materiality-ranked story-to-driver guided-question plan from compact valuation context.",
             "inputSchema": _object_schema(
                 {
+                    **_run_tracking_properties(),
                     "company": {"type": "string"},
                     "ticker": {"type": "string"},
                     "workflow_type": {"type": "string", "enum": ["ticker", "prospectus"]},
@@ -334,6 +356,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": "Convert selected guided-question choices into user_judgment metadata and governed scenario-input candidates.",
             "inputSchema": _object_schema(
                 {
+                    **_run_tracking_properties(),
                     "guided_question_plan": {
                         "type": "object",
                         "description": "The guidedQuestionPlan returned by stockvaluation.plan_guided_questions.",
@@ -360,6 +383,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": "Recalculate local DCF JSON using governed scenario overrides.",
             "inputSchema": _object_schema(
                 {
+                    **_run_tracking_properties(),
                     **ticker_property,
                     "overrides": {
                         "type": "object",
@@ -417,9 +441,15 @@ def tool_definitions() -> list[dict[str, Any]]:
 class MCPToolRegistry:
     """Callable registry for StockValuation MCP tools."""
 
-    def __init__(self, service_client: Any | None = None, home: Any | None = None):
+    def __init__(
+        self,
+        service_client: Any | None = None,
+        home: Any | None = None,
+        run_store: WorkflowRunStore | None = None,
+    ):
         self.service_client = service_client or ValuationServiceClient()
         self._home = home
+        self.run_store = run_store or WorkflowRunStore(home=home)
         self._prospectus_packet_cache: dict[str, dict[str, Any]] = {}
         self._handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
             "stockvaluation.health": self._health,
@@ -447,6 +477,80 @@ class MCPToolRegistry:
         content = self._handlers[name](args)
         return tool_result(content, is_error=not bool(content.get("ok")))
 
+    def _start_tracked_run(self, payload: dict[str, Any], *, workflow_type: str, subject: str | None, tool: str) -> None:
+        if not payload.get("ok"):
+            return
+        try:
+            run = self.run_store.create_run(workflow_type=workflow_type, subject=subject)
+            self.run_store.record_event(run["run_id"], "tool_call", {"tool": tool})
+            run = self.run_store.get_run(run["run_id"]) or run
+        except OSError:
+            return
+        payload["run_id"] = run["run_id"]
+        payload["workflow_state"] = self.run_store.workflow_state(run)
+
+    def _resolve_run(self, args: dict[str, Any], tool: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        run_id = _string_or_none(args.get("run_id") or args.get("runId"))
+        if run_id is None:
+            return None, None
+        run = self.run_store.get_run(run_id)
+        if run is None:
+            return None, error_payload(
+                tool,
+                "UNKNOWN_RUN_ID",
+                "run_id was not found or has expired. Start a new run from the baseline or extraction tool.",
+                "unknown_run_id",
+                extra={"run_id": run_id},
+            )
+        return run, None
+
+    def _apply_gate_records(self, run: dict[str, Any], args: dict[str, Any], tool: str) -> dict[str, Any] | None:
+        records = args.get("gate_records") or args.get("gateRecords")
+        if records is None:
+            return None
+        if not isinstance(records, list):
+            records = [records]
+        for record in records:
+            problem = validate_gate_record(record)
+            if problem:
+                return error_payload(
+                    tool,
+                    "INVALID_GATE_RECORD",
+                    f"Invalid gate record: {problem}.",
+                    "invalid_gate_record",
+                    extra={"gate_record": record if isinstance(record, dict) else None},
+                )
+            self.run_store.record_gate(
+                run["run_id"],
+                record["gate"],
+                record["outcome"],
+                record.get("reason"),
+            )
+        refreshed = self.run_store.get_run(run["run_id"])
+        if refreshed is not None:
+            run.clear()
+            run.update(refreshed)
+        return None
+
+    def _gate_refusal(self, tool: str, gate: str, run: dict[str, Any]) -> dict[str, Any]:
+        return error_payload(
+            tool,
+            "GATE_NOT_CLEARED",
+            f"The {gate} gate has not been cleared for this tracked run. Record the gate outcome (or an explicit bypass) before this call.",
+            "gate_not_cleared",
+            extra={"gate": gate, "run_id": run.get("run_id"), "workflow_state": self.run_store.workflow_state(run)},
+        )
+
+    def _finish_tracked(self, payload: dict[str, Any], run: dict[str, Any] | None, tool: str) -> dict[str, Any]:
+        if run is None:
+            payload.setdefault("gate_enforcement", "untracked")
+            return payload
+        self.run_store.record_event(run["run_id"], "tool_call", {"tool": tool, "ok": bool(payload.get("ok"))})
+        refreshed = self.run_store.get_run(run["run_id"]) or run
+        payload["run_id"] = run["run_id"]
+        payload["workflow_state"] = self.run_store.workflow_state(refreshed)
+        return payload
+
     def _health(self, _: dict[str, Any]) -> dict[str, Any]:
         tool = "stockvaluation.health"
         try:
@@ -473,7 +577,9 @@ class MCPToolRegistry:
             return error_payload(tool, "INVALID_TICKER", error, "invalid_ticker")
         try:
             valuation = self.service_client.value_ticker(ticker)
-            return valuation_success_payload(tool, ticker, valuation)
+            payload = valuation_success_payload(tool, ticker, valuation)
+            self._start_tracked_run(payload, workflow_type="ticker", subject=ticker, tool=tool)
+            return payload
         except ValuationServiceError as exc:
             return service_exception_payload(tool, exc, ticker=ticker)
 
@@ -487,12 +593,14 @@ class MCPToolRegistry:
                 ticker,
                 {"researchedBaselineMode": True, "requestPolicyMode": "researched_baseline"},
             )
-            return valuation_success_payload(
+            payload = valuation_success_payload(
                 tool,
                 ticker,
                 valuation,
                 {"researchedBaselineMode": True, "requestPolicyMode": "researched_baseline"},
             )
+            self._start_tracked_run(payload, workflow_type="ticker", subject=ticker, tool=tool)
+            return payload
         except ValuationServiceError as exc:
             return service_exception_payload(tool, exc, ticker=ticker)
 
@@ -509,44 +617,67 @@ class MCPToolRegistry:
             review_reference = prospectus_review_token(packet)
             if review_reference:
                 self._prospectus_packet_cache[review_reference] = copy.deepcopy(packet)
-            return prospectus_extraction_success_payload(tool, result, review_reference=review_reference)
+            payload = prospectus_extraction_success_payload(tool, result, review_reference=review_reference)
+            self._start_tracked_run(payload, workflow_type="prospectus", subject=filing_url, tool=tool)
+            return payload
         except ValuationServiceError as exc:
             return service_exception_payload(tool, exc)
 
     def _value_prospectus(self, args: dict[str, Any]) -> dict[str, Any]:
         tool = "stockvaluation.value_prospectus"
+        run, run_error = self._resolve_run(args, tool)
+        if run_error is not None:
+            return run_error
+        if run is not None:
+            record_error = self._apply_gate_records(run, args, tool)
+            if record_error is not None:
+                return record_error
         packet, packet_error = self._prospectus_packet_from_args(args)
         if packet_error is not None:
-            return packet_error
+            return self._finish_tracked(packet_error, run, tool)
         if not isinstance(packet, dict):
-            return error_payload(
+            return self._finish_tracked(
+                error_payload(
+                    tool,
+                    "INVALID_PROSPECTUS_PACKET",
+                    "packet must be a ProspectusFinancialPacket returned by stockvaluation.extract_prospectus, or use review_reference with review_status=reviewed.",
+                    "prospectus_review_required",
+                ),
+                run,
                 tool,
-                "INVALID_PROSPECTUS_PACKET",
-                "packet must be a ProspectusFinancialPacket returned by stockvaluation.extract_prospectus, or use review_reference with review_status=reviewed.",
-                "prospectus_review_required",
             )
         review_status = prospectus_review_status(packet)
         if review_status != "reviewed":
-            return error_payload(
+            return self._finish_tracked(
+                error_payload(
+                    tool,
+                    "PROSPECTUS_REVIEW_REQUIRED",
+                    "ProspectusFinancialPacket reviewStatus must be reviewed before valuation.",
+                    "prospectus_review_required",
+                    extra={"prospectus": {"reviewStatus": review_status or "missing"}},
+                ),
+                run,
                 tool,
-                "PROSPECTUS_REVIEW_REQUIRED",
-                "ProspectusFinancialPacket reviewStatus must be reviewed before valuation.",
-                "prospectus_review_required",
-                extra={"prospectus": {"reviewStatus": review_status or "missing"}},
             )
         try:
             scenario = args.get("scenario")
             if scenario is not None and not isinstance(scenario, dict):
-                return error_payload(
+                return self._finish_tracked(
+                    error_payload(
+                        tool,
+                        "INVALID_PROSPECTUS_SCENARIO",
+                        "scenario must be an object when supplied.",
+                        "invalid_prospectus_scenario",
+                    ),
+                    run,
                     tool,
-                    "INVALID_PROSPECTUS_SCENARIO",
-                    "scenario must be an object when supplied.",
-                    "invalid_prospectus_scenario",
                 )
+            if run is not None and scenario and not self.run_store.gate_cleared(run, GATE_EVIDENCE_REVIEW):
+                return self._gate_refusal(tool, GATE_EVIDENCE_REVIEW, run)
             result = self.service_client.value_prospectus(packet, scenario)
-            return prospectus_valuation_success_payload(tool, result)
+            return self._finish_tracked(prospectus_valuation_success_payload(tool, result), run, tool)
         except ValuationServiceError as exc:
-            return service_exception_payload(tool, exc)
+            return self._finish_tracked(service_exception_payload(tool, exc), run, tool)
 
     def _prospectus_packet_from_args(self, args: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
         tool = "stockvaluation.value_prospectus"
@@ -598,16 +729,37 @@ class MCPToolRegistry:
 
     def _plan_guided_questions(self, args: dict[str, Any]) -> dict[str, Any]:
         tool = "stockvaluation.plan_guided_questions"
+        run, run_error = self._resolve_run(args, tool)
+        if run_error is not None:
+            return run_error
+        if run is not None:
+            record_error = self._apply_gate_records(run, args, tool)
+            if record_error is not None:
+                return record_error
         plan = build_guided_question_plan(args)
-        return {
+        if run is not None:
+            self.run_store.record_event(
+                run["run_id"],
+                "guided_plan_created",
+                {"question_count": len(plan.get("questions") or [])},
+            )
+        payload = {
             "ok": True,
             "tool": tool,
             "guidedQuestionPlan": plan,
             "policy": policy_metadata(),
         }
+        return self._finish_tracked(payload, run, tool)
 
     def _apply_guided_answers(self, args: dict[str, Any]) -> dict[str, Any]:
         tool = "stockvaluation.apply_guided_answers"
+        run, run_error = self._resolve_run(args, tool)
+        if run_error is not None:
+            return run_error
+        if run is not None:
+            record_error = self._apply_gate_records(run, args, tool)
+            if record_error is not None:
+                return record_error
         plan = args.get("guided_question_plan") or args.get("guidedQuestionPlan")
         if not isinstance(plan, dict):
             return error_payload(
@@ -626,7 +778,9 @@ class MCPToolRegistry:
             )
         use_defaults = bool(args.get("use_defaults") or args.get("useDefaults"))
         judgment = build_user_judgment_package(plan, answers, use_defaults=use_defaults)
-        return {
+        if run is not None:
+            self.run_store.record_gate(run["run_id"], GATE_GUIDED_REFINEMENT, "applied")
+        payload = {
             "ok": True,
             "tool": tool,
             "userJudgment": judgment,
@@ -635,13 +789,28 @@ class MCPToolRegistry:
             "scenarioRange": sanitize_for_agent(plan.get("scenario_range") or {}),
             "policy": policy_metadata(),
         }
+        return self._finish_tracked(payload, run, tool)
 
     def _recalculate(self, args: dict[str, Any]) -> dict[str, Any]:
         tool = "stockvaluation.recalculate"
+        run, run_error = self._resolve_run(args, tool)
+        if run_error is not None:
+            return run_error
+        if run is not None:
+            record_error = self._apply_gate_records(run, args, tool)
+            if record_error is not None:
+                return record_error
         ticker, error = normalize_ticker(args.get("ticker"))
         if error:
             return error_payload(tool, "INVALID_TICKER", error, "invalid_ticker")
         requested = args.get("overrides")
+        if run is not None and isinstance(requested, dict):
+            scenario_bearing = any(key not in RECALCULATE_METADATA_FIELDS for key in requested)
+            if scenario_bearing and not self.run_store.gate_cleared(run, GATE_EVIDENCE_REVIEW):
+                return self._gate_refusal(tool, GATE_EVIDENCE_REVIEW, run)
+            guided_flow = any(key in {"user_judgment", "guided_refinement"} for key in requested)
+            if guided_flow and not self.run_store.gate_cleared(run, GATE_GUIDED_REFINEMENT):
+                return self._gate_refusal(tool, GATE_GUIDED_REFINEMENT, run)
         if not isinstance(requested, dict):
             return error_payload(
                 tool,
@@ -682,7 +851,7 @@ class MCPToolRegistry:
                 assumption_meta=assumption_meta,
                 recalculate_status="blocked_pre_service",
             )
-            return payload
+            return self._finish_tracked(payload, run, tool)
         try:
             valuation = self.service_client.value_ticker(ticker, mapped)
             assumption_meta["effective"] = effective_assumptions(valuation)
@@ -709,7 +878,7 @@ class MCPToolRegistry:
                 assumption_meta=assumption_meta,
                 recalculate_status="executed",
             )
-            return payload
+            return self._finish_tracked(payload, run, tool)
         except ValuationServiceError as exc:
             payload = service_exception_payload(tool, exc, ticker=ticker)
             payload["assumptions"] = assumption_meta
@@ -726,7 +895,7 @@ class MCPToolRegistry:
                 assumption_meta=assumption_meta,
                 recalculate_status="service_error",
             )
-            return payload
+            return self._finish_tracked(payload, run, tool)
 
     def _get_assumptions(self, args: dict[str, Any]) -> dict[str, Any]:
         tool = "stockvaluation.get_assumptions"
@@ -2969,6 +3138,9 @@ def recovery_for_category(category: str) -> dict[str, Any]:
         "unsupported_overrides": "Ask before retrying with only governed scenario override fields.",
         "invalid_prospectus_source": "Ask for a SEC EDGAR Archives HTML prospectus URL. Do not paste raw filing HTML into the MCP tool.",
         "prospectus_review_required": "Review the extracted ProspectusFinancialPacket with the user, correct any disputed fields, then retry only after setting reviewStatus to reviewed.",
+        "gate_not_cleared": "Complete the named workflow gate with the user (or record an explicit user-stated bypass via gate_records) before retrying this call.",
+        "unknown_run_id": "Start a new tracked run from stockvaluation.extract_prospectus or a baseline tool and use its run_id.",
+        "invalid_gate_record": "Fix the gate record fields (gate, outcome, reason) and retry. Bypasses require an explicit reason.",
         "unknown_failure": "Summarize the failure and ask the user whether to run service status checks.",
     }
     return {

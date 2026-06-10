@@ -6,6 +6,17 @@ When returned, `auditPacket` contains a `valuation_audit_packet.v1` packet refer
 
 When returned, `scenarioBook` contains a `scenario_book.v1` artifact reference, compact summary, and validator-backed book. Use it to choose the main educational scenario and to separate evidence-constrained base, user-refined scenario, explicit scenario, market-implied diagnostics, and internal mechanical baseline references. Do not copy raw Scenario Book JSON into the visible report.
 
+## Workflow Run Tracking And Gate Enforcement
+
+`stockvaluation.extract_prospectus`, `stockvaluation.researched_baseline`, and `stockvaluation.value_ticker` issue a `run_id` and a `workflow_state` summary on success. Pass that `run_id` to `stockvaluation.value_prospectus`, `stockvaluation.plan_guided_questions`, `stockvaluation.apply_guided_answers`, and `stockvaluation.recalculate` so the server enforces workflow gates for the run. Always pass the `run_id` in the default full researched flow.
+
+- Tracked runs enforce two gates: `evidence_review` and `guided_refinement`. Run state persists on disk for 24 hours, so enforcement survives across MCP processes.
+- Record gate outcomes explicitly with the `gate_records` argument on any tracked downstream call: `{"gate": "evidence_review", "outcome": "approved" | "corrected" | "caveated" | "bypassed", "reason": "quick" | "no_questions" | "automation" | "smoke_test"}`. A `reason` is required when `outcome` is `bypassed`. Record a gate outcome only after the user actually made that decision; bypasses are recorded, never inferred.
+- `stockvaluation.apply_guided_answers` with a `run_id` records the `guided_refinement` gate as `applied` automatically.
+- On a tracked run, a scenario-bearing `value_prospectus` or `recalculate` call before the `evidence_review` gate is recorded is refused with `{"ok": false, "error": {"code": "GATE_NOT_CLEARED"}, "failureCategory": "gate_not_cleared", "gate": "evidence_review"}`. A guided-flow `recalculate` (overrides containing `user_judgment` or `guided_refinement`) before answers are applied (and with no bypass recorded) is refused with the same shape and `"gate": "guided_refinement"`.
+- Every tool response on a tracked run includes `workflow_state`: `{run_id, gates, gates_passed, gates_pending}`. Calls without a `run_id` behave as before and carry `"gate_enforcement": "untracked"`.
+- An unknown or expired `run_id` returns error code `UNKNOWN_RUN_ID`; start a new run from the baseline or extraction tool. Invalid `gate_records` return `INVALID_GATE_RECORD`.
+
 ## Client-Visible Call Arguments
 
 Some agent clients display MCP call arguments before execution. Keep input payloads compact enough to inspect:
