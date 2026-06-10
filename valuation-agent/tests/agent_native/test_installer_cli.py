@@ -5,7 +5,13 @@ from pathlib import Path
 import pytest
 
 from valuation_agent import cli
-from valuation_agent.installer import AgentInstaller, PACKAGE_DIR
+from valuation_agent.installer import (
+    MANIFEST_NAME,
+    AgentInstaller,
+    PACKAGE_DIR,
+    compute_skill_checksums,
+    skill_bundle_version,
+)
 from valuation_agent.service_control import CommandResult, EnvironmentStatus, ServiceController
 
 
@@ -268,6 +274,89 @@ def test_status_reports_unreachable_when_health_probe_disconnects(tmp_path, monk
         "reachable": False,
         "error": "Remote end closed connection without response",
     }
+
+
+def test_installer_clean_install_removes_stale_files(tmp_path):
+    home = tmp_path / "home"
+    installer = AgentInstaller(home=home)
+    target = home / ".claude" / "skills" / "stockvaluation-io"
+    stale = target / "references" / "stale-old-reference.md"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("obsolete content\n", encoding="utf-8")
+
+    installer.install_skills(["claude"])
+
+    assert not stale.exists()
+    assert (target / "SKILL.md").exists()
+
+
+def test_installer_writes_manifest_with_version_and_matching_checksums(tmp_path):
+    home = tmp_path / "home"
+    installer = AgentInstaller(home=home)
+
+    installer.install_skills(["claude"])
+
+    target = home / ".claude" / "skills" / "stockvaluation-io"
+    manifest = json.loads((target / MANIFEST_NAME).read_text(encoding="utf-8"))
+    assert manifest["name"] == "stockvaluation-io"
+    assert manifest["version"] == skill_bundle_version()
+    assert manifest["version"] not in ("", "unknown")
+    assert manifest["installedAt"]
+    assert manifest["files"] == compute_skill_checksums(target)
+    assert "SKILL.md" in manifest["files"]
+    assert MANIFEST_NAME not in manifest["files"]
+
+
+def test_installer_verify_reports_in_sync_drifted_and_not_installed(tmp_path):
+    home = tmp_path / "home"
+    installer = AgentInstaller(home=home)
+
+    assert installer.verify_skills(["claude"])["claude"]["status"] == "not_installed"
+
+    installer.install_skills(["claude"])
+    report = installer.verify_skills(["claude"])["claude"]
+    assert report["status"] == "in_sync"
+    assert report["version"] == skill_bundle_version()
+    assert report["issues"] == []
+
+    skill_md = home / ".claude" / "skills" / "stockvaluation-io" / "SKILL.md"
+    skill_md.write_text(skill_md.read_text(encoding="utf-8") + "\nhand edit\n", encoding="utf-8")
+    drifted = installer.verify_skills(["claude"])["claude"]
+    assert drifted["status"] == "drifted"
+    assert any("SKILL.md" in issue for issue in drifted["issues"])
+
+
+def test_installer_verify_flags_extra_and_missing_files_as_drifted(tmp_path):
+    home = tmp_path / "home"
+    installer = AgentInstaller(home=home)
+    installer.install_skills(["claude"])
+    target = home / ".claude" / "skills" / "stockvaluation-io"
+
+    (target / "extra.md").write_text("extra\n", encoding="utf-8")
+    report = installer.verify_skills(["claude"])["claude"]
+    assert report["status"] == "drifted"
+    assert "unexpected: extra.md" in report["issues"]
+
+    (target / "extra.md").unlink()
+    (target / "SKILL.md").unlink()
+    report = installer.verify_skills(["claude"])["claude"]
+    assert report["status"] == "drifted"
+    assert "missing: SKILL.md" in report["issues"]
+
+
+def test_installer_verify_cli_command_prints_reports_and_exit_code(tmp_path, capsys):
+    home = tmp_path / "home"
+    AgentInstaller(home=home).install_skills(["claude"])
+
+    exit_code = cli.main(["--home", str(home), "verify", "--client", "claude"])
+    report = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert report["claude"]["status"] == "in_sync"
+
+    exit_code = cli.main(["--home", str(home), "verify", "--client", "codex"])
+    report = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert report["codex"]["status"] == "not_installed"
 
 
 def test_uninstall_removes_installed_skill_and_mcp_blocks(tmp_path):

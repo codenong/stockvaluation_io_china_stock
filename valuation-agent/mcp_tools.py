@@ -417,8 +417,9 @@ def tool_definitions() -> list[dict[str, Any]]:
 class MCPToolRegistry:
     """Callable registry for StockValuation MCP tools."""
 
-    def __init__(self, service_client: Any | None = None):
+    def __init__(self, service_client: Any | None = None, home: Any | None = None):
         self.service_client = service_client or ValuationServiceClient()
+        self._home = home
         self._prospectus_packet_cache: dict[str, dict[str, Any]] = {}
         self._handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
             "stockvaluation.health": self._health,
@@ -460,6 +461,7 @@ class MCPToolRegistry:
                 },
                 "mcp": mcp_metadata(),
                 "policy": policy_metadata(),
+                "skill": skill_metadata(self._home),
             }
         except ValuationServiceError as exc:
             return service_exception_payload(tool, exc)
@@ -2718,6 +2720,38 @@ def mcp_metadata() -> dict[str, Any]:
         "version": __version__,
         "protocolVersion": SUPPORTED_PROTOCOL_VERSIONS[0],
         "supportedProtocolVersions": list(SUPPORTED_PROTOCOL_VERSIONS),
+    }
+
+
+def skill_metadata(home: Any | None = None) -> dict[str, Any]:
+    try:
+        from .installer import AgentInstaller, skill_bundle_version
+
+        installs = AgentInstaller(home=home).verify_skills(["all"])
+        bundled_version = skill_bundle_version()
+    except Exception:
+        return {"installedVersion": "unknown", "syncStatus": "unknown", "installs": {}}
+    resolvable = {
+        client: report
+        for client, report in installs.items()
+        if report.get("status") != "not_installed"
+    }
+    if not resolvable:
+        return {
+            "installedVersion": "unknown",
+            "syncStatus": "not_installed",
+            "bundledVersion": bundled_version,
+            "installs": installs,
+        }
+    versions = {report.get("version") for report in resolvable.values() if report.get("version")}
+    installed_version = versions.pop() if len(versions) == 1 else "unknown"
+    statuses = {report.get("status") for report in resolvable.values()}
+    sync_status = "drifted" if "drifted" in statuses else "in_sync"
+    return {
+        "installedVersion": installed_version,
+        "syncStatus": sync_status,
+        "bundledVersion": bundled_version,
+        "installs": installs,
     }
 
 

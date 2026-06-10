@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime
+import hashlib
 import json
 import shutil
 import sys
@@ -14,10 +16,85 @@ CLIENTS = {"codex", "claude"}
 CODEX_MCP_BEGIN = "# BEGIN StockValuation.io MCP"
 CODEX_MCP_END = "# END StockValuation.io MCP"
 PACKAGE_DIR = Path(__file__).resolve().parent
+MANIFEST_NAME = ".install-manifest.json"
+_CHECKSUM_IGNORED_NAMES = {MANIFEST_NAME, ".DS_Store", "__pycache__"}
 
 
 def bundled_skill_dir() -> Path:
     return PACKAGE_DIR / "skills" / "stockvaluation-io"
+
+
+def skill_bundle_version(skill_dir: Path | None = None) -> str:
+    skill_md = (skill_dir or bundled_skill_dir()) / "SKILL.md"
+    try:
+        for line in skill_md.read_text(encoding="utf-8").splitlines():
+            if line.startswith("version:"):
+                return line.split(":", 1)[1].strip()
+    except OSError:
+        pass
+    return "unknown"
+
+
+def compute_skill_checksums(root: Path) -> dict[str, str]:
+    checksums: dict[str, str] = {}
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(root)
+        if any(part in _CHECKSUM_IGNORED_NAMES for part in relative.parts):
+            continue
+        checksums[relative.as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return checksums
+
+
+def write_install_manifest(target: Path) -> Path:
+    manifest = {
+        "name": "stockvaluation-io",
+        "version": skill_bundle_version(target),
+        "installedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "files": compute_skill_checksums(target),
+    }
+    manifest_path = target / MANIFEST_NAME
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return manifest_path
+
+
+def verify_skill_install(target: Path) -> dict[str, object]:
+    if not target.is_dir():
+        return {"status": "not_installed", "version": None, "path": str(target), "issues": []}
+    manifest_path = target / MANIFEST_NAME
+    if not manifest_path.is_file():
+        return {
+            "status": "drifted",
+            "version": None,
+            "path": str(target),
+            "issues": ["missing manifest"],
+        }
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {
+            "status": "drifted",
+            "version": None,
+            "path": str(target),
+            "issues": ["unreadable manifest"],
+        }
+    expected = manifest.get("files") if isinstance(manifest.get("files"), dict) else {}
+    actual = compute_skill_checksums(target)
+    issues: list[str] = []
+    for relative, checksum in sorted(expected.items()):
+        if relative not in actual:
+            issues.append(f"missing: {relative}")
+        elif actual[relative] != checksum:
+            issues.append(f"modified: {relative}")
+    for relative in sorted(set(actual) - set(expected)):
+        issues.append(f"unexpected: {relative}")
+    return {
+        "status": "drifted" if issues else "in_sync",
+        "version": manifest.get("version"),
+        "path": str(target),
+        "issues": issues,
+    }
 
 
 class AgentInstaller:
@@ -36,9 +113,15 @@ class AgentInstaller:
         for client in expand_clients(clients):
             target = self._skill_target(client)
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(bundled_skill_dir(), target, dirs_exist_ok=True)
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(bundled_skill_dir(), target)
+            write_install_manifest(target)
             installed[client] = str(target)
         return installed
+
+    def verify_skills(self, clients: Iterable[str]) -> dict[str, dict[str, object]]:
+        return {client: verify_skill_install(self._skill_target(client)) for client in expand_clients(clients)}
 
     def install_mcp_config(self, clients: Iterable[str]) -> dict[str, str]:
         installed: dict[str, str] = {}

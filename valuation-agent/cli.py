@@ -34,6 +34,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("check-env", help="Check required local environment variables without printing values.")
 
+    verify = subparsers.add_parser("verify", help="Verify installed skills against their install manifest.")
+    verify.add_argument("--client", choices=["codex", "claude", "all"], default="all")
+
     uninstall = subparsers.add_parser("uninstall", help="Remove installed skills and MCP config.")
     uninstall.add_argument("--client", choices=["codex", "claude", "all"], default="all")
 
@@ -70,6 +73,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "check-env":
         EnvironmentStatus.print(controller.check_environment())
         return 0
+
+    if args.command == "verify":
+        reports = installer.verify_skills(clients)
+        print(json.dumps(reports, indent=2, sort_keys=True))
+        return 0 if all(report["status"] == "in_sync" for report in reports.values()) else 1
 
     if args.command == "uninstall":
         removed = installer.uninstall(clients)

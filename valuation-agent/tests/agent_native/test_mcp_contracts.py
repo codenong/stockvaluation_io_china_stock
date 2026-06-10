@@ -360,6 +360,43 @@ def _valid_segment_economics_artifact():
     }
 
 
+def test_health_includes_skill_metadata_without_removing_existing_fields(tmp_path):
+    from valuation_agent.installer import AgentInstaller, skill_bundle_version
+
+    home = tmp_path / "home"
+    AgentInstaller(home=home).install_skills(["claude"])
+    registry = MCPToolRegistry(FakeClient(), home=home)
+
+    result = registry.call("stockvaluation.health", {})
+    payload = result["structuredContent"]
+
+    assert payload["ok"] is True
+    assert payload["service"]["status"] == "UP"
+    assert payload["mcp"]["name"] == "valuation-agent"
+    assert payload["policy"]["educationalUseOnly"] is True
+    skill = payload["skill"]
+    assert skill["installedVersion"] == skill_bundle_version()
+    assert skill["syncStatus"] == "in_sync"
+    assert skill["installs"]["claude"]["status"] == "in_sync"
+    assert skill["installs"]["codex"]["status"] == "not_installed"
+
+
+def test_health_skill_metadata_reports_drift_and_not_installed(tmp_path):
+    from valuation_agent.installer import AgentInstaller
+
+    home = tmp_path / "home"
+    registry = MCPToolRegistry(FakeClient(), home=home)
+    payload = registry.call("stockvaluation.health", {})["structuredContent"]
+    assert payload["skill"]["syncStatus"] == "not_installed"
+    assert payload["skill"]["installedVersion"] == "unknown"
+
+    AgentInstaller(home=home).install_skills(["claude"])
+    skill_md = home / ".claude" / "skills" / "stockvaluation-io" / "SKILL.md"
+    skill_md.write_text(skill_md.read_text(encoding="utf-8") + "\ndrift\n", encoding="utf-8")
+    payload = registry.call("stockvaluation.health", {})["structuredContent"]
+    assert payload["skill"]["syncStatus"] == "drifted"
+
+
 def test_mcp_tools_list_has_required_stockvaluation_contracts():
     registry = MCPToolRegistry(FakeClient())
 
