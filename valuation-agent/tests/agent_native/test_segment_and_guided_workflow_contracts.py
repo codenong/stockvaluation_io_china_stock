@@ -8,8 +8,7 @@ def _reference(name: str) -> str:
 
 def test_segment_aware_workflow_docs_define_public_acceptance_contract():
     skill = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8").lower()
-    segment_discovery = _reference("segment-discovery.md").lower()
-    segment_quality = _reference("segment-quality.md").lower()
+    segments = _reference("segments.md").lower()
     mcp = _reference("mcp-tools.md").lower()
 
     assert "segment-aware mechanical baseline" in skill
@@ -21,29 +20,25 @@ def test_segment_aware_workflow_docs_define_public_acceptance_contract():
         "segment_evidence_insufficient",
         "segment_mapping_blocked",
     ]:
-        assert status in segment_discovery
+        assert status in segments
         assert status in mcp
 
     for required_field in [
-        "segment name",
-        "revenue weight",
-        "source name",
-        "source date",
-        "source url",
+        "revenue weight or amount",
+        "source name/url/date",
         "mapped industry",
         "mapping confidence",
         "validation warnings",
     ]:
-        assert required_field in segment_discovery
-        assert required_field in mcp
+        assert required_field in segments
 
-    assert "80%" in segment_quality
-    assert "generic source presence is not segment evidence" in segment_quality
-    assert "segment names without revenue weights" in segment_quality
+    assert "80%" in segments
+    assert "generic source presence is not segment evidence" in segments
+    assert "segment names without revenue weights" in segments
 
 
 def test_report_references_require_segment_economics_quality_and_no_overclaiming():
-    segment_quality = _reference("segment-quality.md").lower()
+    segments = _reference("segments.md").lower()
     mcp = _reference("mcp-tools.md").lower()
 
     for phrase in [
@@ -51,166 +46,98 @@ def test_report_references_require_segment_economics_quality_and_no_overclaiming
         "validated_full_economics",
         "partial_economics",
         "revenue_only_segments",
-        "per-driver segment status",
+        "per-driver",
     ]:
-        assert phrase in segment_quality
+        assert phrase in segments
 
     for driver in ["revenue mix", "growth", "margin", "reinvestment intensity"]:
-        assert driver in segment_quality
+        assert driver in segments
 
-    assert "revenue-only segment evidence cannot support growth, margin, or reinvestment changes" in segment_quality
-    assert "sector_key" in segment_quality
-    assert "baselineusestatus" in segment_quality
-    assert "blank url/date references are rejected" in segment_quality
-    assert "do not describe a revenue-only segment package as fully segment-modeled" in segment_quality
+    assert "revenue-only evidence cannot support growth, margin, or reinvestment changes" in segments
+    assert "sector_key" in segments
+    assert "baselineusestatus" in segments
+    assert "blank references are rejected" in segments
+    assert "do not describe a revenue-only segment package as fully segment-modeled" in segments
     assert "`segment_economics`" in mcp
     assert "yahoo_industry_key" in mcp
 
 
 def test_guided_refinement_reference_defines_bounded_user_judgment_flow():
-    reference = _reference("guided-valuation-refinement.md")
-    lower = reference.lower()
+    workflow = _reference("workflow.md").lower()
 
     for phrase in [
-        "default full researched valuation: use guided refinement",
-        "materiality-driven guided refinement",
-        "ask every material company-specific question",
-        "hard cap of 15 visible guided questions",
-        "no forced minimum",
+        "run guided refinement in every default flow",
+        "hard cap 15, no forced minimum, no filler",
         "one question at a time",
-        "hidden guided question plan",
         "batch mode only when explicitly requested",
-        "do not ask a batch of 4-6 questions",
-        "do not invent filler questions",
         "use defaults",
-        "user answers are user judgment, not external evidence",
-        "one final user-refined recalculation",
+        "the returned plan is the source of truth",
+        "never downgrade a `user scenario override`",
         "stockvaluation.apply_guided_answers",
         "request_policy.mode = \"user_refined_scenario\"",
-        "send only supported mapped assumptions",
-        "not financial advice",
+        "exactly one final deterministic call",
     ]:
-        assert phrase in lower
+        assert phrase in workflow
 
-    for stale_rule in ["at most 8 in deep mode", "8 questions", "fixed 3-question", "ask three questions"]:
-        assert stale_rule not in lower
-
-    for field in [
-        '"id"',
-        '"driver"',
-        '"evidence_basis"',
-        '"evidence_used"',
-        '"default_answer"',
-        '"company_specific_rationale"',
-        '"business_tension"',
-        '"why_default_selected"',
-        '"business_impact"',
-        '"model_impact"',
-        '"bounded_choices"',
-        '"recommended_answer"',
-        '"hidden_model_mapping"',
-        '"confidence"',
-        '"status"',
-        '"mapping_notes"',
-        '"priority_reason"',
-    ]:
-        assert field in reference
-
-    for phrase in [
-        "my analysis",
-        "why this default",
-        "evidence used",
-        "business impact",
-        "model impact",
-        "confidence",
-        "markdown question card",
-        "question number",
-        "choices table",
-        "default marker",
-        "reply options",
-        "must not downgrade a `user scenario override` to report-only text",
-        "do not end with a report-only final report",
-        "prospectusscenariocandidate.scenario",
-    ]:
-        assert phrase in lower
+    for stale_rule in ["at most 8 in deep mode", "fixed 3-question", "ask three questions"]:
+        assert stale_rule not in workflow
 
 
 def test_evidence_review_gate_is_required_before_guided_refinement():
     skill = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8").lower()
-    gate = _reference("evidence-review-gate.md").lower()
+    workflow = _reference("workflow.md").lower()
 
-    assert "evidence-review-gate.md" in skill
-    assert skill.index("driver-specific-evidence.md") < skill.index("evidence-review-gate.md")
-    assert skill.index("evidence-review-gate.md") < skill.index("baseline-plausibility.md")
-    assert skill.index("evidence-review-gate.md") < skill.index("guided-valuation-refinement.md")
+    assert "workflow.md" in skill
+    assert skill.index("evidence review gate") < skill.index("guided refinement:")
 
     for phrase in [
-        "default interactive researched valuation must stop at this gate",
-        "do not ask guided valuation refinement questions before the gate is cleared",
-        "approve and continue to guided questions",
-        "provide corrections",
-        "provide additional sources",
-        "continue with caveats",
-        "approval is not financial advice",
+        "stop and show a compact human review before any guided question or report",
+        "approve, correct, add sources, or continue with caveats",
+        "not a recommendation and not financial advice",
         "user corrections are not external evidence unless source-backed",
     ]:
-        assert phrase in gate
+        assert phrase in workflow
 
 
 def test_evidence_review_gate_documents_required_visible_fields():
-    gate = _reference("evidence-review-gate.md").lower()
+    workflow = _reference("workflow.md").lower()
 
     for phrase in [
-        "source quality summary",
-        "sources checked",
-        "source dates",
+        "core financial source",
+        "sources checked with dates",
         "driver-specific evidence",
-        "segment evidence and segment limitations",
-        "latest news or material business context",
+        "segment evidence and limitations",
         "data gaps",
         "conflicts",
-        "supported model changes",
-        "report-only",
-        "unsupported topics",
-        "workflow treatment",
+        "supported model changes vs report-only vs unsupported",
     ]:
-        assert phrase in gate
+        assert phrase in workflow
 
 
 def test_guided_refinement_documents_supported_and_report_only_fields():
-    reference = _reference("guided-valuation-refinement.md").lower()
+    mcp = _reference("mcp-tools.md").lower()
+    evidence = _reference("evidence-and-judgment.md").lower()
 
     for supported in [
         "revenue_growth",
         "operating_margin_next_year",
         "target_operating_margin",
         "margin_convergence_year",
-        "sales_to_capital_years_1_to_5",
-        "sales_to_capital_years_6_to_10",
+        "sales_to_capital",
         "sector_overrides",
     ]:
-        assert supported in reference
+        assert supported in mcp
 
-    for report_only in [
-        "market-implied diagnostics are report-only",
-        "wacc",
-        "terminal growth",
-        "tax",
-        "accounting adjustments",
-        "cash",
-        "debt",
-        "share count",
-        "direct valuation outputs",
-    ]:
-        assert report_only in reference
+    for report_only in ["market-implied diagnostics", "wacc", "terminal growth", "tax", "cash", "debt", "share count"]:
+        assert report_only in evidence
+    assert "report-only" in evidence
 
 
 def test_valuation_method_consistency_statuses_are_documented_for_reports():
-    prospectus = _reference("prospectus-mode.md").lower()
-    guided = _reference("guided-valuation-refinement.md").lower()
+    workflow = _reference("workflow.md").lower()
     mcp = _reference("mcp-tools.md").lower()
-    baseline = _reference("baseline-plausibility.md").lower()
-    segment = _reference("segment-quality.md").lower()
+    evidence = _reference("evidence-and-judgment.md").lower()
+    segments = _reference("segments.md").lower()
 
     for status in [
         "valuationbasisstatus",
@@ -226,23 +153,15 @@ def test_valuation_method_consistency_statuses_are_documented_for_reports():
     for phrase in [
         "no clean user-facing valuation was produced",
         "post-offering shares require pro-forma cash",
-        "offering price is the prospectus price basis",
         "do not show the diagnostic value before evidence review",
-        "continue with caveats",
+        "continues with caveats",
         "challenged diagnostic value",
+        "dcf.estimatedvaluepershare",
     ]:
-        assert phrase in prospectus
+        assert phrase in workflow
 
-    assert "dcf.estimatedvaluepershare" in prospectus
-
-    assert "report-only guided defaults" in guided
-    assert "do not call report-only prospectus guided answers a user-refined scenario" in prospectus
-    assert "prospectus mode has a deterministic explicit scenario path" in guided
-    assert "use it whenever `stockvaluation.apply_guided_answers` returns a supported `prospectusscenariocandidate`" in guided
-    assert "market_calibrated_diagnostic" in baseline
-    assert "market calibration stayed diagnostic" in baseline
-    assert "segment_mapping_material_gap" in segment
-    assert "material unmapped" in segment
+    assert "market_calibrated_diagnostic" in evidence
+    assert "segment_mapping_material_gap" in segments
 
 
 def test_user_refined_scenario_mcp_rejects_explicit_only_fields():

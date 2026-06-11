@@ -6,76 +6,64 @@ def _reference(name: str) -> str:
     return (bundled_skill_dir() / "references" / name).read_text(encoding="utf-8")
 
 
-def test_skill_references_baseline_plausibility_after_driver_evidence_before_judgment():
-    skill = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8")
-    lower = skill.lower()
+def test_skill_orders_evidence_before_gate_before_judgment():
+    skill = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8").lower()
 
-    assert "baseline-plausibility.md" in skill
-    assert "mechanical baseline" in lower
-    assert "evidence-constrained base" in lower
-    assert "market-implied diagnostics" in lower
-    assert lower.index("driver-specific-evidence.md") < lower.index("baseline-plausibility.md")
-    assert lower.index("baseline-plausibility.md") < lower.index("assumption-judgment.md")
+    assert "evidence-and-judgment.md" in skill
+    assert "mechanical baseline" in skill
+    assert skill.index("classify driver-specific evidence") < skill.index("evidence review gate")
+    assert skill.index("evidence review gate") < skill.index("baseline plausibility")
+    assert skill.index("baseline plausibility") < skill.index("assumption_judgment")
 
 
-def test_baseline_plausibility_reference_defines_required_workflow_terms():
-    reference = _reference("baseline-plausibility.md")
-    lower = reference.lower()
+def test_plausibility_rules_define_required_workflow_terms():
+    reference = _reference("evidence-and-judgment.md").lower()
 
     for term in [
-        "mechanical_baseline",
-        "evidence_constrained_base",
-        "market_implied_diagnostics",
-        "optimistic_assumption_stack",
-        "unsupported_blockers",
-        "fail-closed",
+        "price/value gap",
+        "optimistic stack",
+        "unsupported blocker",
+        "mechanical baseline",
+        "evidence-constrained base",
+        "market-implied diagnostics",
     ]:
-        assert term in lower
-    for check in ["price / value gap", "growth", "margin path", "reinvestment / sales-to-capital"]:
-        assert check in lower
-    assert "greater than 50%" in lower
-    assert "trailing growth alone is not enough" in lower
+        assert term in reference
+    assert "exceeds 50%" in reference
+    assert "trailing growth alone is not a runway" in reference
+    assert "market_calibrated_diagnostic" in reference
+    assert "no-change case" in reference
 
 
 def test_assumption_judgment_contract_carries_plausibility_and_blockers():
-    judgment = _reference("assumption-judgment.md")
-    lower = judgment.lower()
+    reference = _reference("evidence-and-judgment.md")
+    lower = reference.lower()
 
-    for field in [
-        '"baseline_plausibility"',
-        '"baseline_quality"',
-        '"price_value_gap_flag"',
-        '"optimistic_assumption_stack"',
-        '"market_implied_diagnostics_status"',
-        '"researched_case_status"',
-        '"unsupported_blockers"',
-        '"assumptions_left_unchanged"',
-    ]:
-        assert field in judgment
-    assert "market-implied diagnostics are report-only" in lower
-    assert "`operating_margin_next_year` does not map to an autonomous override" in lower
+    assert "`assumption_judgment`" in reference
+    assert "`baseline_plausibility`" in reference
+    assert "`evidence_used`" in reference
+    assert "`no_change_reason`" in reference
+    assert "`assumptions_left_unchanged`" in reference
+    assert "keep requested, mapped, unsupported, and effective assumptions separate" in lower
+    assert "never evidence" in lower
 
 
-def test_report_template_distinguishes_mechanical_evidence_constrained_and_market_implied():
-    template = _reference("report-template.md")
-    lower = template.lower()
+def test_report_reference_distinguishes_mechanical_evidence_constrained_and_market_implied():
+    report = _reference("report.md").lower()
 
-    assert "audit/debug" in lower
-    assert "do not show the internal mechanical model value" in lower
-    assert "mechanical baseline" in lower
-    assert "diagnostic scenarios stay diagnostic" in lower
-    assert "market-implied or sensitivity runs belong in `market_implied_diagnostics`" in lower
+    assert "audit/debug" in report
+    assert "do not show the internal mechanical model value" in report
+    assert "diagnostic scenarios stay diagnostic" in report
+    assert "market-implied or sensitivity runs belong in `market_implied_diagnostics`" in report
 
 
 def test_market_implied_values_remain_report_only_not_autonomous_evidence():
-    plausibility = _reference("baseline-plausibility.md").lower()
-    judgment = _reference("assumption-judgment.md").lower()
+    evidence = _reference("evidence-and-judgment.md").lower()
+    method = _reference("valuation-method.md").lower()
     mcp = _reference("mcp-tools.md").lower()
 
-    for text in [plausibility, judgment, mcp]:
+    for text in [evidence, method, mcp]:
         assert "market-implied" in text
-        assert "not evidence" in text or "not autonomous model changes" in text
-    assert "market_implied_diagnostics_status" in judgment
+        assert "not evidence" in text or "not autonomous model changes" in text or "report-only" in text
 
 
 def test_operating_margin_next_year_is_rejected_in_autonomous_researched_mode():
@@ -106,4 +94,4 @@ def test_operating_margin_next_year_is_rejected_in_autonomous_researched_mode():
         == "scenario_only_in_autonomous_researched_mode"
     )
     assert client.calls == []
-    assert "`operating_margin_next_year` is scenario-only in autonomous researched mode" in _reference("mcp-tools.md")
+    assert "`operating_margin_next_year` is scenario-only" in _reference("evidence-and-judgment.md")

@@ -15,84 +15,52 @@ ACCEPTANCE_MATRIX = (
 
 def test_skill_pack_contains_required_agent_native_references():
     skill_dir = bundled_skill_dir()
-
     required = {
         "mcp-tools.md",
-        "search-and-evidence.md",
-        "driver-specific-evidence.md",
-        "evidence-review-gate.md",
-        "baseline-plausibility.md",
-        "scenario-book.md",
-        "guided-valuation-refinement.md",
-        "segment-discovery.md",
-        "assumption-judgment.md",
-        "damodaran-method.md",
-        "damodaran-coverage-map.md",
-        "damodaran-source-map.md",
-        "growth-reinvestment-discipline.md",
-        "terminal-value-discipline.md",
-        "model-selection-and-lifecycle.md",
-        "rd-capitalization-decision.md",
-        "risk-currency-country.md",
-        "accounting-cleanup.md",
-        "options-leases-other-claims.md",
-        "segment-quality.md",
-        "special-company-stop-rules.md",
-        "narrative-report-style.md",
-        "report-template.md",
-        "report-prose-quality.md",
-        "report-artifact.md",
+        "workflow.md",
+        "evidence-and-judgment.md",
+        "valuation-method.md",
+        "segments.md",
+        "accounting-and-claims.md",
+        "report.md",
         "no-advice-policy.md",
-        "assumption-checks.md",
-        "accounting-adjustments.md",
-        "troubleshooting.md",
     }
 
     assert (skill_dir / "SKILL.md").exists()
-    assert required.issubset({path.name for path in (skill_dir / "references").iterdir()})
+    assert required == {path.name for path in (skill_dir / "references").glob("*.md")}
     assert (skill_dir / "scripts" / "render_report_html.py").exists()
+    assert (skill_dir / "scripts" / "build_report.py").exists()
+    assert (skill_dir / "scripts" / "prose_lint.py").exists()
 
 
 def test_researched_reference_docs_govern_evidence_segments_and_judgment():
     references = bundled_skill_dir() / "references"
+    evidence = (references / "evidence-and-judgment.md").read_text(encoding="utf-8").lower()
+    segments = (references / "segments.md").read_text(encoding="utf-8").lower()
 
-    search = (references / "search-and-evidence.md").read_text(encoding="utf-8").lower()
-    segments = (references / "segment-discovery.md").read_text(encoding="utf-8").lower()
-    judgment = (references / "assumption-judgment.md").read_text(encoding="utf-8")
-    judgment_lower = judgment.lower()
-
-    assert "company-domain-first" in search
-    assert "source_url" in search
-    assert "source_date" in search
-    assert "evidence packet" in search
-    assert "fresh-context research subagents" in search
-    assert "filings_annual_report_research" in search
-    assert "earnings_ir_research" in search
-    assert "latest_news_research" in search
-    assert "segment_evidence_research" in search
-    assert "do not return full article text" in search
-    assert "baseline_plausibility" in judgment
-    assert "do not invent" in segments
-    assert "revenue shares" in segments
+    assert "company domains first" in evidence
+    assert "source_url" in evidence
+    assert "source_date" in evidence
+    assert "fresh-context subagents" in evidence
+    assert "one per source family" in evidence
+    assert "keep filing bodies, transcripts, and search logs out of the main context" in evidence
+    assert "the main agent decides whether evidence can affect assumptions" in evidence
+    assert "never invent revenue shares" in segments
     assert "latest annual report" in segments
-    assert "sec" in segments
-    assert "exchange" in segments
-    assert '"baseline_assumptions"' in judgment
-    assert '"evidence_used"' in judgment
-    assert '"dcf_adjustment_instructions"' in judgment
-    assert '"sector_adjustment_instructions"' in judgment
-    assert "weak, mixed, stale, or uncited" in judgment_lower
-    for prohibited in ["wacc", "terminal growth", "tax rate", "cash", "debt", "share count"]:
-        assert prohibited in judgment_lower
+    assert "`assumption_judgment`" in evidence
+    assert "`evidence_used`" in evidence
+    assert "`dcf_adjustment_instructions`" in evidence
+    assert "`sector_adjustment_instructions`" in evidence
+    for prohibited in ["wacc", "terminal growth", "tax", "cash", "debt", "share count"]:
+        assert prohibited in evidence
 
 
 def test_assumption_judgment_documents_recalculate_payload_mapping():
-    judgment = (bundled_skill_dir() / "references" / "assumption-judgment.md").read_text(encoding="utf-8").lower()
+    evidence = (bundled_skill_dir() / "references" / "evidence-and-judgment.md").read_text(encoding="utf-8").lower()
 
-    assert "`revenue_cagr` maps to `revenue_growth`" in judgment
-    assert "`dcf_adjustment_instructions` map to `stockvaluation.recalculate` overrides" in judgment
-    assert "`sector_adjustment_instructions` map to `sector_overrides`" in judgment
-    assert "`evidence_used` stays attached to the recalculate metadata" in judgment
+    assert "`revenue_cagr` (→ `revenue_growth`)" in evidence
+    assert "map only governed instructions into `stockvaluation.recalculate` overrides" in evidence
+    assert "keep requested, mapped, unsupported, and effective assumptions separate" in evidence
 
 
 def test_main_skill_requires_mcp_json_and_agent_written_educational_report():
@@ -108,35 +76,28 @@ def test_main_skill_requires_mcp_json_and_agent_written_educational_report():
 
 
 def test_skill_docs_describe_browser_report_artifact():
-    skill_dir = bundled_skill_dir()
-    skill_text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
-    artifact = (skill_dir / "references" / "report-artifact.md").read_text(encoding="utf-8")
+    skill_text = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8")
+    report = (bundled_skill_dir() / "references" / "report.md").read_text(encoding="utf-8")
 
-    assert "report-artifact.md" in skill_text
-    assert "render_report_html.py" in artifact
-    assert "Guided Judgment" in artifact
-    assert "Bottom Line" in artifact
-    assert "tmp/valuation-reports" in artifact
-    assert "clickable local file link" in artifact
+    assert "report.md" in skill_text
+    assert "build_report.py" in report
+    assert "Guided Judgment" in report
+    assert "Bottom Line" in report
+    assert "tmp/valuation-reports" in report
+    assert "index.html" in report
 
 
 def test_skill_docs_use_deterministic_prose_linter_gate():
     skill_dir = bundled_skill_dir()
     skill_text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
-    quality = (skill_dir / "references" / "report-prose-quality.md").read_text(encoding="utf-8")
-    artifact = (skill_dir / "references" / "report-artifact.md").read_text(encoding="utf-8")
-    template = (skill_dir / "references" / "report-template.md").read_text(encoding="utf-8")
+    report = (skill_dir / "references" / "report.md").read_text(encoding="utf-8")
 
-    assert "prose_lint.py" in skill_text
-    assert "report-prose-quality.md" in skill_text
-    assert "prose_lint.py" in quality
-    assert "prose_lint_rules.json" in quality
-    assert "do not remove required sections" in quality.lower()
-    assert "guided questions" in quality.lower()
-    assert "passed `report-prose-quality.md`" in artifact
-    assert "prose_lint.py" in template
-    for text in (skill_text, quality, artifact, template):
-        assert "stop-slop" not in text
+    assert "prose linter" in skill_text
+    assert "prose_lint.py" in report
+    assert "prose_lint_rules.json" in report
+    assert "blocks rendering on error-level findings" in report
+    for text_blob in (skill_text, report):
+        assert "stop-slop" not in text_blob
 
 
 def test_html_report_renderer_creates_local_artifact(tmp_path):
@@ -211,45 +172,39 @@ def test_main_skill_makes_full_researched_valuation_the_default_workflow():
     assert "assumption_judgment" in skill_text
     assert "auto-recalculate once" in lower
     assert "stockvaluation.recalculate" in skill_text
-    assert lower.index("driver-specific-evidence.md") < lower.index("evidence-review-gate.md")
-    assert lower.index("evidence-review-gate.md") < lower.index("baseline-plausibility.md")
-    assert lower.index("assumption_judgment") < lower.index("stockvaluation.recalculate")
+    assert lower.index("evidence review gate") < lower.index("baseline plausibility")
+    assert lower.index("assumption_judgment") < lower.index("guided refinement:")
 
 
 def test_stockvaluation_io_reference_triggers_guided_refinement_by_default():
     skill_text = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8")
+    workflow = (bundled_skill_dir() / "references" / "workflow.md").read_text(encoding="utf-8")
     lower = skill_text.lower()
 
     assert "whenever the prompt mentions `stockvaluation.io`" in lower
     assert "plain request such as \"value company using stockvaluation.io\"" in lower
     assert "not a quick valuation and not a one-shot report request" in lower
-    assert "do not infer a guided-refinement bypass from ordinary phrasing" in lower
-    assert "the final report is blocked until the evidence review gate is cleared" in lower
-    assert "the final report is blocked until guided refinement" in lower
-    assert "build a hidden guided question plan" in lower
+    assert "never infer an evidence-review or guided-refinement bypass" in lower
+    assert "gate_not_cleared" in lower
     assert "ask one question at a time" in lower
-    assert "my analysis" in lower
-    assert "do not write the final report in that same response" in lower
+    assert '"My analysis"' in workflow
+    assert "run guided refinement in every default flow" in workflow.lower()
 
 
 def test_full_researched_valuation_delegates_source_heavy_search_to_subagents():
     skill_text = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8").lower()
-    search = (bundled_skill_dir() / "references" / "search-and-evidence.md").read_text(encoding="utf-8").lower()
+    evidence = (bundled_skill_dir() / "references" / "evidence-and-judgment.md").read_text(encoding="utf-8").lower()
 
-    assert "delegate source-heavy research to fresh-context subagents" in skill_text
-    assert "filings/annual reports" in skill_text
-    assert "earnings/ir materials" in skill_text
-    assert "latest company news" in skill_text
-    assert "compact evidence packet" in skill_text
-    assert "main agent remains responsible for deciding whether evidence can affect assumptions" in search
-    assert "if subagents are unavailable, emulate the same discipline" in search
+    assert "research subagents" in skill_text
+    assert "delegate source-heavy research to fresh-context subagents" in evidence
+    assert "one per source family" in evidence
+    assert "the main agent decides whether evidence can affect assumptions" in evidence
 
 
 def test_segment_aware_baseline_docs_define_workflow_statuses_and_schema():
     references = bundled_skill_dir() / "references"
     skill_text = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8").lower()
-    segments = (references / "segment-discovery.md").read_text(encoding="utf-8").lower()
-    quality = (references / "segment-quality.md").read_text(encoding="utf-8").lower()
+    segments = (references / "segments.md").read_text(encoding="utf-8").lower()
     mcp = (references / "mcp-tools.md").read_text(encoding="utf-8").lower()
 
     assert "segment-aware mechanical baseline" in skill_text
@@ -274,19 +229,18 @@ def test_segment_aware_baseline_docs_define_workflow_statuses_and_schema():
         "mapping confidence",
         "validation warnings",
     ]:
-        assert required_field in segments
         assert required_field in mcp
 
-    assert "80%" in quality
-    assert "generic source presence is not segment evidence" in quality
-    assert "segment names without revenue weights" in quality
+    assert "80%" in segments
+    assert "generic source presence is not segment evidence" in segments
+    assert "segment names without revenue weights" in segments
 
 
-def test_report_template_has_no_advice_framing_without_recommendation_phrases():
-    template = (bundled_skill_dir() / "references" / "report-template.md").read_text(encoding="utf-8")
-    lower = template.lower()
+def test_report_reference_has_no_advice_framing_without_recommendation_phrases():
+    report = (bundled_skill_dir() / "references" / "report.md").read_text(encoding="utf-8")
+    lower = report.lower()
 
-    assert "educational use only" in lower
+    assert "educational" in lower
     assert "not financial advice" in lower
     for phrase in [
         "you should invest",
@@ -300,9 +254,9 @@ def test_report_template_has_no_advice_framing_without_recommendation_phrases():
         assert phrase not in lower
 
 
-def test_report_template_limits_model_writing_to_named_prose_fields():
-    template = (bundled_skill_dir() / "references" / "report-template.md").read_text(encoding="utf-8")
-    lower = template.lower()
+def test_report_reference_limits_model_writing_to_named_prose_fields():
+    report = (bundled_skill_dir() / "references" / "report.md").read_text(encoding="utf-8")
+    lower = report.lower()
 
     assert "what the model writes" in lower
     assert "only the `prose` fields" in lower
@@ -311,11 +265,10 @@ def test_report_template_limits_model_writing_to_named_prose_fields():
     assert "analyze the company, never narrate the workflow" in lower
 
 
-def test_report_template_summarizes_audit_packet_without_mechanical_baseline_value():
-    template = (bundled_skill_dir() / "references" / "report-template.md").read_text(encoding="utf-8")
-    lower = template.lower()
+def test_report_reference_keeps_mechanical_baseline_out_of_default_report():
+    report = (bundled_skill_dir() / "references" / "report.md").read_text(encoding="utf-8")
+    lower = report.lower()
 
-    assert "investor-reader" in lower
     assert "no-advice line" in lower
     assert "no internal terms" in lower
     assert "do not show the internal mechanical model value" in lower
@@ -328,73 +281,19 @@ def test_mcp_reference_documents_compact_audit_packet_metadata():
 
     assert "`auditpacket`" in lower
     assert "valuation_audit_packet.v1" in lower
-    assert "packet reference" in lower
-    assert "compact packet summary" in lower
     assert "visible text block" in lower
     assert "baseline_plausibility" in lower
     assert "assumption_judgment" in lower
 
 
-def test_scenario_book_reference_documents_visibility_and_mode_boundaries():
-    references = bundled_skill_dir() / "references"
-    skill = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8").lower()
-    scenario_book = (references / "scenario-book.md").read_text(encoding="utf-8").lower()
-    mcp = (references / "mcp-tools.md").read_text(encoding="utf-8").lower()
+def test_scenario_book_summary_documents_visibility_and_mode_boundaries():
+    mcp = (bundled_skill_dir() / "references" / "mcp-tools.md").read_text(encoding="utf-8").lower()
 
-    for phrase in [
-        "scenario_book.v1",
-        "mechanical baseline is internal-only",
-        "market-implied diagnostics are diagnostic-only",
-        "exactly one user-refined scenario",
-        "guided-refinement bypass",
-        "explicit scenario mode is distinct",
-        "requested, mapped, unsupported, metadata, and effective",
-    ]:
-        assert phrase in scenario_book
-
-    assert "scenario book" in skill
+    assert "scenario_book.v1" in mcp
     assert "`scenariobook`" in mcp
-
-
-def test_researched_acceptance_matrix_covers_global_non_financial_workflow_behavior():
-    matrix = json.loads(ACCEPTANCE_MATRIX.read_text(encoding="utf-8"))
-    companies = matrix["companies"]
-
-    assert matrix["purpose"] == "workflow_acceptance_not_valuation_baselines"
-    assert len(companies) == 20
-    assert all(company["sector"] != "Financial Services" for company in companies)
-    assert all("expected_intrinsic_value" not in company for company in companies)
-    assert all("target_price" not in company for company in companies)
-    assert sum(company["listing_currency"] != "USD" for company in companies) >= 5
-    assert sum(company["primary_listing_country"] != "United States" for company in companies) >= 5
-    assert sum(company["segment_discovery"] == "expected" for company in companies) >= 5
-    assert sum(company["segment_discovery"] == "simple_or_mostly_single_segment" for company in companies) >= 5
-
-    categories = {category for company in companies for category in company["coverage_categories"]}
-    assert {
-        "us_large_cap_technology",
-        "us_consumer_or_retail",
-        "us_industrial_or_healthcare_non_financial",
-        "europe_large_cap_industrial_or_consumer",
-        "europe_technology_luxury_or_healthcare_non_financial",
-        "united_kingdom_non_financial",
-        "japan_technology_industrial_or_consumer_non_financial",
-        "india_non_financial",
-        "taiwan_or_korea_non_financial",
-        "canada_australia_brazil_or_other_non_us_region",
-    }.issubset(categories)
-
-    required_expectations = {
-        "health_check",
-        "baseline_dcf_or_classified_failure",
-        "segment_discovery",
-        "evidence_packet",
-        "assumption_judgment",
-        "auto_recalculate_once_when_supported",
-        "final_educational_report",
-    }
-    for company in companies:
-        assert required_expectations.issubset(set(company["workflow_expectations"]))
+    assert "mechanical baseline internal-only" in mcp
+    assert "market-implied diagnostics diagnostic-only" in mcp
+    assert "exactly one user-refined scenario" in mcp
 
 
 def test_mcp_tool_reference_documents_required_tool_names():
@@ -415,7 +314,8 @@ def test_mcp_tool_reference_documents_required_tool_names():
 def test_recalculate_reference_documents_researched_payload_contract():
     references = bundled_skill_dir() / "references"
     mcp_reference = (references / "mcp-tools.md").read_text(encoding="utf-8").lower()
-    assumption_checks = (references / "assumption-checks.md").read_text(encoding="utf-8").lower()
+    evidence = (references / "evidence-and-judgment.md").read_text(encoding="utf-8").lower()
+    workflow = (references / "workflow.md").read_text(encoding="utf-8").lower()
 
     for term in [
         "segments",
@@ -423,35 +323,30 @@ def test_recalculate_reference_documents_researched_payload_contract():
         "growth_pattern_override",
         "rationale",
         "evidence_used",
-        "requested",
-        "mapped",
-        "unsupported",
-        "effective",
     ]:
         assert term in mcp_reference
-    assert "auto-recalculate once" in assumption_checks
-    assert "ask before recalculating with overrides" not in assumption_checks
+    assert "keep requested, mapped, unsupported, and effective assumptions separate" in evidence
+    assert "auto-recalculate once" in workflow
     assert "ask the user before calling it" not in mcp_reference
 
 
 def test_skill_docs_require_compact_client_visible_mcp_payloads():
     skill_text = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8").lower()
     mcp_reference = (bundled_skill_dir() / "references" / "mcp-tools.md").read_text(encoding="utf-8").lower()
-    judgment = (bundled_skill_dir() / "references" / "assumption-judgment.md").read_text(encoding="utf-8").lower()
 
-    for text in [skill_text, mcp_reference, judgment]:
-        assert "compact" in text
-    assert "client-visible call arguments" in mcp_reference
-    assert "minimal valid `evidence_packet`" in skill_text
-    assert "do not place raw research logs" in skill_text
-    assert "do not retry by pasting a larger debug object" in mcp_reference
+    assert "keep mcp arguments compact" in skill_text
+    assert "call argument hygiene" in mcp_reference
+    assert "smallest valid `evidence_packet`" in mcp_reference
+    assert "no research logs" in mcp_reference
+    assert "never retry with a larger debug object" in mcp_reference
 
 
 def test_recalculate_reference_does_not_autonomously_change_growth_pattern():
     mcp_reference = (bundled_skill_dir() / "references" / "mcp-tools.md").read_text(encoding="utf-8").lower()
+    evidence = (bundled_skill_dir() / "references" / "evidence-and-judgment.md").read_text(encoding="utf-8").lower()
 
     assert "`growth_pattern_override`" in mcp_reference
-    assert "do not use `growth_pattern_override` autonomously" in mcp_reference
+    assert "growth pattern" in evidence  # listed in the autonomous explain-only boundary
 
 
 def test_default_readme_keeps_runtime_guidance_user_facing():

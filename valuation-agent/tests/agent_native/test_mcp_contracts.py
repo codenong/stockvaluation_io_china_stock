@@ -2532,29 +2532,29 @@ def test_recalculate_blocks_lease_schedule_even_for_explicit_scenario():
     assert client.calls == []
 
 
-def test_report_template_keeps_mechanical_value_out_of_default_report():
-    template = (
+def test_report_reference_keeps_mechanical_value_out_of_default_report():
+    report = (
         Path(__file__).parents[2]
         / "skills"
         / "stockvaluation-io"
         / "references"
-        / "report-template.md"
+        / "report.md"
     ).read_text()
-    lower = template.lower()
+    lower = report.lower()
 
     assert "do not show the internal mechanical model value in the default report" in lower
-    assert "unless the user explicitly asks for audit/debug detail" in lower
+    assert "asks for audit/debug detail" in lower
 
 
-def test_report_template_requires_audit_block_with_source_class_and_versions():
-    template = (
+def test_report_reference_requires_audit_block_with_source_class_and_versions():
+    report = (
         Path(__file__).parents[2]
         / "skills"
         / "stockvaluation-io"
         / "references"
-        / "report-template.md"
+        / "report.md"
     ).read_text()
-    lower = template.lower()
+    lower = report.lower()
 
     assert "audit (gates from run state, evidence/guided status, source class, skill and service versions)" in lower
     assert '"source_class"' in lower
