@@ -1,0 +1,157 @@
+{
+  "schema_version": "conformance_replay_cases.v1",
+  "filing_url": "https://www.sec.gov/Archives/edgar/data/1181412/000162828026040364/spaceexplorationtechnologib.htm",
+  "evidence_items": [
+    {
+      "driver": "revenue_growth",
+      "evidence_summary": "Filing shows multi-year revenue growth.",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/1181412/000162828026040364/spaceexplorationtechnologib.htm",
+      "source_date": "2026-06-03",
+      "confidence": "high"
+    },
+    {
+      "driver": "operating_margin",
+      "evidence_summary": "Filing shows one profitable year in the margin history.",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/1181412/000162828026040364/spaceexplorationtechnologib.htm",
+      "source_date": "2026-06-03",
+      "confidence": "medium"
+    },
+    {
+      "driver": "reinvestment_sales_to_capital",
+      "evidence_summary": "Filing shows heavy capital expenditures against revenue growth.",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/1181412/000162828026040364/spaceexplorationtechnologib.htm",
+      "source_date": "2026-06-03",
+      "confidence": "medium"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "replay_2026_06_10_failure_sequence",
+      "description": "Extract, then scenario valuation with no evidence review recorded: the exact replay failure. Must refuse.",
+      "steps": [
+        {"tool": "stockvaluation.extract_prospectus", "args": {"filing_url": "$filing_url"}, "expect": {"ok": true}},
+        {
+          "tool": "stockvaluation.value_prospectus",
+          "args": {
+            "run_id": "$run_id",
+            "review_reference": "$review_reference",
+            "review_status": "reviewed",
+            "scenario": {"target_operating_margin": 18.0, "sales_to_capital_years_1_to_5": 1.4}
+          },
+          "expect": {"ok": false, "error_code": "GATE_NOT_CLEARED", "gate": "evidence_review"}
+        }
+      ]
+    },
+    {
+      "case_id": "unanchored_scenario_value_refused",
+      "description": "After the evidence gate clears, a model-authored number that matches no anchor is refused.",
+      "steps": [
+        {"tool": "stockvaluation.extract_prospectus", "args": {"filing_url": "$filing_url"}, "expect": {"ok": true}},
+        {
+          "tool": "stockvaluation.plan_guided_questions",
+          "args": {
+            "run_id": "$run_id",
+            "company": "Space Exploration Technologies",
+            "workflow_type": "prospectus",
+            "evidence_items": "$evidence_items",
+            "gate_records": [{"gate": "evidence_review", "outcome": "approved"}]
+          },
+          "expect": {"ok": true}
+        },
+        {
+          "tool": "stockvaluation.value_prospectus",
+          "args": {
+            "run_id": "$run_id",
+            "review_reference": "$review_reference",
+            "review_status": "reviewed",
+            "scenario": {"target_operating_margin": 18.0}
+          },
+          "expect": {"ok": false, "error_code": "UNANCHORED_SCENARIO_VALUE", "driver": "target_operating_margin"}
+        }
+      ]
+    },
+    {
+      "case_id": "guided_recalculate_refused_before_answers",
+      "description": "Guided-flow recalculation before answers are applied (no bypass) is refused.",
+      "steps": [
+        {"tool": "stockvaluation.extract_prospectus", "args": {"filing_url": "$filing_url"}, "expect": {"ok": true}},
+        {
+          "tool": "stockvaluation.recalculate",
+          "args": {
+            "run_id": "$run_id",
+            "ticker": "SPCX",
+            "overrides": {"user_judgment": {"source_type": "user_judgment"}},
+            "gate_records": [{"gate": "evidence_review", "outcome": "approved"}]
+          },
+          "expect": {"ok": false, "error_code": "GATE_NOT_CLEARED", "gate": "guided_refinement"}
+        }
+      ]
+    },
+    {
+      "case_id": "all_default_run",
+      "description": "Full all-default flow: extract, approve evidence, plan, accept defaults, value the candidate scenario. Must end in a point estimate.",
+      "steps": [
+        {"tool": "stockvaluation.extract_prospectus", "args": {"filing_url": "$filing_url"}, "expect": {"ok": true}},
+        {
+          "tool": "stockvaluation.plan_guided_questions",
+          "args": {
+            "run_id": "$run_id",
+            "company": "Space Exploration Technologies",
+            "workflow_type": "prospectus",
+            "evidence_items": "$evidence_items",
+            "gate_records": [{"gate": "evidence_review", "outcome": "approved"}]
+          },
+          "expect": {"ok": true}
+        },
+        {
+          "tool": "stockvaluation.apply_guided_answers",
+          "args": {"run_id": "$run_id", "guided_question_plan": "$plan", "use_defaults": true},
+          "expect": {"ok": true}
+        },
+        {
+          "tool": "stockvaluation.value_prospectus",
+          "args": {
+            "run_id": "$run_id",
+            "review_reference": "$review_reference",
+            "review_status": "reviewed",
+            "scenario": "$scenario_candidate"
+          },
+          "expect": {"ok": true, "point_estimate": true}
+        }
+      ]
+    },
+    {
+      "case_id": "range_when_driver_unresolved",
+      "description": "Answer all anchored questions except sales-to-capital: the scenario call must return a range naming that driver.",
+      "steps": [
+        {"tool": "stockvaluation.extract_prospectus", "args": {"filing_url": "$filing_url"}, "expect": {"ok": true}},
+        {
+          "tool": "stockvaluation.plan_guided_questions",
+          "args": {
+            "run_id": "$run_id",
+            "company": "Space Exploration Technologies",
+            "workflow_type": "prospectus",
+            "evidence_items": "$evidence_items",
+            "gate_records": [{"gate": "evidence_review", "outcome": "approved"}]
+          },
+          "expect": {"ok": true}
+        },
+        {
+          "tool": "stockvaluation.apply_guided_answers",
+          "args": {"run_id": "$run_id", "guided_question_plan": "$plan", "answers": "$answers_except_sales_to_capital"},
+          "expect": {"ok": true}
+        },
+        {
+          "tool": "stockvaluation.value_prospectus",
+          "args": {
+            "run_id": "$run_id",
+            "review_reference": "$review_reference",
+            "review_status": "reviewed",
+            "scenario": "$scenario_candidate"
+          },
+          "expect": {"ok": true, "range": true, "unresolved_drivers": ["sales_to_capital"]}
+        }
+      ]
+    }
+  ]
+}
