@@ -49,7 +49,7 @@ Valid quality labels:
 
 - `validated_full_economics`: revenue mix, growth, margin, and reinvestment intensity have accepted driver-specific evidence for the modeled segments.
 - `partial_economics`: at least one non-revenue segment driver is governed, but the segment record is incomplete.
-- `revenue_only_segments`: sourced segment revenue mix is available, but growth, margin, and reinvestment intensity are unavailable or report-only.
+- `revenue_only_segments`: sourced segment revenue mix is available, but growth, margin, and reinvestment intensity are unavailable or report-only. Do not describe a revenue-only segment package as fully segment-modeled.
 - `segment_evidence_insufficient`: segment names or sources exist, but revenue weights or driver-specific evidence are insufficient.
 - `segment_mapping_blocked`: evidence exists, but mapping confidence, coverage, disclosure level, or provenance blocks model use.
 

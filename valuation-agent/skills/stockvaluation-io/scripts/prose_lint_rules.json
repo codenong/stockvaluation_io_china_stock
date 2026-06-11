@@ -1,0 +1,36 @@
+{
+  "schema_version": "prose_lint_rules.v1",
+  "banned_phrases": [
+    {"phrase": "it is important to note", "level": "error"},
+    {"phrase": "it's important to note", "level": "error"},
+    {"phrase": "it is worth noting", "level": "error"},
+    {"phrase": "it's worth noting", "level": "error"},
+    {"phrase": "in conclusion", "level": "error"},
+    {"phrase": "delve into", "level": "error"},
+    {"phrase": "delving into", "level": "error"},
+    {"phrase": "in today's fast-paced", "level": "error"},
+    {"phrase": "comprehensive overview", "level": "error"},
+    {"phrase": "cutting-edge", "level": "error"},
+    {"phrase": "in the world of", "level": "error"},
+    {"phrase": "when it comes to", "level": "error"},
+    {"phrase": "at the end of the day", "level": "error"},
+    {"phrase": "needless to say", "level": "error"},
+    {"phrase": "a testament to", "level": "error"},
+    {"phrase": "rich tapestry", "level": "error"},
+    {"phrase": "navigate the landscape", "level": "error"},
+    {"phrase": "unlock the potential", "level": "error"},
+    {"phrase": "game-changer", "level": "error"},
+    {"phrase": "furthermore,", "level": "warning"},
+    {"phrase": "moreover,", "level": "warning"},
+    {"phrase": "additionally,", "level": "warning"},
+    {"phrase": "overall,", "level": "warning"}
+  ],
+  "narration_patterns": [
+    {"pattern": "(?im)^\\s*(i|we)\\s+(then\\s+|first\\s+|next\\s+)?(called|invoked|ran|executed|used)\\b", "label": "process_narration", "level": "error"},
+    {"pattern": "(?i)\\bthis report (was|is) generated\\b", "label": "process_narration", "level": "error"},
+    {"pattern": "(?i)\\bthe (workflow|tool call|mcp call) (was|is|ran|returned)\\b", "label": "process_narration", "level": "error"},
+    {"pattern": "(?i)\\bas an ai\\b", "label": "process_narration", "level": "error"},
+    {"pattern": "(?i)\\bper the skill instructions\\b", "label": "process_narration", "level": "error"}
+  ],
+  "filler_cell_values": ["", "-", "—", "n/a", "na", "none", "unavailable", "not available", "unknown"]
+}

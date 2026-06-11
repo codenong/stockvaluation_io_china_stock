@@ -60,24 +60,19 @@ def test_report_template_distinguishes_mechanical_evidence_constrained_and_marke
     template = _reference("report-template.md")
     lower = template.lower()
 
-    assert "## Internal Baseline Audit" in template
-    assert "explicit audit/debug" in lower
+    assert "audit/debug" in lower
     assert "do not show the internal mechanical model value" in lower
     assert "mechanical baseline" in lower
-    assert "evidence-constrained base" in lower
-    assert "market-implied diagnostics" in lower
-    assert "do not use market-implied values as the researched base" in lower
-    assert "unsupported blockers" in lower
-    assert "| operating margin next year |  | unsupported or explicit scenario only |" in lower
+    assert "diagnostic scenarios stay diagnostic" in lower
+    assert "market-implied or sensitivity runs belong in `market_implied_diagnostics`" in lower
 
 
 def test_market_implied_values_remain_report_only_not_autonomous_evidence():
     plausibility = _reference("baseline-plausibility.md").lower()
     judgment = _reference("assumption-judgment.md").lower()
-    report = _reference("report-template.md").lower()
     mcp = _reference("mcp-tools.md").lower()
 
-    for text in [plausibility, judgment, report, mcp]:
+    for text in [plausibility, judgment, mcp]:
         assert "market-implied" in text
         assert "not evidence" in text or "not autonomous model changes" in text
     assert "market_implied_diagnostics_status" in judgment

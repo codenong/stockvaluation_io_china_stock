@@ -120,20 +120,23 @@ def test_skill_docs_describe_browser_report_artifact():
     assert "clickable local file link" in artifact
 
 
-def test_skill_docs_apply_stop_slop_before_html_artifact():
+def test_skill_docs_use_deterministic_prose_linter_gate():
     skill_dir = bundled_skill_dir()
     skill_text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
     quality = (skill_dir / "references" / "report-prose-quality.md").read_text(encoding="utf-8")
     artifact = (skill_dir / "references" / "report-artifact.md").read_text(encoding="utf-8")
     template = (skill_dir / "references" / "report-template.md").read_text(encoding="utf-8")
 
-    assert "stop-slop" in skill_text
+    assert "prose_lint.py" in skill_text
     assert "report-prose-quality.md" in skill_text
-    assert "https://github.com/hardikpandya/stop-slop" in quality
+    assert "prose_lint.py" in quality
+    assert "prose_lint_rules.json" in quality
     assert "do not remove required sections" in quality.lower()
     assert "guided questions" in quality.lower()
     assert "passed `report-prose-quality.md`" in artifact
-    assert "the cleanup pass removes filler" in template
+    assert "prose_lint.py" in template
+    for text in (skill_text, quality, artifact, template):
+        assert "stop-slop" not in text
 
 
 def test_html_report_renderer_creates_local_artifact(tmp_path):
@@ -248,7 +251,6 @@ def test_segment_aware_baseline_docs_define_workflow_statuses_and_schema():
     segments = (references / "segment-discovery.md").read_text(encoding="utf-8").lower()
     quality = (references / "segment-quality.md").read_text(encoding="utf-8").lower()
     mcp = (references / "mcp-tools.md").read_text(encoding="utf-8").lower()
-    report = (references / "report-template.md").read_text(encoding="utf-8").lower()
 
     assert "segment-aware mechanical baseline" in skill_text
     assert skill_text.index("segment discovery") < skill_text.index("researched mechanical baseline")
@@ -261,7 +263,6 @@ def test_segment_aware_baseline_docs_define_workflow_statuses_and_schema():
     ]:
         assert status in segments
         assert status in mcp
-        assert status in report
 
     for required_field in [
         "segment name",
@@ -299,16 +300,15 @@ def test_report_template_has_no_advice_framing_without_recommendation_phrases():
         assert phrase not in lower
 
 
-def test_report_template_summarizes_researched_judgment_without_raw_json_dump():
+def test_report_template_limits_model_writing_to_named_prose_fields():
     template = (bundled_skill_dir() / "references" / "report-template.md").read_text(encoding="utf-8")
     lower = template.lower()
 
-    assert "assumption support" in lower
-    assert "evidence packet" in lower
-    assert "source date" in lower
-    assert "effective assumptions" in lower
-    assert "do not print raw `assumption_judgment` json" in lower
-    assert "| assumption | baseline | researched change | effective | rationale |" in lower
+    assert "what the model writes" in lower
+    assert "only the `prose` fields" in lower
+    assert "`business_story`" in lower
+    assert "`bottom_line`" in lower
+    assert "analyze the company, never narrate the workflow" in lower
 
 
 def test_report_template_summarizes_audit_packet_without_mechanical_baseline_value():
@@ -316,16 +316,8 @@ def test_report_template_summarizes_audit_packet_without_mechanical_baseline_val
     lower = template.lower()
 
     assert "investor-reader" in lower
-    assert "one concise no-advice line" in lower
-    assert "do not use visible default headings" in lower
-    assert "valuation audit packet" in lower
-    assert "debug-only" in lower
-    assert "do not print raw `valuation_audit_packet` json" in lower
-    assert "evidence_constrained_no_change" in lower
-    assert "evidence_constrained_governed_recalculation" in lower
-    assert "user_refined_scenario" in lower
-    assert "insufficient_researched_evidence" in lower
-    assert "mechanical baseline value" in lower
+    assert "no-advice line" in lower
+    assert "no internal terms" in lower
     assert "do not show the internal mechanical model value" in lower
     assert "not financial advice" in lower
 
@@ -347,7 +339,6 @@ def test_scenario_book_reference_documents_visibility_and_mode_boundaries():
     references = bundled_skill_dir() / "references"
     skill = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8").lower()
     scenario_book = (references / "scenario-book.md").read_text(encoding="utf-8").lower()
-    report = (references / "report-template.md").read_text(encoding="utf-8").lower()
     mcp = (references / "mcp-tools.md").read_text(encoding="utf-8").lower()
 
     for phrase in [
@@ -362,9 +353,7 @@ def test_scenario_book_reference_documents_visibility_and_mode_boundaries():
         assert phrase in scenario_book
 
     assert "scenario book" in skill
-    assert "scenario book" in report
     assert "`scenariobook`" in mcp
-    assert "mechanical baseline is internal-only" in report
 
 
 def test_researched_acceptance_matrix_covers_global_non_financial_workflow_behavior():

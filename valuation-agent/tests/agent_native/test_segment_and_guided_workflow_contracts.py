@@ -11,7 +11,6 @@ def test_segment_aware_workflow_docs_define_public_acceptance_contract():
     segment_discovery = _reference("segment-discovery.md").lower()
     segment_quality = _reference("segment-quality.md").lower()
     mcp = _reference("mcp-tools.md").lower()
-    report = _reference("report-template.md").lower()
 
     assert "segment-aware mechanical baseline" in skill
     assert skill.index("segment discovery") < skill.index("researched mechanical baseline")
@@ -24,7 +23,6 @@ def test_segment_aware_workflow_docs_define_public_acceptance_contract():
     ]:
         assert status in segment_discovery
         assert status in mcp
-        assert status in report
 
     for required_field in [
         "segment name",
@@ -42,13 +40,11 @@ def test_segment_aware_workflow_docs_define_public_acceptance_contract():
     assert "80%" in segment_quality
     assert "generic source presence is not segment evidence" in segment_quality
     assert "segment names without revenue weights" in segment_quality
-    assert "market-implied diagnostics" in report
 
 
 def test_report_references_require_segment_economics_quality_and_no_overclaiming():
     segment_quality = _reference("segment-quality.md").lower()
     mcp = _reference("mcp-tools.md").lower()
-    report = _reference("report-template.md").lower()
 
     for phrase in [
         "segment_economics_quality",
@@ -58,19 +54,15 @@ def test_report_references_require_segment_economics_quality_and_no_overclaiming
         "per-driver segment status",
     ]:
         assert phrase in segment_quality
-        assert phrase in report
 
     for driver in ["revenue mix", "growth", "margin", "reinvestment intensity"]:
         assert driver in segment_quality
-        assert driver in report
 
     assert "revenue-only segment evidence cannot support growth, margin, or reinvestment changes" in segment_quality
     assert "sector_key" in segment_quality
     assert "baselineusestatus" in segment_quality
     assert "blank url/date references are rejected" in segment_quality
-    assert "baseline.segmentaware" in report
-    assert "validated_segment_weighted" in report
-    assert "do not describe a revenue-only segment package as fully segment-modeled" in report
+    assert "do not describe a revenue-only segment package as fully segment-modeled" in segment_quality
     assert "`segment_economics`" in mcp
     assert "yahoo_industry_key" in mcp
 
@@ -217,7 +209,6 @@ def test_valuation_method_consistency_statuses_are_documented_for_reports():
     prospectus = _reference("prospectus-mode.md").lower()
     guided = _reference("guided-valuation-refinement.md").lower()
     mcp = _reference("mcp-tools.md").lower()
-    report = _reference("report-template.md").lower()
     baseline = _reference("baseline-plausibility.md").lower()
     segment = _reference("segment-quality.md").lower()
 
@@ -231,7 +222,6 @@ def test_valuation_method_consistency_statuses_are_documented_for_reports():
         "clean_valuation_case",
     ]:
         assert status in mcp
-        assert status in report
 
     for phrase in [
         "no clean user-facing valuation was produced",
@@ -241,10 +231,8 @@ def test_valuation_method_consistency_statuses_are_documented_for_reports():
         "continue with caveats",
         "challenged diagnostic value",
     ]:
-        assert phrase in report
         assert phrase in prospectus
 
-    assert "challenged diagnostic value per share" in report
     assert "dcf.estimatedvaluepershare" in prospectus
 
     assert "report-only guided defaults" in guided
@@ -253,7 +241,6 @@ def test_valuation_method_consistency_statuses_are_documented_for_reports():
     assert "use it whenever `stockvaluation.apply_guided_answers` returns a supported `prospectusscenariocandidate`" in guided
     assert "market_calibrated_diagnostic" in baseline
     assert "market calibration stayed diagnostic" in baseline
-    assert "period_mixed_quarterly_balance_yearly_shares" in report
     assert "segment_mapping_material_gap" in segment
     assert "material unmapped" in segment
 

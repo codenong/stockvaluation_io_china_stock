@@ -89,9 +89,8 @@ def test_financial_field_definition_reference_mirrors_service_contract():
 def test_skill_docs_describe_researched_baseline_source_gate_and_field_contract():
     skill = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8")
     mcp = _read_reference("mcp-tools.md")
-    template = _read_reference("report-template.md")
 
-    for text in [skill, mcp, template]:
+    for text in [skill, mcp]:
         assert "stockvaluation.researched_baseline" in text
         assert "sourceQualityGate" in text
         assert "sec_http_error_yahoo_fallback" in text
@@ -118,10 +117,9 @@ def test_source_quality_gate_docs_force_explicit_user_choice():
 def test_skill_docs_describe_prospectus_mode_review_gate_and_price_basis():
     skill = (bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8")
     mcp = _read_reference("mcp-tools.md")
-    template = _read_reference("report-template.md")
     prospectus = _read_reference("prospectus-mode.md")
 
-    for text in [skill, mcp, template, prospectus]:
+    for text in [skill, mcp, prospectus]:
         assert "stockvaluation.extract_prospectus" in text
         assert "stockvaluation.value_prospectus" in text
         assert "prospectus_extraction_review_required" in text
@@ -244,81 +242,49 @@ def test_narrative_style_is_subordinate_to_canonical_report_template():
         assert phrase in narrative
 
 
-def test_report_template_requires_rich_damodaran_data_displays_without_invention():
+def test_report_template_defines_builder_contract_without_invention():
     template = _read_reference("report-template.md")
     lower = template.lower()
 
     for phrase in [
-        "canonical controlling structure",
-        "narrative-report-style.md is subordinate",
-        "do not use the older loose story-and-numbers shape",
-        "final report rendering contract",
-        "must render the required report-template headings in order",
-        "a final answer that starts with a sentence such as \"using stockvaluation.io",
-        "\"key assumptions\", \"main caveats\", and \"sources used\" is not template-compliant",
+        "assembled by code",
+        "build_report.py",
+        "prose_lint.py",
+        "the builder owns section order",
+        "omitted entirely",
+        "never writes \"unavailable\" filler",
         "investor-reader",
-        "one concise no-advice line",
-        "do not use visible default headings",
+        "no-advice line",
         "do not show the internal mechanical model value",
         "diagnostic scenarios stay diagnostic",
-        "do not blend the main scenario with a diagnostic no-segment run",
         "business story",
         "valuation view",
-        "user-refined scenario is the main scenario",
-        "evidence review status",
-        "internal baseline audit",
-        "explicit audit/debug",
         "guided judgment",
-        "user answers define a scenario; they are not independent evidence",
         "what the price would need",
-        "break-even / priced-in frontier",
-        "scenario headline table",
-        "scenario book",
-        "sensitivity analysis",
-        "terminal value and cash-flow composition",
-        "evidence and segment detail",
-        "source confidence",
-        "supported vs explain-only",
-        "do not invent",
-        "marketimpliedexpectations",
-        "pricedinexpectations.frontier",
-        "pricedinexpectations.scenarios",
+        "never collapse a range into a single number yourself",
     ]:
         assert phrase in lower
 
 
-def test_report_template_preserves_required_section_order():
+def test_report_template_states_builder_owned_spine_in_order():
     template = _read_reference("report-template.md")
-    ordered_headings = [
-        "## How To Read This",
-        "## Internal Valuation Metadata (Debug Only)",
-        "## Scenario Metadata (Debug Only)",
-        "## Valuation View",
-        "## What Was Reviewed",
-        "## Source Confidence",
-        "## Business Story",
-        "## Growth",
-        "## Profitability",
-        "## Reinvestment Needs",
-        "## Risk",
-        "## What The Price Would Need",
-        "## Key Assumptions",
-        "## Data Limits",
-        "## Bottom Line",
-        "## Sources",
-        "## Break-Even / Priced-In Frontier",
-        "## Scenario Headline Table",
-        "## Sensitivity Analysis",
-        "## Guided Judgment",
-        "## Evidence And Segment Detail",
-        "## Assumption Support",
-        "## Internal Baseline Audit",
-        "## Terminal Value And Cash-Flow Composition",
-        "## Tax And Accounting Adjustments",
-        "## Effective Assumptions",
+    spine = [
+        "Valuation View",
+        "Business Story",
+        "Growth",
+        "Profitability",
+        "Reinvestment",
+        "Risk",
+        "What The Price Would Need",
+        "Key Assumptions",
+        "Guided Judgment",
+        "Data Limits",
+        "Bottom Line",
+        "Sources",
+        "Audit",
     ]
-
-    positions = [template.index(heading) for heading in ordered_headings]
+    section = template[template.index("## Visible Spine"):]
+    positions = [section.index(name) for name in spine]
     assert positions == sorted(positions)
 
 
@@ -338,40 +304,19 @@ def test_skill_report_rules_reject_compressed_memo_and_diagnostic_ranges():
         assert phrase in skill
 
 
-def test_report_template_has_explicit_no_invention_rules_for_absent_service_fields():
+def test_report_template_omits_absent_data_instead_of_filler():
     template = _read_reference("report-template.md")
 
-    required_rules = [
-        "If `marketImpliedExpectations` is absent, say it is unavailable rather than recreating it.",
-        "Do not hand-create a break-even table if `pricedInExpectations.frontier` is absent.",
-        "If sensitivity data is absent, explain the most sensitive assumptions qualitatively instead of inventing values.",
-        "If these fields are absent, say the composition is unavailable.",
-    ]
-    for rule in required_rules:
-        assert rule in template
+    assert "Sections without underlying data are omitted entirely" in template
+    assert 'never writes "Unavailable" filler' in template
+    assert "only when the service returned diagnostics" in template
+    assert "Populate the structured fields only from MCP tool output and run state" in template
 
 
-def test_report_template_requires_accounting_and_claims_status_labels():
-    template = _read_reference("report-template.md").lower()
+def test_accounting_references_keep_claims_status_labels():
     accounting = _read_reference("accounting-cleanup.md").lower()
     rd = _read_reference("rd-capitalization-decision.md").lower()
     claims = _read_reference("options-leases-other-claims.md").lower()
-
-    for phrase in [
-        "accountingandclaims",
-        "supported versus report-only accounting labels",
-        "zero_by_default",
-        "source_required",
-        "stale",
-        "reconciled",
-        "conflict",
-        "governed_scenario_supported",
-        "do not infer accounting support from a numeric zero",
-        "do not invent accounting adjustments",
-        "sbc percent of revenue",
-        "diluted share-count trend",
-    ]:
-        assert phrase in template
 
     assert "accountingandclaims" in accounting
     assert "sbc percent of revenue" in accounting
@@ -459,9 +404,8 @@ def test_guided_refinement_preserves_market_implied_report_only_boundary():
     assert "market-implied diagnostics are report-only and never evidence" in guide
     assert "do not ask what value the user wants" in guide
     assert "direct valuation outputs" in guide
-    assert "user-refined scenario" in report
-    assert "market-implied diagnostics" in report
-    assert "do not call user answers evidence" in report
+    assert "market_implied_diagnostics" in report
+    assert "never blended into the headline valuation" in report
 
 
 def test_prospectus_guided_defaults_do_not_claim_recalculated_user_refined_value():

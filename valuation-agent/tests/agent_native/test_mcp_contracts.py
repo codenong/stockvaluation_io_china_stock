@@ -2532,27 +2532,7 @@ def test_recalculate_blocks_lease_schedule_even_for_explicit_scenario():
     assert client.calls == []
 
 
-def test_report_template_keeps_baseline_use_status_in_audit_debug_section():
-    template = (
-        Path(__file__).parents[2]
-        / "skills"
-        / "stockvaluation-io"
-        / "references"
-        / "report-template.md"
-    ).read_text()
-
-    valuation_view = template.index("## Valuation View")
-    key_assumptions = template.index("## Key Assumptions")
-    internal_audit = template.index("## Internal Baseline Audit")
-
-    assert "Baseline use status" not in template[valuation_view:key_assumptions]
-    assert "Baseline use status" in template[internal_audit:]
-    assert "target operating margin" in template[internal_audit:].lower()
-    assert "mechanical model value" in template[valuation_view:key_assumptions].lower()
-    assert "omitted from the default snapshot" in template[valuation_view:key_assumptions].lower()
-
-
-def test_report_template_requires_source_confidence_summary():
+def test_report_template_keeps_mechanical_value_out_of_default_report():
     template = (
         Path(__file__).parents[2]
         / "skills"
@@ -2562,13 +2542,24 @@ def test_report_template_requires_source_confidence_summary():
     ).read_text()
     lower = template.lower()
 
-    assert "## Source Confidence" in template
-    assert "core financial source" in lower
-    assert "how the source was used" in lower
-    assert "cross-check" in lower
-    assert "translate raw service statuses into these plain labels" in lower
-    assert "primary source, fallback, cross-check, or report-only context" in lower
-    assert "completed, pending, unavailable, not needed, or not applicable" in lower
+    assert "do not show the internal mechanical model value in the default report" in lower
+    assert "unless the user explicitly asks for audit/debug detail" in lower
+
+
+def test_report_template_requires_audit_block_with_source_class_and_versions():
+    template = (
+        Path(__file__).parents[2]
+        / "skills"
+        / "stockvaluation-io"
+        / "references"
+        / "report-template.md"
+    ).read_text()
+    lower = template.lower()
+
+    assert "audit (gates from run state, evidence/guided status, source class, skill and service versions)" in lower
+    assert '"source_class"' in lower
+    assert '"skill_version"' in lower
+    assert '"service_version"' in lower
 
 
 def test_missing_service_and_non_json_failures_have_stable_shapes():

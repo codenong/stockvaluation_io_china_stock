@@ -63,9 +63,8 @@ def test_generic_source_presence_is_explicitly_rejected_as_sufficient_evidence()
     evidence = _reference("driver-specific-evidence.md").lower()
     search = _reference("search-and-evidence.md").lower()
     judgment = _reference("assumption-judgment.md").lower()
-    report_template = _reference("report-template.md").lower()
 
-    for text in [evidence, search, judgment, report_template]:
+    for text in [evidence, search, judgment]:
         assert "generic source presence" in text
     for rejected_phrase in [
         "10-k found",
@@ -73,7 +72,7 @@ def test_generic_source_presence_is_explicitly_rejected_as_sufficient_evidence()
         "sec filing source captured",
     ]:
         assert rejected_phrase in evidence
-        assert rejected_phrase in search or rejected_phrase in report_template
+        assert rejected_phrase in search
 
 
 def test_evidence_direction_confidence_and_implication_feed_assumption_judgment():
@@ -110,7 +109,6 @@ def test_only_governed_drivers_may_affect_autonomous_recalculation():
 def test_accounting_adjustments_are_explain_flag_only_unless_supported():
     evidence = _reference("driver-specific-evidence.md").lower()
     accounting = _reference("accounting-cleanup.md").lower()
-    report_template = _reference("report-template.md").lower()
 
     assert "`accounting_adjustments`" in evidence
     assert "accounting evidence can improve interpretation" in evidence
@@ -119,26 +117,16 @@ def test_accounting_adjustments_are_explain_flag_only_unless_supported():
     assert "operating lease obligations" in evidence
     assert "stock-based compensation" in evidence
     assert "do not toggle r&d capitalization" in accounting
-    assert "explain/flag only unless service-returned support exists" in report_template
 
 
-def test_report_template_includes_driver_specific_evidence_handling():
+def test_report_template_sources_structured_data_from_mcp_output_only():
     template = _reference("report-template.md")
     lower = template.lower()
 
-    assert "driver-specific evidence" in lower
-    assert "source date" in lower
-    assert "| driver | evidence summary | source | source date | direction | confidence | assumption implication | model action |" in lower
-    for report_label in [
-        "revenue growth",
-        "operating margin",
-        "reinvestment / sales-to-capital",
-        "risk / wacc",
-        "terminal value / mature state",
-        "accounting adjustments",
-    ]:
-        assert report_label in lower
-    assert "do not count \"10-k found\"" in lower
+    assert "populate the structured fields only from mcp tool output and run state" in lower
+    assert "guidedanswerrecord" in lower
+    assert '"sources"' in lower
+    assert '"date"' in lower
 
 
 def test_no_invention_rules_remain_intact_with_driver_evidence():
@@ -148,5 +136,5 @@ def test_no_invention_rules_remain_intact_with_driver_evidence():
 
     assert "do not cite search snippets as evidence" in search
     assert "do not invent facts, numbers, or quotes" in evidence
-    assert "do not invent missing values" in template
-    assert "if evidence is weak or missing" in template
+    assert "never collapse a range into a single number yourself" in template
+    assert "sections without underlying data are omitted entirely" in template

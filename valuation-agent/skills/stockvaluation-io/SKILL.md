@@ -1,6 +1,6 @@
 ---
 name: stockvaluation-io
-description: Use whenever the prompt mentions stockvaluation.io, StockValuation.io, stockvaluation, the local valuation MCP, or asks to value a public company with the StockValuation workflow. Runs local MCP valuation, stops for evidence review, asks guided valuation-refinement questions, applies stop-slop prose cleanup, and can render a local HTML report link after the final report.
+description: Use whenever the prompt mentions stockvaluation.io, StockValuation.io, stockvaluation, the local valuation MCP, or asks to value a public company with the StockValuation workflow. Runs local MCP valuation, stops for evidence review, asks guided valuation-refinement questions, builds the report with the bundled report builder and deterministic prose linter, and can render a local HTML report link after the final report.
 version: 2.0.0-agent-native
 homepage: https://github.com/stockvaluation-io/stockvaluation_io
 ---
@@ -52,7 +52,7 @@ The product surface is the user's agent. The deterministic valuation math comes 
 17. Build and read the Scenario Book using `{baseDir}/references/scenario-book.md` and returned `structuredContent.scenarioBook` when present. Use it to separate the evidence-constrained base, user-refined scenario, explicit scenario, market-implied diagnostics, source policy, sourceQualityGate, and internal mechanical baseline references.
 18. Write the final educational report using `{baseDir}/references/report-template.md` as the canonical controlling structure. Use `{baseDir}/references/narrative-report-style.md` only as subordinate prose guidance, summarizing the judgment in prose and tables rather than printing raw JSON by default.
 19. Apply `{baseDir}/references/no-advice-policy.md` before finalizing.
-20. Apply the prose-quality gate in `{baseDir}/references/report-prose-quality.md`, using the `stop-slop` skill as the cleanup lens. Keep the report thorough: do not remove required sections, guided questions, evidence detail, caveats, or source dates while removing generic AI phrasing.
+20. Apply the prose-quality gate in `{baseDir}/references/report-prose-quality.md`: the deterministic prose linter (`{baseDir}/scripts/prose_lint.py`) runs inside the report builder and blocks rendering on error-level findings. Keep the report thorough: do not remove required sections, guided questions, evidence detail, caveats, or source dates while removing generic AI phrasing.
 21. When local file creation is available, create the browser report artifact in `{baseDir}/references/report-artifact.md` after the final report exists, then return a clickable local link. Do not use the HTML artifact to bypass the report-template sections, evidence review, guided-refinement gates, or prose-quality gate.
 
 ## Prospectus Workflow
@@ -111,7 +111,7 @@ Use this workflow when the input is a SEC EDGAR Archives HTML prospectus URL, es
 - Include data-quality notes and service/version metadata when returned.
 - Use clear uncertainty language when Yahoo Finance coverage or reference-data matching is weak.
 - Make evidence review status and guided-refinement status visible: approved, caveated, corrected, bypassed by explicit quick/no-questions/automation/smoke-test request, or not run because of an unsupported/failed workflow.
-- Before final delivery and HTML rendering, apply `{baseDir}/references/report-prose-quality.md` and the `stop-slop` skill. Remove filler and generic AI phrasing, but keep the report complete and specific.
+- Before final delivery and HTML rendering, apply `{baseDir}/references/report-prose-quality.md`: the deterministic prose linter runs inside the report builder and blocks rendering on error findings. Remove filler and generic AI phrasing, but keep the report complete and specific.
 - When the workflow reaches a final report and local file creation is available, render the same final report to a local HTML artifact using `{baseDir}/references/report-artifact.md`. Include all visible guided questions in `Guided Judgment`, the compressed conclusion in `Bottom Line`, and a clickable `index.html` link.
 - Do not print raw `assumption_judgment`, `valuation_audit_packet`, hidden guided question plan, or raw Scenario Book JSON by default.
 - In guided refinement, make the user-refined scenario the main scenario when it exists. Keep the mechanical baseline internal by default; expose mechanical baseline details only when the user explicitly asks for audit/debug detail.
