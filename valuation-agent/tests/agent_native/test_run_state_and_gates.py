@@ -146,12 +146,14 @@ def test_guided_flow_recalculate_refused_until_answers_applied(tmp_path):
         "user_judgment": USER_JUDGMENT,
         "evidence_packet": _valid_evidence_packet(confidence="low"),
     }
+    value_sources = {"operating_margin_next_year": "user_input"}
     refused = registry.call(
         "stockvaluation.recalculate",
         {
             "run_id": run_id,
             "ticker": "MSFT",
             "overrides": overrides,
+            "value_sources": value_sources,
             "gate_records": [{"gate": GATE_EVIDENCE_REVIEW, "outcome": "approved"}],
         },
     )
@@ -171,7 +173,7 @@ def test_guided_flow_recalculate_refused_until_answers_applied(tmp_path):
 
     result = registry.call(
         "stockvaluation.recalculate",
-        {"run_id": run_id, "ticker": "MSFT", "overrides": overrides},
+        {"run_id": run_id, "ticker": "MSFT", "overrides": overrides, "value_sources": value_sources},
     )
     assert result["isError"] is False
     state = result["structuredContent"]["workflow_state"]
@@ -193,6 +195,7 @@ def test_explicit_bypass_unlocks_gates_and_appears_in_workflow_state(tmp_path):
                 "user_judgment": USER_JUDGMENT,
                 "evidence_packet": _valid_evidence_packet(confidence="low"),
             },
+            "value_sources": {"operating_margin_next_year": "user_input"},
             "gate_records": [
                 {"gate": GATE_EVIDENCE_REVIEW, "outcome": "bypassed", "reason": "quick"},
                 {"gate": GATE_GUIDED_REFINEMENT, "outcome": "bypassed", "reason": "no_questions"},

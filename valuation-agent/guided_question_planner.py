@@ -50,6 +50,15 @@ DRIVER_TO_OVERRIDE_FIELD = {
     "segment_mix": "sector_overrides",
 }
 
+# Override fields that share a server-computed anchor set (anchor sets are
+# keyed by canonical driver field).
+OVERRIDE_FIELD_TO_ANCHOR_FIELD = {
+    "operating_margin": "target_operating_margin",
+    "target_pre_tax_operating_margin": "target_operating_margin",
+    "sales_to_capital_years_1_to_5": "sales_to_capital",
+    "sales_to_capital_years_6_to_10": "sales_to_capital",
+}
+
 DRIVER_ALIASES = {
     "business_mix": "business_definition",
     "cash_share_basis": "capital_claims",
@@ -169,6 +178,9 @@ def build_guided_question_plan(raw: dict[str, Any]) -> dict[str, Any]:
     evidence_input_quality = _evidence_input_quality(context)
 
     deduped = _dedupe_questions(candidates)
+    driver_anchors = _dict(context.get("driver_anchors") or context.get("driverAnchors"))
+    for question in deduped:
+        _attach_anchor_set(question, driver_anchors, workflow_type, prospectus_recalc_supported)
     ranked = sorted(deduped, key=lambda item: (PRIORITY_ORDER.get(item["priority"], 99), -item["materiality_score"], item["id"]))
     visible = _visible_questions(ranked, deep_mode, max_visible)
     materiality_gate = _materiality_gate(context, ranked, visible, workflow_type)
@@ -233,6 +245,7 @@ def build_user_judgment_package(
             "mapped_driver": question.get("driver"),
             "model_action": model_action,
             "requested_override": requested_override,
+            "anchor_label": choice.get("anchor_label"),
             "unsupported_or_report_only_reason": None,
             "confidence": choice.get("confidence") or question.get("confidence"),
         }
@@ -605,6 +618,102 @@ def _question(
         "priority_reason": priority_reason,
         "confidence": confidence,
     }
+
+
+def _attach_anchor_set(
+    question: dict[str, Any],
+    driver_anchors: dict[str, Any],
+    workflow_type: str,
+    prospectus_recalc_supported: bool,
+) -> None:
+    """Bind server-computed low/base/high anchors to a numeric question.
+
+    Anchored questions get deterministic bounded choices (A=low, B=base,
+    C=high) with per-anchor provenance; the default is always the base
+    anchor. Questions whose driver has no computable anchor keep
+    candidate-required status and must ask the user for a specific number.
+    """
+    mapping = _dict(question.get("hidden_model_mapping"))
+    field = _string_or_none(mapping.get("supported_override_field")) or DRIVER_TO_OVERRIDE_FIELD.get(
+        _string(question.get("driver"))
+    )
+    anchor_set = {}
+    if field:
+        anchor_set = _dict(driver_anchors.get(field) or driver_anchors.get(OVERRIDE_FIELD_TO_ANCHOR_FIELD.get(field)))
+    anchors = _dict(anchor_set.get("anchors"))
+    base_value = _dict(anchors.get("base")).get("value")
+    if not anchor_set or base_value is None:
+        if question.get("status") == "candidate-required":
+            question["requires_user_value"] = True
+            question["user_value_instruction"] = (
+                "No deterministic anchor is computable for this driver. Ask the user for a specific number; "
+                "do not invent a candidate value."
+            )
+        return
+    status, model_action, effective_field = _model_action(
+        workflow_type,
+        prospectus_recalc_supported,
+        _string(question.get("driver")),
+        field,
+        base_value,
+    )
+    if model_action != "user scenario override":
+        question["anchor_set"] = anchor_set
+        return
+    confidence = _string(question.get("confidence")) or "medium"
+    default_story = _string(_dict(question.get("default_answer")).get("why_default_selected"))
+    stories = {
+        "low": ("A", "Stay close to the conservative anchor.", "Baseline-leaning case"),
+        "base": ("B", default_story or "Use the server-computed base anchor.", "Recommended guided default"),
+        "high": ("C", "Use the higher anchor; needs stronger evidence.", "Higher-conviction case"),
+    }
+    choices = []
+    for label_key in ("low", "base", "high"):
+        entry = _dict(anchors.get(label_key))
+        label, story, report_label = stories[label_key]
+        choices.append(
+            {
+                "label": label,
+                "story": story,
+                "assumption_effect": f"Use the {label_key} anchor for {field.replace('_', ' ')}.",
+                "override_candidate": {"field": effective_field, "value": entry.get("value")},
+                "anchor_label": label_key,
+                "anchor_provenance": entry.get("provenance"),
+                "model_action": "user scenario override",
+                "confidence": confidence if label_key == "base" else ("medium" if label_key == "low" else "low"),
+                "report_label": report_label,
+            }
+        )
+    choices.append(
+        {
+            "label": "D",
+            "story": "Type your own number for this driver.",
+            "assumption_effect": "A user-supplied value overrides the anchors; it is recorded as user input.",
+            "override_candidate": {"field": effective_field, "value": None},
+            "anchor_label": "user_input",
+            "model_action": "report-only user judgment",
+            "confidence": "low",
+            "report_label": "Custom user judgment",
+        }
+    )
+    question["anchor_set"] = anchor_set
+    question["status"] = status
+    question["model_action"] = model_action
+    question["bounded_choices"] = choices
+    question["hidden_model_mapping"] = {
+        "supported_override_field": effective_field,
+        "candidate_value": base_value,
+        "candidate_source": "anchor:base",
+        "send_to_mcp_by_default": True,
+    }
+    question["mapping_notes"] = _mapping_notes(model_action, effective_field, workflow_type)
+    question["unsupported_if_any"] = None
+    default_answer = _dict(question.get("default_answer"))
+    default_answer["model_impact"] = _model_impact(model_action, effective_field)
+    question["default_answer"] = default_answer
+    recommended = _dict(question.get("recommended_answer"))
+    recommended["model_action"] = model_action
+    question["recommended_answer"] = recommended
 
 
 def _model_action(

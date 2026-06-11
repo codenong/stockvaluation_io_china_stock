@@ -1,0 +1,3023 @@
+{
+  "ok": true,
+  "policy": {
+    "baselineEntrypoint": "prospectus_extraction",
+    "educationalUseOnly": true,
+    "notFinancialAdvice": true,
+    "prohibitedRecommendationLanguage": [
+      "buy",
+      "sell",
+      "hold",
+      "target price",
+      "should invest"
+    ],
+    "reportWriter": "user-agent"
+  },
+  "prospectus": {
+    "company": {
+      "countryOfIncorporation": "United States",
+      "currency": "USD",
+      "industryKey": null,
+      "legalName": "Prospectus issuer",
+      "tickerOrExpectedSymbol": null
+    },
+    "filing": {
+      "accession": "0001628280-26-040364",
+      "cik": "0001181412",
+      "filingDate": "2026-06-03",
+      "form": "S-1/A"
+    },
+    "packet": {
+      "company": {
+        "countryOfIncorporation": "United States",
+        "currency": "USD",
+        "industryKey": null,
+        "legalName": "Prospectus issuer",
+        "tickerOrExpectedSymbol": null
+      },
+      "extractionIssues": [],
+      "filing": {
+        "accession": "0001628280-26-040364",
+        "cik": "0001181412",
+        "filingDate": "2026-06-03",
+        "form": "S-1/A"
+      },
+      "financials": {
+        "balanceSheet": [
+          {
+            "canonicalField": "cash_and_short_term_investments",
+            "confidence": 0.9,
+            "normalizedValue": 15852000000.0,
+            "originalColumnLabel": "March 31, 2026",
+            "periodEnd": "2026-03-31",
+            "periodType": "point_in_time",
+            "rawValue": "$15,852",
+            "scale": "millions",
+            "sourceAnchor": "table-26",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Cash and cash equivalents",
+            "tableTitle": "Consolidated Balance Sheets",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "book_value_equity",
+            "confidence": 0.9,
+            "normalizedValue": 34533000000.0,
+            "originalColumnLabel": "March 31, 2026",
+            "periodEnd": "2026-03-31",
+            "periodType": "point_in_time",
+            "rawValue": "34,533",
+            "scale": "millions",
+            "sourceAnchor": "table-26",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Total shareholders\u2019 equity",
+            "tableTitle": "Consolidated Balance Sheets",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "cash_and_short_term_investments",
+            "confidence": 0.9,
+            "normalizedValue": 24747000000.0,
+            "originalColumnLabel": "December 31, 2025",
+            "periodEnd": "2025-12-31",
+            "periodType": "point_in_time",
+            "rawValue": "$24,747",
+            "scale": "millions",
+            "sourceAnchor": "table-69",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Cash and cash equivalents",
+            "tableTitle": "Consolidated Balance Sheets",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "book_value_equity",
+            "confidence": 0.9,
+            "normalizedValue": 2573000000.0,
+            "originalColumnLabel": "December 31, 2025",
+            "periodEnd": "2025-12-31",
+            "periodType": "point_in_time",
+            "rawValue": "2,573",
+            "scale": "millions",
+            "sourceAnchor": "table-69",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Total shareholders\u2019 equity",
+            "tableTitle": "Consolidated Balance Sheets",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "book_value_equity",
+            "confidence": 0.9,
+            "normalizedValue": 92079000000.0,
+            "originalColumnLabel": "December 31, 2025",
+            "periodEnd": "2025-12-31",
+            "periodType": "point_in_time",
+            "rawValue": "$92,079",
+            "scale": "millions",
+            "sourceAnchor": "table-69",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Total liabilities, redeemable convertible preferred stock, and shareholders\u2019 equity",
+            "tableTitle": "Consolidated Balance Sheets",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "total_debt",
+            "confidence": 0.9,
+            "normalizedValue": 22049000000.0,
+            "originalColumnLabel": "As of December 31, 2025 Principal",
+            "periodEnd": "2025-12-31",
+            "periodType": "point_in_time",
+            "rawValue": "22,049",
+            "scale": "millions",
+            "sourceAnchor": "table-91",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Total debt",
+            "tableTitle": "Debt Schedule",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "total_debt",
+            "confidence": 0.9,
+            "normalizedValue": 12621000000.0,
+            "originalColumnLabel": "As of December 31, 2024 Principal",
+            "periodEnd": "2024-12-31",
+            "periodType": "point_in_time",
+            "rawValue": "12,621",
+            "scale": "millions",
+            "sourceAnchor": "table-92",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Total debt",
+            "tableTitle": "Debt Schedule",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "cash_and_short_term_investments",
+            "confidence": 0.9,
+            "normalizedValue": 15852000000.0,
+            "originalColumnLabel": "March 31, 2026",
+            "periodEnd": "2026-03-31",
+            "periodType": "point_in_time",
+            "rawValue": "$15,852",
+            "scale": "millions",
+            "sourceAnchor": "table-126",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Cash and cash equivalents",
+            "tableTitle": "Consolidated Balance Sheets",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "book_value_equity",
+            "confidence": 0.9,
+            "normalizedValue": 34533000000.0,
+            "originalColumnLabel": "March 31, 2026",
+            "periodEnd": "2026-03-31",
+            "periodType": "point_in_time",
+            "rawValue": "34,533",
+            "scale": "millions",
+            "sourceAnchor": "table-126",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Total shareholders\u2019 equity",
+            "tableTitle": "Consolidated Balance Sheets",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "book_value_equity",
+            "confidence": 0.9,
+            "normalizedValue": 102094000000.0,
+            "originalColumnLabel": "March 31, 2026",
+            "periodEnd": "2026-03-31",
+            "periodType": "point_in_time",
+            "rawValue": "$102,094",
+            "scale": "millions",
+            "sourceAnchor": "table-126",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Total liabilities, redeemable convertible preferred stock, and shareholders\u2019 equity",
+            "tableTitle": "Consolidated Balance Sheets",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "total_debt",
+            "confidence": 0.9,
+            "normalizedValue": 29132000000.0,
+            "originalColumnLabel": "March 31, 2026 Principal",
+            "periodEnd": "2026-03-31",
+            "periodType": "point_in_time",
+            "rawValue": "29,132",
+            "scale": "millions",
+            "sourceAnchor": "table-143",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Total debt",
+            "tableTitle": "Debt Schedule",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "total_debt",
+            "confidence": 0.9,
+            "normalizedValue": 22049000000.0,
+            "originalColumnLabel": "December 31, 2025 Principal",
+            "periodEnd": "2025-12-31",
+            "periodType": "point_in_time",
+            "rawValue": "22,049",
+            "scale": "millions",
+            "sourceAnchor": "table-144",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Total debt",
+            "tableTitle": "Debt Schedule",
+            "unit": "USD",
+            "warnings": []
+          }
+        ],
+        "cashFlowOrCapex": [
+          {
+            "canonicalField": "operating_cash_flow",
+            "confidence": 0.9,
+            "normalizedValue": 6785000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2025",
+            "periodEnd": "2025-12-31",
+            "periodType": "annual",
+            "rawValue": "$6,785",
+            "scale": "millions",
+            "sourceAnchor": "table-24",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Net cash provided by operating activities",
+            "tableTitle": "Consolidated Statements of Cash Flows",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "capital_expenditures",
+            "confidence": 0.9,
+            "normalizedValue": 20737000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2025",
+            "periodEnd": "2025-12-31",
+            "periodType": "annual",
+            "rawValue": "$20,737",
+            "scale": "millions",
+            "sourceAnchor": "table-25",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Total Capital Expenditures",
+            "tableTitle": "Capital Expenditures",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_cash_flow",
+            "confidence": 0.9,
+            "normalizedValue": 6785000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2025",
+            "periodEnd": "2025-12-31",
+            "periodType": "annual",
+            "rawValue": "$6,785",
+            "scale": "millions",
+            "sourceAnchor": "table-73",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Net cash provided by operating activities",
+            "tableTitle": "Consolidated Statements of Cash Flows",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_cash_flow",
+            "confidence": 0.9,
+            "normalizedValue": 1047000000.0,
+            "originalColumnLabel": "Three Months Ended March 31, 2026",
+            "periodEnd": "2026-03-31",
+            "periodType": "point_in_time",
+            "rawValue": "$1,047",
+            "scale": "millions",
+            "sourceAnchor": "table-131",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Net cash provided by operating activities",
+            "tableTitle": "Consolidated Statements of Cash Flows",
+            "unit": "USD",
+            "warnings": []
+          }
+        ],
+        "incomeStatement": [
+          {
+            "canonicalField": "revenue",
+            "confidence": 0.9,
+            "normalizedValue": 18674000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2025",
+            "periodEnd": "2025-12-31",
+            "periodType": "annual",
+            "rawValue": "$18,674",
+            "scale": "millions",
+            "sourceAnchor": "table-22",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Revenue",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "prior_revenue",
+            "confidence": 0.9,
+            "normalizedValue": 14015000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "$14,015",
+            "scale": "millions",
+            "sourceAnchor": "table-22",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Revenue",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "prior_revenue",
+            "confidence": 0.9,
+            "normalizedValue": 10387000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "$10,387",
+            "scale": "millions",
+            "sourceAnchor": "table-22",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Revenue",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": -2589000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2025",
+            "periodEnd": "2025-12-31",
+            "periodType": "annual",
+            "rawValue": "(2,589)",
+            "scale": "millions",
+            "sourceAnchor": "table-22",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": 466000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "466",
+            "scale": "millions",
+            "sourceAnchor": "table-22",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": -3505000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "(3,505)",
+            "scale": "millions",
+            "sourceAnchor": "table-22",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": -657000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2025",
+            "periodEnd": "2025-12-31",
+            "periodType": "annual",
+            "rawValue": "$(657)",
+            "scale": "millions",
+            "sourceAnchor": "table-51",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": 4423000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2025",
+            "periodEnd": "2025-12-31",
+            "periodType": "annual",
+            "rawValue": "$4,423",
+            "scale": "millions",
+            "sourceAnchor": "table-51",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": -6355000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2025",
+            "periodEnd": "2025-12-31",
+            "periodType": "annual",
+            "rawValue": "$(6,355)",
+            "scale": "millions",
+            "sourceAnchor": "table-51",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": -2589000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2025",
+            "periodEnd": "2025-12-31",
+            "periodType": "annual",
+            "rawValue": "$(2,589)",
+            "scale": "millions",
+            "sourceAnchor": "table-51",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": 21000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "$21",
+            "scale": "millions",
+            "sourceAnchor": "table-52",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": 2006000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "$2,006",
+            "scale": "millions",
+            "sourceAnchor": "table-52",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": -1561000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "$(1,561)",
+            "scale": "millions",
+            "sourceAnchor": "table-52",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": 466000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "$466",
+            "scale": "millions",
+            "sourceAnchor": "table-52",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": -1000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "$(1)",
+            "scale": "millions",
+            "sourceAnchor": "table-53",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": 469000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "$469",
+            "scale": "millions",
+            "sourceAnchor": "table-53",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": -3973000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "$(3,973)",
+            "scale": "millions",
+            "sourceAnchor": "table-53",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": -3505000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "$(3,505)",
+            "scale": "millions",
+            "sourceAnchor": "table-53",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "revenue",
+            "confidence": 0.9,
+            "normalizedValue": 18674000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2025",
+            "periodEnd": "2025-12-31",
+            "periodType": "annual",
+            "rawValue": "$18,674",
+            "scale": "millions",
+            "sourceAnchor": "table-70",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Revenue",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "prior_revenue",
+            "confidence": 0.9,
+            "normalizedValue": 14015000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "$14,015",
+            "scale": "millions",
+            "sourceAnchor": "table-70",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Revenue",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "prior_revenue",
+            "confidence": 0.9,
+            "normalizedValue": 10387000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "$10,387",
+            "scale": "millions",
+            "sourceAnchor": "table-70",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Revenue",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "research_and_development",
+            "confidence": 0.9,
+            "normalizedValue": 8643000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2025",
+            "periodEnd": "2025-12-31",
+            "periodType": "annual",
+            "rawValue": "8,643",
+            "scale": "millions",
+            "sourceAnchor": "table-70",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Research and development",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "research_and_development",
+            "confidence": 0.9,
+            "normalizedValue": 3464000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "3,464",
+            "scale": "millions",
+            "sourceAnchor": "table-70",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Research and development",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "research_and_development",
+            "confidence": 0.9,
+            "normalizedValue": 2105000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "2,105",
+            "scale": "millions",
+            "sourceAnchor": "table-70",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Research and development",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": -2589000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2025",
+            "periodEnd": "2025-12-31",
+            "periodType": "annual",
+            "rawValue": "(2,589)",
+            "scale": "millions",
+            "sourceAnchor": "table-70",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": 466000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "466",
+            "scale": "millions",
+            "sourceAnchor": "table-70",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": -3505000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "(3,505)",
+            "scale": "millions",
+            "sourceAnchor": "table-70",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "revenue",
+            "confidence": 0.9,
+            "normalizedValue": 3796000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024 Space",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "$3,796",
+            "scale": "millions",
+            "sourceAnchor": "table-122",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Revenue",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "prior_revenue",
+            "confidence": 0.9,
+            "normalizedValue": 7599000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024 Connectivity",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "$7,599",
+            "scale": "millions",
+            "sourceAnchor": "table-122",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Revenue",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "prior_revenue",
+            "confidence": 0.9,
+            "normalizedValue": 2620000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024 AI",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "$2,620",
+            "scale": "millions",
+            "sourceAnchor": "table-122",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Revenue",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "prior_revenue",
+            "confidence": 0.9,
+            "normalizedValue": 14015000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024 Total Reportable Segments",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "$14,015",
+            "scale": "millions",
+            "sourceAnchor": "table-122",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Revenue",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "research_and_development",
+            "confidence": 0.9,
+            "normalizedValue": 1835000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024 Space",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "1,835",
+            "scale": "millions",
+            "sourceAnchor": "table-122",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Research and development",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "research_and_development",
+            "confidence": 0.9,
+            "normalizedValue": 453000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024 Connectivity",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "453",
+            "scale": "millions",
+            "sourceAnchor": "table-122",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Research and development",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "research_and_development",
+            "confidence": 0.9,
+            "normalizedValue": 1176000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024 AI",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "1,176",
+            "scale": "millions",
+            "sourceAnchor": "table-122",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Research and development",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "research_and_development",
+            "confidence": 0.9,
+            "normalizedValue": 3464000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024 Total Reportable Segments",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "3,464",
+            "scale": "millions",
+            "sourceAnchor": "table-122",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Research and development",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": 21000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024 Space",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "21",
+            "scale": "millions",
+            "sourceAnchor": "table-122",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": 2006000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024 Connectivity",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "2,006",
+            "scale": "millions",
+            "sourceAnchor": "table-122",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": -1561000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024 AI",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "(1,561)",
+            "scale": "millions",
+            "sourceAnchor": "table-122",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": 466000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2024 Total Reportable Segments",
+            "periodEnd": "2024-12-31",
+            "periodType": "annual",
+            "rawValue": "466",
+            "scale": "millions",
+            "sourceAnchor": "table-122",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "revenue",
+            "confidence": 0.9,
+            "normalizedValue": 3557000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023 Space",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "$3,557",
+            "scale": "millions",
+            "sourceAnchor": "table-123",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Revenue",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "prior_revenue",
+            "confidence": 0.9,
+            "normalizedValue": 3869000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023 Connectivity",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "$3,869",
+            "scale": "millions",
+            "sourceAnchor": "table-123",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Revenue",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "prior_revenue",
+            "confidence": 0.9,
+            "normalizedValue": 2961000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023 AI",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "$2,961",
+            "scale": "millions",
+            "sourceAnchor": "table-123",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Revenue",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "prior_revenue",
+            "confidence": 0.9,
+            "normalizedValue": 10387000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023 Total Reportable Segments",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "$10,387",
+            "scale": "millions",
+            "sourceAnchor": "table-123",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Revenue",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "research_and_development",
+            "confidence": 0.9,
+            "normalizedValue": 1538000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023 Space",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "1,538",
+            "scale": "millions",
+            "sourceAnchor": "table-123",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Research and development",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "research_and_development",
+            "confidence": 0.9,
+            "normalizedValue": 381000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023 Connectivity",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "381",
+            "scale": "millions",
+            "sourceAnchor": "table-123",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Research and development",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "research_and_development",
+            "confidence": 0.9,
+            "normalizedValue": 186000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023 AI",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "186",
+            "scale": "millions",
+            "sourceAnchor": "table-123",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Research and development",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "research_and_development",
+            "confidence": 0.9,
+            "normalizedValue": 2105000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023 Total Reportable Segments",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "2,105",
+            "scale": "millions",
+            "sourceAnchor": "table-123",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Research and development",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": -1000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023 Space",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "(1)",
+            "scale": "millions",
+            "sourceAnchor": "table-123",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": 469000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023 Connectivity",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "469",
+            "scale": "millions",
+            "sourceAnchor": "table-123",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": -3973000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023 AI",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "(3,973)",
+            "scale": "millions",
+            "sourceAnchor": "table-123",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          },
+          {
+            "canonicalField": "operating_income",
+            "confidence": 0.9,
+            "normalizedValue": -3505000000.0,
+            "originalColumnLabel": "Year Ended December 31, 2023 Total Reportable Segments",
+            "periodEnd": "2023-12-31",
+            "periodType": "annual",
+            "rawValue": "(3,505)",
+            "scale": "millions",
+            "sourceAnchor": "table-123",
+            "sourceProvenance": {
+              "crossCheckStatus": "not_applicable",
+              "dataQualityWarnings": [],
+              "periodEnd": "2026-03-31",
+              "provider": "sec-edgar-prospectus",
+              "retrievalStatus": "retrieved",
+              "sourceClass": "primary_filing",
+              "sourceDate": "2026-06-03",
+              "sourcePolicyStatus": "primary_filing_used",
+              "warnings": []
+            },
+            "sourceRowLabel": "Income (loss) from operations",
+            "tableTitle": "Consolidated Statements of Operations",
+            "unit": "USD",
+            "warnings": []
+          }
+        ]
+      },
+      "offering": {
+        "netProceeds": 74400000000.0,
+        "offeringPrice": 135.0,
+        "offeringPriceBasis": "offering_price",
+        "postOfferingShares": 13075865175.0,
+        "proceedsBasis": "net_proceeds_disclosed",
+        "shareCountBasis": "pro_forma_post_offering",
+        "sharesOffered": 555555555.0
+      },
+      "reviewStatus": "review_required",
+      "schemaVersion": "prospectus_financial_packet.v1",
+      "segmentCandidateTables": [
+        {
+          "columns": [
+            "Year Ended December 31, 2025",
+            "Year Ended December 31, 2024",
+            "Year Ended December 31, 2023"
+          ],
+          "currency": "USD",
+          "rows": [
+            {
+              "cells": [
+                {
+                  "normalizedValue": 2576000000.0,
+                  "rawValue": "$2,576"
+                },
+                {
+                  "normalizedValue": 2584000000.0,
+                  "rawValue": "$2,584"
+                },
+                {
+                  "normalizedValue": 1964000000.0,
+                  "rawValue": "$1,964"
+                }
+              ],
+              "label": "Launch Services"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 1510000000.0,
+                  "rawValue": "1,510"
+                },
+                {
+                  "normalizedValue": 1212000000.0,
+                  "rawValue": "1,212"
+                },
+                {
+                  "normalizedValue": 1593000000.0,
+                  "rawValue": "1,593"
+                }
+              ],
+              "label": "Launch & Development"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 4086000000.0,
+                  "rawValue": "4,086"
+                },
+                {
+                  "normalizedValue": 3796000000.0,
+                  "rawValue": "3,796"
+                },
+                {
+                  "normalizedValue": 3557000000.0,
+                  "rawValue": "3,557"
+                }
+              ],
+              "label": "Space"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 7208000000.0,
+                  "rawValue": "7,208"
+                },
+                {
+                  "normalizedValue": 4830000000.0,
+                  "rawValue": "4,830"
+                },
+                {
+                  "normalizedValue": 2817000000.0,
+                  "rawValue": "2,817"
+                }
+              ],
+              "label": "Consumer"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 4179000000.0,
+                  "rawValue": "4,179"
+                },
+                {
+                  "normalizedValue": 2769000000.0,
+                  "rawValue": "2,769"
+                },
+                {
+                  "normalizedValue": 1052000000.0,
+                  "rawValue": "1,052"
+                }
+              ],
+              "label": "Enterprise & Government (1)"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 11387000000.0,
+                  "rawValue": "11,387"
+                },
+                {
+                  "normalizedValue": 7599000000.0,
+                  "rawValue": "7,599"
+                },
+                {
+                  "normalizedValue": 3869000000.0,
+                  "rawValue": "3,869"
+                }
+              ],
+              "label": "Connectivity"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 1844000000.0,
+                  "rawValue": "1,844"
+                },
+                {
+                  "normalizedValue": 1728000000.0,
+                  "rawValue": "1,728"
+                },
+                {
+                  "normalizedValue": 2323000000.0,
+                  "rawValue": "2,323"
+                }
+              ],
+              "label": "Advertising"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 1357000000.0,
+                  "rawValue": "1,357"
+                },
+                {
+                  "normalizedValue": 892000000.0,
+                  "rawValue": "892"
+                },
+                {
+                  "normalizedValue": 638000000.0,
+                  "rawValue": "638"
+                }
+              ],
+              "label": "AI Solutions & Infrastructure"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 3201000000.0,
+                  "rawValue": "3,201"
+                },
+                {
+                  "normalizedValue": 2620000000.0,
+                  "rawValue": "2,620"
+                },
+                {
+                  "normalizedValue": 2961000000.0,
+                  "rawValue": "2,961"
+                }
+              ],
+              "label": "AI"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 18674000000.0,
+                  "rawValue": "$18,674"
+                },
+                {
+                  "normalizedValue": 14015000000.0,
+                  "rawValue": "$14,015"
+                },
+                {
+                  "normalizedValue": 10387000000.0,
+                  "rawValue": "$10,387"
+                }
+              ],
+              "label": "Total revenues"
+            }
+          ],
+          "scale": "millions",
+          "sourceAnchor": "table-79",
+          "title": "Segment Revenue"
+        },
+        {
+          "columns": [
+            "December 31, 2025",
+            "December 31, 2024"
+          ],
+          "currency": "USD",
+          "rows": [
+            {
+              "cells": [
+                {
+                  "normalizedValue": 1030000000.0,
+                  "rawValue": "$1,030"
+                },
+                {
+                  "normalizedValue": 923000000.0,
+                  "rawValue": "$923"
+                }
+              ],
+              "label": "Raw materials"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 803000000.0,
+                  "rawValue": "803"
+                },
+                {
+                  "normalizedValue": 730000000.0,
+                  "rawValue": "730"
+                }
+              ],
+              "label": "Work-in-progress"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 583000000.0,
+                  "rawValue": "583"
+                },
+                {
+                  "normalizedValue": 350000000.0,
+                  "rawValue": "350"
+                }
+              ],
+              "label": "Finished goods"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 2416000000.0,
+                  "rawValue": "$2,416"
+                },
+                {
+                  "normalizedValue": 2003000000.0,
+                  "rawValue": "$2,003"
+                }
+              ],
+              "label": "Inventory"
+            }
+          ],
+          "scale": "millions",
+          "sourceAnchor": "table-81",
+          "title": "Segment Revenue"
+        },
+        {
+          "columns": [
+            "Year Ended December 31, 2025",
+            "Year Ended December 31, 2024"
+          ],
+          "currency": "USD",
+          "rows": [
+            {
+              "cells": [
+                {
+                  "normalizedValue": 1749000000.0,
+                  "rawValue": "$1,749"
+                },
+                {
+                  "normalizedValue": 794000000.0,
+                  "rawValue": "$794"
+                }
+              ],
+              "label": "Beginning balance, at fair value"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": -112000000.0,
+                  "rawValue": "(112)"
+                },
+                {
+                  "normalizedValue": 955000000.0,
+                  "rawValue": "955"
+                }
+              ],
+              "label": "Unrealized gain (loss), net"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 1637000000.0,
+                  "rawValue": "$1,637"
+                },
+                {
+                  "normalizedValue": 1749000000.0,
+                  "rawValue": "$1,749"
+                }
+              ],
+              "label": "Ending balance, at fair value"
+            }
+          ],
+          "scale": "millions",
+          "sourceAnchor": "table-88",
+          "title": "Segment Revenue"
+        },
+        {
+          "columns": [
+            "Year Ended December 31, 2025",
+            "Year Ended December 31, 2024",
+            "Year Ended December 31, 2023"
+          ],
+          "currency": "USD",
+          "rows": [
+            {
+              "cells": [
+                {
+                  "normalizedValue": 6940000.0,
+                  "rawValue": "6.94"
+                },
+                {
+                  "normalizedValue": 6800000.0,
+                  "rawValue": "6.80"
+                },
+                {
+                  "normalizedValue": 6700000.0,
+                  "rawValue": "6.70"
+                }
+              ],
+              "label": "Expected term (years)"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 43140000.0,
+                  "rawValue": "43.14%"
+                },
+                {
+                  "normalizedValue": 39800000.0,
+                  "rawValue": "39.80%"
+                },
+                {
+                  "normalizedValue": 43200000.0,
+                  "rawValue": "43.20%"
+                }
+              ],
+              "label": "Volatility"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 4019999.9999999995,
+                  "rawValue": "4.02%"
+                },
+                {
+                  "normalizedValue": 4300000.0,
+                  "rawValue": "4.30%"
+                },
+                {
+                  "normalizedValue": 3600000.0,
+                  "rawValue": "3.60%"
+                }
+              ],
+              "label": "Risk-free interest rate"
+            }
+          ],
+          "scale": "millions",
+          "sourceAnchor": "table-109",
+          "title": "Untitled prospectus table"
+        },
+        {
+          "columns": [
+            "Three Months Ended March 31, 2026",
+            "Three Months Ended March 31, 2025"
+          ],
+          "currency": "USD",
+          "rows": [
+            {
+              "cells": [
+                {
+                  "normalizedValue": 330.0,
+                  "rawValue": "$330"
+                },
+                {
+                  "normalizedValue": 566.0,
+                  "rawValue": "$566"
+                }
+              ],
+              "label": "Launch Services"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 289.0,
+                  "rawValue": "289"
+                },
+                {
+                  "normalizedValue": 299.0,
+                  "rawValue": "299"
+                }
+              ],
+              "label": "Launch & Development"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 619.0,
+                  "rawValue": "619"
+                },
+                {
+                  "normalizedValue": 865.0,
+                  "rawValue": "865"
+                }
+              ],
+              "label": "Space"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 2148.0,
+                  "rawValue": "2,148"
+                },
+                {
+                  "normalizedValue": 1492.0,
+                  "rawValue": "1,492"
+                }
+              ],
+              "label": "Consumer"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 1109.0,
+                  "rawValue": "1,109"
+                },
+                {
+                  "normalizedValue": 983.0,
+                  "rawValue": "983"
+                }
+              ],
+              "label": "Enterprise & Government (1)"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 3257.0,
+                  "rawValue": "3,257"
+                },
+                {
+                  "normalizedValue": 2475.0,
+                  "rawValue": "2,475"
+                }
+              ],
+              "label": "Connectivity"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 343.0,
+                  "rawValue": "343"
+                },
+                {
+                  "normalizedValue": 443.0,
+                  "rawValue": "443"
+                }
+              ],
+              "label": "Advertising"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 475.0,
+                  "rawValue": "475"
+                },
+                {
+                  "normalizedValue": 284.0,
+                  "rawValue": "284"
+                }
+              ],
+              "label": "AI Solutions & Infrastructure"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 818.0,
+                  "rawValue": "818"
+                },
+                {
+                  "normalizedValue": 727.0,
+                  "rawValue": "727"
+                }
+              ],
+              "label": "AI"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 4694.0,
+                  "rawValue": "$4,694"
+                },
+                {
+                  "normalizedValue": 4067.0,
+                  "rawValue": "$4,067"
+                }
+              ],
+              "label": "Total revenues"
+            }
+          ],
+          "scale": null,
+          "sourceAnchor": "table-135",
+          "title": "Segment Revenue"
+        },
+        {
+          "columns": [
+            "March 31, 2026",
+            "December 31, 2025"
+          ],
+          "currency": "USD",
+          "rows": [
+            {
+              "cells": [
+                {
+                  "normalizedValue": 1054000000.0,
+                  "rawValue": "$1,054"
+                },
+                {
+                  "normalizedValue": 1030000000.0,
+                  "rawValue": "$1,030"
+                }
+              ],
+              "label": "Raw materials"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 835000000.0,
+                  "rawValue": "835"
+                },
+                {
+                  "normalizedValue": 803000000.0,
+                  "rawValue": "803"
+                }
+              ],
+              "label": "Work-in-progress"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 699000000.0,
+                  "rawValue": "699"
+                },
+                {
+                  "normalizedValue": 583000000.0,
+                  "rawValue": "583"
+                }
+              ],
+              "label": "Finished goods"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 2588000000.0,
+                  "rawValue": "$2,588"
+                },
+                {
+                  "normalizedValue": 2416000000.0,
+                  "rawValue": "$2,416"
+                }
+              ],
+              "label": "Inventory"
+            }
+          ],
+          "scale": "millions",
+          "sourceAnchor": "table-136",
+          "title": "Segment Revenue"
+        },
+        {
+          "columns": [
+            "March 31, 2026 Weighted- Average Useful Life (years)",
+            "March 31, 2026 Gross Carrying Value",
+            "March 31, 2026 Accumulated Amortization",
+            "March 31, 2026 Net Carrying Value"
+          ],
+          "currency": "USD",
+          "rows": [
+            {
+              "cells": [
+                {
+                  "normalizedValue": 5000000.0,
+                  "rawValue": "5.0"
+                },
+                {
+                  "normalizedValue": 735000000.0,
+                  "rawValue": "$735"
+                },
+                {
+                  "normalizedValue": -367000000.0,
+                  "rawValue": "$(367)"
+                },
+                {
+                  "normalizedValue": 368000000.0,
+                  "rawValue": "$368"
+                }
+              ],
+              "label": "Brand"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 9000000.0,
+                  "rawValue": "9.0"
+                },
+                {
+                  "normalizedValue": 1277000000.0,
+                  "rawValue": "1,277"
+                },
+                {
+                  "normalizedValue": -486000000.0,
+                  "rawValue": "(486)"
+                },
+                {
+                  "normalizedValue": 791000000.0,
+                  "rawValue": "791"
+                }
+              ],
+              "label": "User base"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 3000000.0,
+                  "rawValue": "3.0"
+                },
+                {
+                  "normalizedValue": 27000000.0,
+                  "rawValue": "27"
+                },
+                {
+                  "normalizedValue": -17000000.0,
+                  "rawValue": "(17)"
+                },
+                {
+                  "normalizedValue": 10000000.0,
+                  "rawValue": "10"
+                }
+              ],
+              "label": "Existing technology"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 5000000.0,
+                  "rawValue": "5.0"
+                },
+                {
+                  "normalizedValue": 745000000.0,
+                  "rawValue": "745"
+                },
+                {
+                  "normalizedValue": -510000000.0,
+                  "rawValue": "(510)"
+                },
+                {
+                  "normalizedValue": 235000000.0,
+                  "rawValue": "235"
+                }
+              ],
+              "label": "Advertising customer relationships"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 2000000.0,
+                  "rawValue": "2.0"
+                },
+                {
+                  "normalizedValue": 11000000.0,
+                  "rawValue": "11"
+                },
+                {
+                  "normalizedValue": -2000000.0,
+                  "rawValue": "(2)"
+                },
+                {
+                  "normalizedValue": 9000000.0,
+                  "rawValue": "9"
+                }
+              ],
+              "label": "Acquired workforce"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": null,
+                  "rawValue": ""
+                },
+                {
+                  "normalizedValue": 2795000000.0,
+                  "rawValue": "$2,795"
+                },
+                {
+                  "normalizedValue": -1382000000.0,
+                  "rawValue": "$(1,382)"
+                },
+                {
+                  "normalizedValue": 1413000000.0,
+                  "rawValue": "$1,413"
+                }
+              ],
+              "label": "Total"
+            }
+          ],
+          "scale": "millions",
+          "sourceAnchor": "table-138",
+          "title": "Segment Revenue"
+        },
+        {
+          "columns": [
+            "December 31, 2025 Weighted- Average Useful Life (in years)",
+            "December 31, 2025 Gross Carrying Value",
+            "December 31, 2025 Accumulated Amortization",
+            "December 31, 2025 Net Carrying Value"
+          ],
+          "currency": "USD",
+          "rows": [
+            {
+              "cells": [
+                {
+                  "normalizedValue": 5000000.0,
+                  "rawValue": "5.0"
+                },
+                {
+                  "normalizedValue": 743000000.0,
+                  "rawValue": "$743"
+                },
+                {
+                  "normalizedValue": -335000000.0,
+                  "rawValue": "$(335)"
+                },
+                {
+                  "normalizedValue": 408000000.0,
+                  "rawValue": "$408"
+                }
+              ],
+              "label": "Brand"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 9000000.0,
+                  "rawValue": "9.0"
+                },
+                {
+                  "normalizedValue": 1291000000.0,
+                  "rawValue": "1,291"
+                },
+                {
+                  "normalizedValue": -456000000.0,
+                  "rawValue": "(456)"
+                },
+                {
+                  "normalizedValue": 835000000.0,
+                  "rawValue": "835"
+                }
+              ],
+              "label": "User base"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 3200000.0,
+                  "rawValue": "3.2"
+                },
+                {
+                  "normalizedValue": 27000000.0,
+                  "rawValue": "27"
+                },
+                {
+                  "normalizedValue": -16000000.0,
+                  "rawValue": "(16)"
+                },
+                {
+                  "normalizedValue": 11000000.0,
+                  "rawValue": "11"
+                }
+              ],
+              "label": "Existing technology"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 5000000.0,
+                  "rawValue": "5.0"
+                },
+                {
+                  "normalizedValue": 752000000.0,
+                  "rawValue": "752"
+                },
+                {
+                  "normalizedValue": -478000000.0,
+                  "rawValue": "(478)"
+                },
+                {
+                  "normalizedValue": 274000000.0,
+                  "rawValue": "274"
+                }
+              ],
+              "label": "Advertising customer relationships"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 2000000.0,
+                  "rawValue": "2.0"
+                },
+                {
+                  "normalizedValue": 9000000.0,
+                  "rawValue": "9"
+                },
+                {
+                  "normalizedValue": null,
+                  "rawValue": "\u2014"
+                },
+                {
+                  "normalizedValue": 9000000.0,
+                  "rawValue": "9"
+                }
+              ],
+              "label": "Acquired workforce"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": null,
+                  "rawValue": ""
+                },
+                {
+                  "normalizedValue": 2822000000.0,
+                  "rawValue": "$2,822"
+                },
+                {
+                  "normalizedValue": -1285000000.0,
+                  "rawValue": "$(1,285)"
+                },
+                {
+                  "normalizedValue": 1537000000.0,
+                  "rawValue": "$1,537"
+                }
+              ],
+              "label": "Total"
+            }
+          ],
+          "scale": "millions",
+          "sourceAnchor": "table-139",
+          "title": "Segment Revenue"
+        },
+        {
+          "columns": [
+            "March 31, 2026 Cost",
+            "March 31, 2026 Fair Value",
+            "March 31, 2026 Unrealized Loss"
+          ],
+          "currency": "USD",
+          "rows": [
+            {
+              "cells": [
+                {
+                  "normalizedValue": 7181000000.0,
+                  "rawValue": "7,181"
+                },
+                {
+                  "normalizedValue": 7181000000.0,
+                  "rawValue": "7,181"
+                },
+                {
+                  "normalizedValue": null,
+                  "rawValue": "\u2014"
+                }
+              ],
+              "label": "Cash"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 6950000000.0,
+                  "rawValue": "6,950"
+                },
+                {
+                  "normalizedValue": 6950000000.0,
+                  "rawValue": "6,950"
+                },
+                {
+                  "normalizedValue": null,
+                  "rawValue": "\u2014"
+                }
+              ],
+              "label": "Money market funds"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 1721000000.0,
+                  "rawValue": "1,721"
+                },
+                {
+                  "normalizedValue": 1721000000.0,
+                  "rawValue": "1,721"
+                },
+                {
+                  "normalizedValue": null,
+                  "rawValue": "\u2014"
+                }
+              ],
+              "label": "Government securities"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 7823000000.0,
+                  "rawValue": "7,823"
+                },
+                {
+                  "normalizedValue": 7823000000.0,
+                  "rawValue": "7,823"
+                },
+                {
+                  "normalizedValue": 0.0,
+                  "rawValue": "0"
+                }
+              ],
+              "label": "Government securities"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 15000000.0,
+                  "rawValue": "15"
+                },
+                {
+                  "normalizedValue": 15000000.0,
+                  "rawValue": "15"
+                },
+                {
+                  "normalizedValue": null,
+                  "rawValue": "\u2014"
+                }
+              ],
+              "label": "Restricted cash"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 52000000.0,
+                  "rawValue": "52"
+                },
+                {
+                  "normalizedValue": 52000000.0,
+                  "rawValue": "52"
+                },
+                {
+                  "normalizedValue": null,
+                  "rawValue": "\u2014"
+                }
+              ],
+              "label": "Restricted cash in money market funds"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 512000000.0,
+                  "rawValue": "512"
+                },
+                {
+                  "normalizedValue": 512000000.0,
+                  "rawValue": "512"
+                },
+                {
+                  "normalizedValue": null,
+                  "rawValue": "\u2014"
+                }
+              ],
+              "label": "Restricted cash"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 146000000.0,
+                  "rawValue": "146"
+                },
+                {
+                  "normalizedValue": 146000000.0,
+                  "rawValue": "146"
+                },
+                {
+                  "normalizedValue": null,
+                  "rawValue": "\u2014"
+                }
+              ],
+              "label": "Restricted cash in money market funds"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 31000000.0,
+                  "rawValue": "31"
+                },
+                {
+                  "normalizedValue": 31000000.0,
+                  "rawValue": "31"
+                },
+                {
+                  "normalizedValue": null,
+                  "rawValue": "\u2014"
+                }
+              ],
+              "label": "Restricted cash in government securities"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 24431000000.0,
+                  "rawValue": "$24,431"
+                },
+                {
+                  "normalizedValue": 24431000000.0,
+                  "rawValue": "$24,431"
+                },
+                {
+                  "normalizedValue": null,
+                  "rawValue": "$\u2014"
+                }
+              ],
+              "label": "Total"
+            }
+          ],
+          "scale": "millions",
+          "sourceAnchor": "table-141",
+          "title": "Segment Revenue"
+        },
+        {
+          "columns": [
+            "December 31, 2025 Cost",
+            "December 31, 2025 Fair Value"
+          ],
+          "currency": "USD",
+          "rows": [
+            {
+              "cells": [
+                {
+                  "normalizedValue": 3408000000.0,
+                  "rawValue": "$3,408"
+                },
+                {
+                  "normalizedValue": 3408000000.0,
+                  "rawValue": "$3,408"
+                }
+              ],
+              "label": "Cash"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 21339000000.0,
+                  "rawValue": "21,339"
+                },
+                {
+                  "normalizedValue": 21339000000.0,
+                  "rawValue": "21,339"
+                }
+              ],
+              "label": "Money market funds"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 30000000.0,
+                  "rawValue": "30"
+                },
+                {
+                  "normalizedValue": 30000000.0,
+                  "rawValue": "30"
+                }
+              ],
+              "label": "Restricted cash"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 152000000.0,
+                  "rawValue": "152"
+                },
+                {
+                  "normalizedValue": 152000000.0,
+                  "rawValue": "152"
+                }
+              ],
+              "label": "Money market funds"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 182000000.0,
+                  "rawValue": "182"
+                },
+                {
+                  "normalizedValue": 182000000.0,
+                  "rawValue": "182"
+                }
+              ],
+              "label": "Restricted cash"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 13000000.0,
+                  "rawValue": "13"
+                },
+                {
+                  "normalizedValue": 13000000.0,
+                  "rawValue": "13"
+                }
+              ],
+              "label": "Restricted cash in money market funds"
+            },
+            {
+              "cells": [
+                {
+                  "normalizedValue": 25124000000.0,
+                  "rawValue": "$25,124"
+                },
+                {
+                  "normalizedValue": 25124000000.0,
+                  "rawValue": "$25,124"
+                }
+              ],
+              "label": "Total"
+            }
+          ],
+          "scale": "millions",
+          "sourceAnchor": "table-142",
+          "title": "Segment Revenue"
+        }
+      ],
+      "segments": [],
+      "shareCounts": [
+        {
+          "basis": "pro_forma_post_offering",
+          "confidence": 0.9,
+          "normalizedValue": 13075865175.0,
+          "originalColumnLabel": "Value",
+          "rawValue": "1.3075865175E10",
+          "sourceProvenance": {
+            "crossCheckStatus": "not_applicable",
+            "dataQualityWarnings": [],
+            "periodEnd": "2026-03-31",
+            "provider": "sec-edgar-prospectus",
+            "retrievalStatus": "retrieved",
+            "sourceClass": "primary_filing",
+            "sourceDate": "2026-06-03",
+            "sourcePolicyStatus": "primary_filing_used",
+            "warnings": []
+          },
+          "sourceRowLabel": "Class A common stock outstanding immediately after this offering + Class B common stock outstanding immediately after this offering",
+          "tableTitle": "Prospectus Summary Offering Facts",
+          "warnings": []
+        }
+      ],
+      "sourceProvenance": {
+        "crossCheckStatus": "not_applicable",
+        "dataQualityWarnings": [],
+        "periodEnd": "2026-03-31",
+        "provider": "sec-edgar-prospectus",
+        "retrievalStatus": "retrieved",
+        "sourceClass": "primary_filing",
+        "sourceDate": "2026-06-03",
+        "sourcePolicyStatus": "primary_filing_used",
+        "warnings": []
+      },
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1181412/000162828026040364/spaceexplorationtechnologib.htm"
+    },
+    "reviewReference": "prospectus_de1ff3498299483f",
+    "reviewStatus": "review_required",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1181412/000162828026040364/spaceexplorationtechnologib.htm",
+    "status": "requires_review"
+  },
+  "provenance": {
+    "crossCheckStatus": "not_applicable",
+    "dataQualityWarnings": [],
+    "periodEnd": "2026-03-31",
+    "provider": "sec-edgar-prospectus",
+    "retrievalStatus": "retrieved",
+    "sourceClass": "primary_filing",
+    "sourceDate": "2026-06-03",
+    "sourcePolicyStatus": "primary_filing_used",
+    "warnings": []
+  },
+  "sourceQualityGate": {
+    "allowedActions": [
+      "approve_extracted_packet",
+      "correct_packet",
+      "add_sources",
+      "stop"
+    ],
+    "crossCheckRequired": true,
+    "fallbackSourceAvailable": false,
+    "primarySourceExpected": true,
+    "reason": "prospectus_extraction_review_required",
+    "status": "requires_user_decision"
+  },
+  "tool": "stockvaluation.extract_prospectus",
+  "version": {
+    "mcp": {
+      "name": "valuation-agent",
+      "protocolVersion": "2025-11-25",
+      "supportedProtocolVersions": [
+        "2025-11-25",
+        "2025-06-18",
+        "2025-03-26",
+        "2024-11-05",
+        "2024-10-07"
+      ],
+      "version": "0.1.0"
+    }
+  }
+}

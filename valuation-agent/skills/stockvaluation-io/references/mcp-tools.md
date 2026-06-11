@@ -17,6 +17,16 @@ When returned, `scenarioBook` contains a `scenario_book.v1` artifact reference, 
 - Every tool response on a tracked run includes `workflow_state`: `{run_id, gates, gates_passed, gates_pending}`. Calls without a `run_id` behave as before and carry `"gate_enforcement": "untracked"`.
 - An unknown or expired `run_id` returns error code `UNKNOWN_RUN_ID`; start a new run from the baseline or extraction tool. Invalid `gate_records` return `INVALID_GATE_RECORD`.
 
+## Deterministic Driver Anchors And Range Output
+
+On a tracked run the server computes per-driver anchor sets `{driver, field, unit, anchors: {low, base, high}}` from deterministic inputs only (prospectus filing history, offering terms, or the service baseline). Each anchor carries a `provenance` string naming its source. The model never authors scenario numbers.
+
+- `stockvaluation.plan_guided_questions` with a `run_id` attaches anchor sets to every material numeric question: bounded choices A/B/C carry the low/base/high anchor values with `anchor_label` and `anchor_provenance`; choice D asks the user to type their own number. "Accept the default" always means the base anchor. Questions whose driver has no computable anchor keep `candidate-required` status with `requires_user_value: true` — ask the user for a specific number; never invent one.
+- On tracked prospectus runs the server sets `prospectus_recalculate_supported` automatically, so supplied or anchored candidates always map into bounded choices.
+- `stockvaluation.apply_guided_answers` with a `run_id` records per driver which anchor or user value was chosen and returns it as `guidedAnswerRecord` (e.g. `{"revenue_growth": {"value": 34.08, "source": "anchor:base"}}`).
+- Enforcement: on a tracked run, a numeric driver value in `value_prospectus.scenario` or `recalculate.overrides` must be one of that driver's recorded anchors, or be declared in `value_sources` as `user_input`, or be absent. Anything else is refused with `{"ok": false, "error": {"code": "UNANCHORED_SCENARIO_VALUE"}, "failureCategory": "unanchored_scenario_value", "driver": "<field>"}`.
+- Range output: while material anchored drivers remain unresolved (no guided answer and not pinned in the call), a scenario-bearing call returns `valuationRange` — `{status: "unresolved_material_drivers", unresolved_drivers, spread_drivers, low: {value_per_share, ...}, high: {value_per_share, ...}, value_spread}` — instead of a point estimate. Lead the user-facing answer with this range and name the unresolved driver(s). A point estimate appears only when every material driver is pinned by an anchor choice or an explicit user value.
+
 ## Client-Visible Call Arguments
 
 Some agent clients display MCP call arguments before execution. Keep input payloads compact enough to inspect:

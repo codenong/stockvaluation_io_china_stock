@@ -15,6 +15,15 @@ from .accounting_and_claims import (
     merge_accounting_metadata,
     validate_accounting_override,
 )
+from .driver_anchors import (
+    ANCHOR_FIELD_TO_PROSPECTUS_KEYS,
+    NUMERIC_DRIVER_KEYS,
+    anchor_values,
+    anchors_from_prospectus_packet,
+    anchors_from_valuation_baseline,
+    driver_field_for_key,
+    matches_anchor,
+)
 from .evidence_packet import validate_evidence_packet
 from .guided_question_planner import build_guided_question_plan, build_user_judgment_package
 from .security import sanitize_for_agent
@@ -223,6 +232,11 @@ def _run_tracking_properties() -> dict[str, Any]:
             "type": "array",
             "description": "Explicit gate outcome records for a tracked run. Each record: {gate: evidence_review|guided_refinement, outcome: approved|corrected|caveated|applied|bypassed, reason: quick|no_questions|automation|smoke_test (required when outcome is bypassed)}. Bypasses are recorded, never inferred.",
             "items": {"type": "object", "additionalProperties": True},
+        },
+        "value_sources": {
+            "type": "object",
+            "description": "On a tracked run, declares the source of a numeric driver value, e.g. {\"target_operating_margin\": \"user_input\"}. A numeric driver value must be one of the run's recorded anchors or be flagged user_input (a number the user actually typed); anything else is refused as unanchored_scenario_value.",
+            "additionalProperties": True,
         },
     }
 
@@ -477,11 +491,22 @@ class MCPToolRegistry:
         content = self._handlers[name](args)
         return tool_result(content, is_error=not bool(content.get("ok")))
 
-    def _start_tracked_run(self, payload: dict[str, Any], *, workflow_type: str, subject: str | None, tool: str) -> None:
+    def _start_tracked_run(
+        self,
+        payload: dict[str, Any],
+        *,
+        workflow_type: str,
+        subject: str | None,
+        tool: str,
+        anchors: dict[str, Any] | None = None,
+    ) -> None:
         if not payload.get("ok"):
             return
         try:
             run = self.run_store.create_run(workflow_type=workflow_type, subject=subject)
+            if anchors:
+                run["anchors"] = sanitize_for_agent(anchors)
+                self.run_store.update_run(run)
             self.run_store.record_event(run["run_id"], "tool_call", {"tool": tool})
             run = self.run_store.get_run(run["run_id"]) or run
         except OSError:
@@ -551,6 +576,76 @@ class MCPToolRegistry:
         payload["workflow_state"] = self.run_store.workflow_state(refreshed)
         return payload
 
+    def _validate_anchored_values(
+        self,
+        run: dict[str, Any],
+        values: Any,
+        args: dict[str, Any],
+        tool: str,
+    ) -> dict[str, Any] | None:
+        """Refuse recognized numeric driver values that are neither recorded
+        anchors nor explicitly flagged as user input."""
+        if not isinstance(values, dict):
+            return None
+        anchors = run.get("anchors") or {}
+        if not anchors:
+            return None
+        sources = args.get("value_sources") or args.get("valueSources")
+        sources = sources if isinstance(sources, dict) else {}
+        for key, value in values.items():
+            if key not in NUMERIC_DRIVER_KEYS:
+                continue
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                continue
+            field = driver_field_for_key(key) or key
+            declared = str(sources.get(key) or sources.get(field) or "").lower()
+            if declared == "user_input":
+                continue
+            anchor_set = anchors.get(field)
+            if anchor_set and matches_anchor(anchor_set, value):
+                continue
+            return error_payload(
+                tool,
+                "UNANCHORED_SCENARIO_VALUE",
+                f"The value for {key} is not one of the recorded anchors for driver {field} and is not flagged "
+                "value_source=user_input. Defaults must come from server-computed anchors; only the user may "
+                "supply a different number.",
+                "unanchored_scenario_value",
+                extra={
+                    "driver": field,
+                    "scenario_key": key,
+                    "run_id": run.get("run_id"),
+                    "anchor_set": anchor_set,
+                    "workflow_state": self.run_store.workflow_state(run),
+                },
+            )
+        return None
+
+    def _unresolved_anchor_fields(self, run: dict[str, Any], pinned_values: Any) -> list[str]:
+        anchors = run.get("anchors") or {}
+        answers = run.get("guided_answers") or {}
+        # Before a guided plan exists every multi-valued anchored driver is
+        # treated as material; after planning, only fields the plan asked about.
+        material = run.get("material_anchor_fields")
+        if isinstance(material, list):
+            fields = [field for field in sorted(anchors) if field in set(material)]
+        else:
+            fields = sorted(anchors)
+        pinned: set[str] = set()
+        if isinstance(pinned_values, dict):
+            for key, value in pinned_values.items():
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    pinned.add(driver_field_for_key(key) or key)
+        unresolved = []
+        for field in fields:
+            values = anchor_values(anchors[field])
+            if len(set(values.values())) <= 1:
+                continue
+            if field in answers or field in pinned:
+                continue
+            unresolved.append(field)
+        return unresolved
+
     def _health(self, _: dict[str, Any]) -> dict[str, Any]:
         tool = "stockvaluation.health"
         try:
@@ -578,7 +673,13 @@ class MCPToolRegistry:
         try:
             valuation = self.service_client.value_ticker(ticker)
             payload = valuation_success_payload(tool, ticker, valuation)
-            self._start_tracked_run(payload, workflow_type="ticker", subject=ticker, tool=tool)
+            self._start_tracked_run(
+                payload,
+                workflow_type="ticker",
+                subject=ticker,
+                tool=tool,
+                anchors=anchors_from_valuation_baseline(valuation),
+            )
             return payload
         except ValuationServiceError as exc:
             return service_exception_payload(tool, exc, ticker=ticker)
@@ -599,7 +700,13 @@ class MCPToolRegistry:
                 valuation,
                 {"researchedBaselineMode": True, "requestPolicyMode": "researched_baseline"},
             )
-            self._start_tracked_run(payload, workflow_type="ticker", subject=ticker, tool=tool)
+            self._start_tracked_run(
+                payload,
+                workflow_type="ticker",
+                subject=ticker,
+                tool=tool,
+                anchors=anchors_from_valuation_baseline(valuation),
+            )
             return payload
         except ValuationServiceError as exc:
             return service_exception_payload(tool, exc, ticker=ticker)
@@ -618,7 +725,13 @@ class MCPToolRegistry:
             if review_reference:
                 self._prospectus_packet_cache[review_reference] = copy.deepcopy(packet)
             payload = prospectus_extraction_success_payload(tool, result, review_reference=review_reference)
-            self._start_tracked_run(payload, workflow_type="prospectus", subject=filing_url, tool=tool)
+            self._start_tracked_run(
+                payload,
+                workflow_type="prospectus",
+                subject=filing_url,
+                tool=tool,
+                anchors=anchors_from_prospectus_packet(packet),
+            )
             return payload
         except ValuationServiceError as exc:
             return service_exception_payload(tool, exc)
@@ -674,10 +787,67 @@ class MCPToolRegistry:
                 )
             if run is not None and scenario and not self.run_store.gate_cleared(run, GATE_EVIDENCE_REVIEW):
                 return self._gate_refusal(tool, GATE_EVIDENCE_REVIEW, run)
+            if run is not None and scenario:
+                refusal = self._validate_anchored_values(run, scenario, args, tool)
+                if refusal is not None:
+                    return self._finish_tracked(refusal, run, tool)
+                unresolved = self._unresolved_anchor_fields(run, scenario)
+                if unresolved:
+                    return self._finish_tracked(
+                        self._prospectus_range_payload(tool, run, packet, scenario, unresolved),
+                        run,
+                        tool,
+                    )
             result = self.service_client.value_prospectus(packet, scenario)
             return self._finish_tracked(prospectus_valuation_success_payload(tool, result), run, tool)
         except ValuationServiceError as exc:
             return self._finish_tracked(service_exception_payload(tool, exc), run, tool)
+
+    def _prospectus_range_payload(
+        self,
+        tool: str,
+        run: dict[str, Any],
+        packet: dict[str, Any],
+        scenario: dict[str, Any],
+        unresolved: list[str],
+    ) -> dict[str, Any]:
+        anchors = run.get("anchors") or {}
+        cases: dict[str, dict[str, Any]] = {}
+        for label in ("low", "high"):
+            case_scenario = dict(scenario)
+            anchor_labels: dict[str, str] = {}
+            for field in unresolved:
+                value = anchor_values(anchors.get(field) or {}).get(label)
+                if value is None:
+                    continue
+                for key in ANCHOR_FIELD_TO_PROSPECTUS_KEYS.get(field, ()):
+                    case_scenario[key] = value
+                anchor_labels[field] = label
+            result = self.service_client.value_prospectus(packet, case_scenario)
+            cases[label] = {
+                "value_per_share": _prospectus_value_per_share(result),
+                "scenario": sanitize_for_agent(case_scenario),
+                "anchor_labels": anchor_labels,
+            }
+        per_share = [
+            case["value_per_share"]
+            for case in cases.values()
+            if isinstance(case.get("value_per_share"), (int, float))
+        ]
+        return {
+            "ok": True,
+            "tool": tool,
+            "valuationRange": {
+                "status": "unresolved_material_drivers",
+                "reason": "Material drivers remain unresolved; a point estimate appears only when all material drivers are pinned.",
+                "unresolved_drivers": unresolved,
+                "spread_drivers": unresolved,
+                "low": cases.get("low"),
+                "high": cases.get("high"),
+                "value_spread": {"min": min(per_share), "max": max(per_share)} if per_share else None,
+            },
+            "policy": policy_metadata(),
+        }
 
     def _prospectus_packet_from_args(self, args: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
         tool = "stockvaluation.value_prospectus"
@@ -736,12 +906,34 @@ class MCPToolRegistry:
             record_error = self._apply_gate_records(run, args, tool)
             if record_error is not None:
                 return record_error
-        plan = build_guided_question_plan(args)
+        planner_args = dict(args)
         if run is not None:
+            # Anchors come from run state (server-computed), never from the model.
+            planner_args["driver_anchors"] = run.get("anchors") or {}
+            if run.get("workflow_type") == "prospectus":
+                # The MCP layer knows prospectus scenario recalculation is
+                # supported; do not depend on the agent remembering the flag.
+                planner_args.setdefault("prospectus_recalculate_supported", True)
+        plan = build_guided_question_plan(planner_args)
+        if run is not None:
+            anchored_fields = sorted(
+                {
+                    field
+                    for question in plan.get("questions") or []
+                    if isinstance(question, dict)
+                    for field in [_string_or_none(_dict(question.get("anchor_set")).get("field"))]
+                    if field
+                }
+            )
+            run["material_anchor_fields"] = anchored_fields
+            self.run_store.update_run(run)
             self.run_store.record_event(
                 run["run_id"],
                 "guided_plan_created",
-                {"question_count": len(plan.get("questions") or [])},
+                {
+                    "question_count": len(plan.get("questions") or []),
+                    "anchored_fields": anchored_fields,
+                },
             )
         payload = {
             "ok": True,
@@ -778,7 +970,29 @@ class MCPToolRegistry:
             )
         use_defaults = bool(args.get("use_defaults") or args.get("useDefaults"))
         judgment = build_user_judgment_package(plan, answers, use_defaults=use_defaults)
+        guided_answer_record: dict[str, Any] = {}
         if run is not None:
+            run_anchors = run.get("anchors") or {}
+            for answer in judgment.get("answers") or []:
+                if not isinstance(answer, dict):
+                    continue
+                override = _dict(answer.get("requested_override"))
+                field = _string_or_none(override.get("field"))
+                value = override.get("value")
+                if not field or not isinstance(value, (int, float)) or isinstance(value, bool):
+                    continue
+                field = driver_field_for_key(field) or field
+                anchor_label = answer.get("anchor_label")
+                if anchor_label not in {"low", "base", "high"}:
+                    anchor_label = matches_anchor(_dict(run_anchors.get(field)), value)
+                guided_answer_record[field] = {
+                    "value": value,
+                    "source": f"anchor:{anchor_label}" if anchor_label else "user_input",
+                    "question_id": answer.get("question_id"),
+                    "selected_choice": answer.get("selected_choice"),
+                }
+            run["guided_answers"] = sanitize_for_agent(guided_answer_record)
+            self.run_store.update_run(run)
             self.run_store.record_gate(run["run_id"], GATE_GUIDED_REFINEMENT, "applied")
         payload = {
             "ok": True,
@@ -789,6 +1003,8 @@ class MCPToolRegistry:
             "scenarioRange": sanitize_for_agent(plan.get("scenario_range") or {}),
             "policy": policy_metadata(),
         }
+        if run is not None:
+            payload["guidedAnswerRecord"] = guided_answer_record
         return self._finish_tracked(payload, run, tool)
 
     def _recalculate(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -811,6 +1027,17 @@ class MCPToolRegistry:
             guided_flow = any(key in {"user_judgment", "guided_refinement"} for key in requested)
             if guided_flow and not self.run_store.gate_cleared(run, GATE_GUIDED_REFINEMENT):
                 return self._gate_refusal(tool, GATE_GUIDED_REFINEMENT, run)
+            refusal = self._validate_anchored_values(run, requested, args, tool)
+            if refusal is not None:
+                return self._finish_tracked(refusal, run, tool)
+            if scenario_bearing:
+                unresolved = self._unresolved_anchor_fields(run, requested)
+                if unresolved:
+                    return self._finish_tracked(
+                        self._recalculate_range_payload(tool, run, ticker, requested, unresolved),
+                        run,
+                        tool,
+                    )
         if not isinstance(requested, dict):
             return error_payload(
                 tool,
@@ -897,6 +1124,67 @@ class MCPToolRegistry:
             )
             return self._finish_tracked(payload, run, tool)
 
+    def _recalculate_range_payload(
+        self,
+        tool: str,
+        run: dict[str, Any],
+        ticker: str,
+        requested: dict[str, Any],
+        unresolved: list[str],
+    ) -> dict[str, Any]:
+        anchors = run.get("anchors") or {}
+        cases: dict[str, dict[str, Any]] = {}
+        for label in ("low", "high"):
+            case_requested = dict(requested)
+            anchor_labels: dict[str, str] = {}
+            for field in unresolved:
+                if field not in SUPPORTED_OVERRIDE_FIELDS:
+                    continue
+                value = anchor_values(anchors.get(field) or {}).get(label)
+                if value is None:
+                    continue
+                case_requested[field] = value
+                anchor_labels[field] = label
+            mapped, unsupported, _metadata = map_recalculate_overrides(case_requested)
+            if unsupported:
+                return error_payload(
+                    tool,
+                    "UNSUPPORTED_OVERRIDES",
+                    "Range valuation for unresolved drivers was blocked by unsupported override fields.",
+                    "unsupported_overrides",
+                    extra={"ticker": ticker, "assumptions": {"requested": sanitize_for_agent(case_requested), "unsupported": unsupported}},
+                )
+            try:
+                valuation = self.service_client.value_ticker(ticker, mapped)
+            except ValuationServiceError as exc:
+                return service_exception_payload(tool, exc, ticker=ticker)
+            value = _dict(valuation.get("companyDTO")).get("estimatedValuePerShare")
+            cases[label] = {
+                "value_per_share": float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None,
+                "overrides": sanitize_for_agent(case_requested),
+                "anchor_labels": anchor_labels,
+            }
+        per_share = [
+            case["value_per_share"]
+            for case in cases.values()
+            if isinstance(case.get("value_per_share"), (int, float))
+        ]
+        return {
+            "ok": True,
+            "tool": tool,
+            "ticker": ticker,
+            "valuationRange": {
+                "status": "unresolved_material_drivers",
+                "reason": "Material drivers remain unresolved; a point estimate appears only when all material drivers are pinned.",
+                "unresolved_drivers": unresolved,
+                "spread_drivers": unresolved,
+                "low": cases.get("low"),
+                "high": cases.get("high"),
+                "value_spread": {"min": min(per_share), "max": max(per_share)} if per_share else None,
+            },
+            "policy": policy_metadata(),
+        }
+
     def _get_assumptions(self, args: dict[str, Any]) -> dict[str, Any]:
         tool = "stockvaluation.get_assumptions"
         ticker, error = normalize_ticker(args.get("ticker"))
@@ -982,6 +1270,12 @@ def normalize_prospectus_url(raw: Any) -> tuple[str, str | None]:
     if not SEC_PROSPECTUS_URL_RE.fullmatch(filing_url):
         return "", "filing_url must be a SEC EDGAR Archives HTML URL under https://www.sec.gov/Archives/edgar/data/."
     return filing_url, None
+
+
+def _prospectus_value_per_share(result: dict[str, Any]) -> float | None:
+    valuation = _dict(result.get("valuation"))
+    value = _dict(valuation.get("companyDTO")).get("estimatedValuePerShare")
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
 
 def prospectus_review_status(packet: dict[str, Any]) -> str | None:
@@ -3139,6 +3433,7 @@ def recovery_for_category(category: str) -> dict[str, Any]:
         "invalid_prospectus_source": "Ask for a SEC EDGAR Archives HTML prospectus URL. Do not paste raw filing HTML into the MCP tool.",
         "prospectus_review_required": "Review the extracted ProspectusFinancialPacket with the user, correct any disputed fields, then retry only after setting reviewStatus to reviewed.",
         "gate_not_cleared": "Complete the named workflow gate with the user (or record an explicit user-stated bypass via gate_records) before retrying this call.",
+        "unanchored_scenario_value": "Use one of the driver's recorded anchor values, or ask the user for a specific number and declare it in value_sources as user_input. Do not invent scenario numbers.",
         "unknown_run_id": "Start a new tracked run from stockvaluation.extract_prospectus or a baseline tool and use its run_id.",
         "invalid_gate_record": "Fix the gate record fields (gate, outcome, reason) and retry. Bypasses require an explicit reason.",
         "unknown_failure": "Summarize the failure and ask the user whether to run service status checks.",
