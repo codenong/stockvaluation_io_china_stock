@@ -361,8 +361,8 @@ public class ProspectusValuationService {
             segments.add(new SegmentResponseDTO.Segment(
                     blankToNull(fact.getSectorKey()),
                     blankToNull(fact.getMappedIndustry()),
-                    List.of(defaultString(fact.getSegmentName(), "Unnamed prospectus segment")),
-                    mappingScore(fact.getMappingConfidence()),
+                    segmentComponents(fact),
+                    mappingScore(fact),
                     weight,
                     null));
         }
@@ -906,11 +906,21 @@ public class ProspectusValuationService {
         return new ArrayList<>(deduped.values());
     }
 
-    private static double mappingScore(String confidence) {
-        if (confidence == null) {
+    private static List<String> segmentComponents(ProspectusSegmentFact fact) {
+        if (fact.getComponents() != null && !fact.getComponents().isEmpty()) {
+            return fact.getComponents();
+        }
+        return List.of(defaultString(fact.getSegmentName(), "Unnamed prospectus segment"));
+    }
+
+    private static double mappingScore(ProspectusSegmentFact fact) {
+        if (fact.getMappingScore() != null && Double.isFinite(fact.getMappingScore())) {
+            return fact.getMappingScore();
+        }
+        if (fact.getMappingConfidence() == null) {
             return 0.0;
         }
-        return switch (confidence.toLowerCase()) {
+        return switch (fact.getMappingConfidence().toLowerCase()) {
             case "high" -> 0.95;
             case "medium" -> 0.75;
             case "low" -> 0.25;

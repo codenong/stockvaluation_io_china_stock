@@ -1,9 +1,10 @@
+import copy
 import json
 from pathlib import Path
 
 import pytest
 
-from valuation_agent.mcp_tools import MCPToolRegistry
+from valuation_agent.mcp_tools import MCPToolRegistry, prospectus_segment_review
 from valuation_agent.mcp_server import MCPJSONRPCServer
 from valuation_agent.service_client import (
     NonJsonServiceResponse,
@@ -242,11 +243,50 @@ def _prospectus_valuation_payload():
     }
 
 
+def _segment_mapping_proposal_payload():
+    return {
+        "proposals": [
+            {
+                "name": "Pharmaceuticals",
+                "revenueAmount": 600.0,
+                "revenueWeight": 0.6,
+                "sectorKey": "drug-manufacturers-general",
+                "mappedIndustry": "Drugs (Pharmaceutical)",
+                "mappingConfidence": "high",
+                "mappingScore": 0.82,
+                "mappingScoreMargin": 0.32,
+                "rationale": "Matched pharmaceutical synonyms for drug-manufacturers-general.",
+                "components": ["Prescription drugs"],
+                "rowRole": "reportable_segment",
+                "warnings": [],
+            },
+            {
+                "name": "Other",
+                "revenueAmount": 120.0,
+                "revenueWeight": 0.12,
+                "sectorKey": None,
+                "mappedIndustry": None,
+                "mappingConfidence": "unmapped",
+                "mappingScore": 0.0,
+                "mappingScoreMargin": 0.0,
+                "rationale": "Residual bucket left unmapped for review.",
+                "components": [],
+                "rowRole": "residual",
+                "warnings": ["residual bucket; materiality review required"],
+            },
+        ],
+        "revenueCoveragePct": 72.0,
+        "materialGap": True,
+        "warnings": ["residual bucket; materiality review required"],
+    }
+
+
 class FakeClient:
-    def __init__(self, payload=None, prospectus_extraction=None, prospectus_valuation=None):
+    def __init__(self, payload=None, prospectus_extraction=None, prospectus_valuation=None, segment_mapping_proposal=None):
         self.payload = payload or _valuation_payload()
         self.prospectus_extraction = prospectus_extraction or _prospectus_extraction_payload()
         self.prospectus_valuation = prospectus_valuation or _prospectus_valuation_payload()
+        self.segment_mapping_proposal = segment_mapping_proposal or _segment_mapping_proposal_payload()
         self.calls = []
 
     def health(self):
@@ -263,6 +303,10 @@ class FakeClient:
     def value_prospectus(self, packet, scenario=None):
         self.calls.append(("value_prospectus", packet, scenario))
         return self.prospectus_valuation
+
+    def propose_segment_mappings(self, segments, consolidated_revenue=None):
+        self.calls.append(("propose_segment_mappings", segments, consolidated_revenue))
+        return self.segment_mapping_proposal
 
 
 def _valid_evidence_packet(**item_overrides):
@@ -407,6 +451,7 @@ def test_mcp_tools_list_has_required_stockvaluation_contracts():
         "stockvaluation.health",
         "stockvaluation.value_ticker",
         "stockvaluation.researched_baseline",
+        "stockvaluation.propose_segment_mappings",
         "stockvaluation.extract_prospectus",
         "stockvaluation.value_prospectus",
         "stockvaluation.plan_guided_questions",
@@ -440,6 +485,42 @@ def test_prospectus_tools_are_read_only_and_schema_bounded():
     assert value["inputSchema"]["properties"]["review_reference"]["type"] == "string"
     assert value["inputSchema"]["properties"]["scenario"]["type"] == "object"
     assert value["inputSchema"]["properties"]["scenario"]["additionalProperties"] is True
+
+
+def test_propose_segment_mappings_calls_java_service_and_returns_review_payload():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+    segments = [
+        {
+            "name": "Pharmaceuticals",
+            "revenueAmount": 600.0,
+            "components": ["Prescription drugs"],
+            "rowRole": "reportable_segment",
+        },
+        {
+            "name": "Other",
+            "revenueAmount": 120.0,
+            "rowRole": "residual",
+        },
+    ]
+
+    result = registry.call(
+        "stockvaluation.propose_segment_mappings",
+        {"segments": segments, "consolidated_revenue": 1_000.0},
+    )
+
+    assert result["isError"] is False
+    structured = result["structuredContent"]
+    assert structured["tool"] == "stockvaluation.propose_segment_mappings"
+    assert client.calls == [("propose_segment_mappings", segments, 1_000.0)]
+    review = structured["segmentReview"]
+    assert review["status"] == "proposed_mapping_ready"
+    assert review["revenueCoveragePct"] == 72.0
+    assert review["materialGap"] is True
+    assert review["proposedMappings"][0]["sectorKey"] == "drug-manufacturers-general"
+    assert review["proposedMappings"][0]["rationale"].startswith("Matched")
+    assert review["unmappedRows"][0]["name"] == "Other"
+    assert review["allowedActions"] == ["approve_mappings", "correct_mapping", "reject_mapping", "leave_unmapped"]
 
 
 @pytest.mark.parametrize(
@@ -499,6 +580,113 @@ def test_extract_prospectus_returns_review_required_packet_with_source_gate():
     assert '"packet"' not in visible_text
     assert "financials" not in visible_text
     assert len(visible_text) < 600
+
+
+def test_prospectus_segment_review_summarizes_proposed_mappings():
+    packet = {
+        "segments": [
+            {
+                "segmentName": "Pharmaceuticals",
+                "revenueAmount": 600.0,
+                "revenueWeight": 0.6,
+                "sectorKey": "drug-manufacturers-general",
+                "mappedIndustry": "Drugs (Pharmaceutical)",
+                "mappingConfidence": "high",
+                "mappingScore": 0.82,
+                "rationale": "Matched pharmaceutical synonyms for drug-manufacturers-general.",
+                "components": ["Prescription drugs"],
+                "rowRole": "reportable_segment",
+                "warnings": [],
+            },
+            {
+                "segmentName": "Other",
+                "revenueAmount": 120.0,
+                "revenueWeight": 0.12,
+                "mappingConfidence": "unmapped",
+                "mappingScore": 0.0,
+                "rationale": "Residual bucket left unmapped for review.",
+                "rowRole": "residual",
+                "warnings": ["residual bucket; materiality review required"],
+            }
+        ],
+        "segmentCandidateTables": [{"title": "Segment revenue"}],
+    }
+
+    review = prospectus_segment_review(packet)
+
+    assert review["status"] == "proposed_mapping_ready"
+    assert review["candidateTableCount"] == 1
+    assert review["revenueCoveragePct"] == 72.0
+    assert review["materialGap"] is True
+    assert review["allowedActions"] == ["approve_mappings", "correct_mapping", "reject_mapping", "leave_unmapped"]
+    assert review["warnings"] == ["residual bucket; materiality review required"]
+    assert review["proposedMappings"] == [
+        {
+            "name": "Pharmaceuticals",
+            "revenueAmount": 600.0,
+            "revenueWeight": 0.6,
+            "sectorKey": "drug-manufacturers-general",
+            "mappedIndustry": "Drugs (Pharmaceutical)",
+            "mappingConfidence": "high",
+            "mappingScore": 0.82,
+            "rationale": "Matched pharmaceutical synonyms for drug-manufacturers-general.",
+            "components": ["Prescription drugs"],
+            "rowRole": "reportable_segment",
+            "warnings": [],
+        }
+    ]
+    assert review["unmappedRows"] == [
+        {
+            "name": "Other",
+            "revenueAmount": 120.0,
+            "revenueWeight": 0.12,
+            "rowRole": "residual",
+            "mappingConfidence": "unmapped",
+            "mappingScore": 0.0,
+            "rationale": "Residual bucket left unmapped for review.",
+            "warnings": ["residual bucket; materiality review required"],
+        }
+    ]
+
+
+def test_plan_guided_questions_prioritizes_low_confidence_material_segments():
+    result = MCPToolRegistry(FakeClient()).call(
+        "stockvaluation.plan_guided_questions",
+        {
+            "company": "Example Therapeutics",
+            "workflow_type": "prospectus",
+            "prospectus_recalculate_supported": True,
+            "segments": [
+                {
+                    "segmentName": "Platform",
+                    "revenueAmount": 300.0,
+                    "revenueWeight": 0.3,
+                    "sectorKey": "software-infrastructure",
+                    "mappedIndustry": "Software (System & Application)",
+                    "mappingConfidence": "low",
+                    "mappingScore": 0.35,
+                },
+                {
+                    "segmentName": "Pharmaceuticals",
+                    "revenueAmount": 700.0,
+                    "revenueWeight": 0.7,
+                    "sectorKey": "drug-manufacturers-general",
+                    "mappedIndustry": "Drugs (Pharmaceutical)",
+                    "mappingConfidence": "high",
+                    "mappingScore": 0.86,
+                },
+            ],
+        },
+    )
+
+    assert result["isError"] is False
+    questions = result["structuredContent"]["guidedQuestionPlan"]["questions"]
+    assert questions[0]["driver"] == "business_definition"
+    assert questions[0]["priority"] == "P1"
+    assert "Platform" in questions[0]["evidence_basis"]
+    mapping = questions[0]["hidden_model_mapping"]
+    assert mapping["supported_override_field"] == "segments"
+    assert mapping["candidate_value"][0]["name"] == "Platform"
 
 
 def test_value_prospectus_can_use_review_reference_without_copying_large_packet():
@@ -845,6 +1033,38 @@ def test_service_client_posts_prospectus_scenario_to_valuation_endpoint(monkeypa
     assert captured["url"] == "http://localhost:8081/api/v1/prospectus/valuation"
     assert captured["body"] == {"packet": reviewed_packet, "scenario": scenario}
     assert result["priceBasis"] == "offering_price"
+
+
+def test_service_client_posts_segment_mapping_proposals_to_api_v1_endpoint(monkeypatch):
+    captured = {}
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self):
+            return json.dumps({"data": _segment_mapping_proposal_payload()}).encode("utf-8")
+
+    def fake_urlopen(req, timeout):
+        captured["url"] = req.full_url
+        captured["timeout"] = timeout
+        captured["body"] = json.loads(req.data.decode("utf-8"))
+        return Response()
+
+    monkeypatch.setattr("valuation_agent.service_client.request.urlopen", fake_urlopen)
+
+    segments = [{"name": "Pharmaceuticals", "revenueAmount": 600.0}]
+    result = ValuationServiceClient(timeout=7).propose_segment_mappings(segments, 1_000.0)
+
+    assert captured["url"] == "http://localhost:8081/api/v1/segments/propose-mappings"
+    assert captured["timeout"] == 7
+    assert captured["body"] == {"segments": segments, "consolidatedRevenue": 1_000.0}
+    assert result["revenueCoveragePct"] == 72.0
 
 
 def test_jsonrpc_mcp_server_lists_and_calls_tools():
@@ -1522,7 +1742,16 @@ def test_recalculate_researched_baseline_without_segments_flags_baseline_state()
 
 
 def test_recalculate_accepts_segment_payloads_without_collapsing_assumption_buckets():
-    client = FakeClient()
+    payload = copy.deepcopy(_valuation_payload())
+    payload["assumptionTransparency"]["baselineQuality"] = "segment_weighted_baseline"
+    payload["assumptionTransparency"]["segmentAware"] = True
+    payload["assumptionTransparency"]["segmentCount"] = 2
+    payload["assumptionTransparency"]["segmentCoveragePct"] = 100.0
+    payload["assumptionTransparency"]["mappedIndustries"] = [
+        "Software (System & Application)",
+        "Electronics (Consumer & Office)",
+    ]
+    client = FakeClient(payload=payload)
     registry = MCPToolRegistry(client)
     segments = [
         {
@@ -1578,6 +1807,7 @@ def test_recalculate_accepts_segment_payloads_without_collapsing_assumption_buck
     assert "operatingMargin" not in first_segment
     assert any("Segment operating margin is report-only" in warning for warning in first_segment["validationWarnings"])
     assert assumptions["unsupported"] == {}
+    assert result["structuredContent"]["baseline"]["baselineUseStatus"] == "validated_segment_weighted"
     assert assumptions["effective"]["revenue_growth"] == 7.0
     assert client.calls[0][1]["segments"] == assumptions["mapped"]["segments"]
 

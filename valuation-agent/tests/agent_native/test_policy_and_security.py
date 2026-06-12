@@ -364,7 +364,13 @@ def test_default_readme_keeps_runtime_guidance_user_facing():
 
 
 def test_runtime_details_documents_agent_native_runtime_and_data_boundaries():
-    details = (REPO_ROOT / "docs" / "runtime-and-data-details.md").read_text(encoding="utf-8")
+    details_path = REPO_ROOT / "docs" / "runtime-and-data-details.md"
+    archived_details_path = (
+        REPO_ROOT / "docs" / "internal" / "archive" / "runtime-and-data-details.md"
+    )
+    if not details_path.exists() and archived_details_path.exists():
+        details_path = archived_details_path
+    details = details_path.read_text(encoding="utf-8")
     lower = details.lower()
 
     assert "docker-compose.local.yml" in details

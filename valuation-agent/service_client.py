@@ -81,6 +81,17 @@ class ValuationServiceClient:
         payload = self._post_json(self._api_v1_url("/prospectus/valuation"), body)
         return self._data_object(payload, "valuation-service prospectus valuation response missing JSON data object")
 
+    def propose_segment_mappings(
+        self,
+        segments: list[dict[str, Any]],
+        consolidated_revenue: float | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"segments": segments}
+        if consolidated_revenue is not None:
+            body["consolidatedRevenue"] = consolidated_revenue
+        payload = self._post_json(self._api_v1_url("/segments/propose-mappings"), body)
+        return self._data_object(payload, "valuation-service segment proposal response missing JSON data object")
+
     def _data_object(self, payload: dict[str, Any], message: str) -> dict[str, Any]:
         data = payload.get("data") if isinstance(payload, dict) else None
         if not isinstance(data, dict):

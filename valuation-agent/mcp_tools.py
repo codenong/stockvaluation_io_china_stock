@@ -163,6 +163,7 @@ TOOL_NAMES = [
     "stockvaluation.health",
     "stockvaluation.value_ticker",
     "stockvaluation.researched_baseline",
+    "stockvaluation.propose_segment_mappings",
     "stockvaluation.extract_prospectus",
     "stockvaluation.value_prospectus",
     "stockvaluation.plan_guided_questions",
@@ -300,6 +301,27 @@ def tool_definitions() -> list[dict[str, Any]]:
             "title": "Researched Baseline",
             "description": "Fetch the default full researched baseline with source policy enabled for a supported ticker.",
             "inputSchema": _object_schema(ticker_property, ["ticker"]),
+            "outputSchema": _output_schema(),
+            "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+        },
+        {
+            "name": "stockvaluation.propose_segment_mappings",
+            "title": "Propose Segment Mappings",
+            "description": "Ask the Java valuation service to propose deterministic segment-to-sector mappings for supplied segment rows before a human gate.",
+            "inputSchema": _object_schema(
+                {
+                    "segments": {
+                        "type": "array",
+                        "description": "Reported segment rows. Each row may include name, revenueAmount or revenueWeight, components, rowRole, tableTitle, and warnings.",
+                        "items": {"type": "object", "additionalProperties": True},
+                    },
+                    "consolidated_revenue": {
+                        "type": "number",
+                        "description": "Optional consolidated revenue used to derive revenue weights from revenue amounts.",
+                    },
+                },
+                ["segments"],
+            ),
             "outputSchema": _output_schema(),
             "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
         },
@@ -469,6 +491,7 @@ class MCPToolRegistry:
             "stockvaluation.health": self._health,
             "stockvaluation.value_ticker": self._value_ticker,
             "stockvaluation.researched_baseline": self._researched_baseline,
+            "stockvaluation.propose_segment_mappings": self._propose_segment_mappings,
             "stockvaluation.extract_prospectus": self._extract_prospectus,
             "stockvaluation.value_prospectus": self._value_prospectus,
             "stockvaluation.plan_guided_questions": self._plan_guided_questions,
@@ -710,6 +733,41 @@ class MCPToolRegistry:
             return payload
         except ValuationServiceError as exc:
             return service_exception_payload(tool, exc, ticker=ticker)
+
+    def _propose_segment_mappings(self, args: dict[str, Any]) -> dict[str, Any]:
+        tool = "stockvaluation.propose_segment_mappings"
+        segments = args.get("segments")
+        if not isinstance(segments, list) or not segments:
+            return error_payload(
+                tool,
+                "INVALID_SEGMENT_ROWS",
+                "segments must be a non-empty list.",
+                "invalid_segments",
+            )
+        if not all(isinstance(segment, dict) for segment in segments):
+            return error_payload(
+                tool,
+                "INVALID_SEGMENT_ROWS",
+                "each segment row must be a JSON object.",
+                "invalid_segments",
+            )
+        consolidated_revenue = _number_or_none(
+            _first_present(args.get("consolidated_revenue"), args.get("consolidatedRevenue"))
+        )
+        try:
+            result = self.service_client.propose_segment_mappings(
+                sanitize_for_agent(segments),
+                consolidated_revenue,
+            )
+        except ValuationServiceError as exc:
+            return service_exception_payload(tool, exc)
+        return {
+            "ok": True,
+            "tool": tool,
+            "segmentReview": segment_mapping_proposal_review(result),
+            "proposalResult": sanitize_for_agent(result),
+            "policy": policy_metadata(),
+        }
 
     def _extract_prospectus(self, args: dict[str, Any]) -> dict[str, Any]:
         tool = "stockvaluation.extract_prospectus"
@@ -2057,6 +2115,7 @@ def prospectus_extraction_success_payload(
             "company": sanitize_for_agent(_dict(packet.get("company"))),
             "filing": sanitize_for_agent(_dict(packet.get("filing"))),
             "sourceUrl": _string_or_none(packet.get("sourceUrl")) or _string_or_none(packet.get("source_url")),
+            "segmentReview": prospectus_segment_review(packet),
             "packet": sanitize_for_agent(packet),
         },
         "provenance": extract_prospectus_source_provenance(_dict(packet.get("sourceProvenance") or packet.get("source_provenance"))),
@@ -2064,6 +2123,91 @@ def prospectus_extraction_success_payload(
         "version": {"mcp": mcp_metadata()},
         "policy": policy_metadata("prospectus_extraction"),
     }
+
+
+def prospectus_segment_review(packet: dict[str, Any]) -> dict[str, Any]:
+    raw_segments = packet.get("segments")
+    raw_candidate_tables = packet.get("segmentCandidateTables") or packet.get("segment_candidate_tables")
+    segments = raw_segments if isinstance(raw_segments, list) else []
+    candidate_tables = raw_candidate_tables if isinstance(raw_candidate_tables, list) else []
+    rows = [prospectus_segment_review_row(segment) for segment in segments if isinstance(segment, dict)]
+    proposed = [row for row in rows if row.get("sectorKey")]
+    unmapped = [row for row in rows if not row.get("sectorKey")]
+    coverage = round(sum(prospectus_segment_review_weight(row) for row in rows) * 100.0, 2)
+    material_gap = any(
+        (not row.get("sectorKey") and prospectus_segment_review_weight(row) > 0.10)
+        or (
+            str(row.get("mappingConfidence") or "").lower() in {"low", "unmapped", "unknown"}
+            and prospectus_segment_review_weight(row) > 0.05
+        )
+        for row in rows
+    )
+    return {
+        "status": "proposed_mapping_ready"
+        if segments
+        else "candidate_tables_only" if candidate_tables else "no_segment_candidates",
+        "revenueCoveragePct": coverage,
+        "materialGap": material_gap,
+        "proposedMappings": proposed,
+        "unmappedRows": [prospectus_segment_unmapped_review_row(row) for row in unmapped],
+        "candidateTableCount": len(candidate_tables),
+        "allowedActions": ["approve_mappings", "correct_mapping", "reject_mapping", "leave_unmapped"],
+        "warnings": dedupe([warning for row in rows for warning in _string_list(row.get("warnings"))]),
+    }
+
+
+def segment_mapping_proposal_review(result: dict[str, Any]) -> dict[str, Any]:
+    review = prospectus_segment_review({"segments": result.get("proposals") if isinstance(result, dict) else []})
+    service_coverage = _number_or_none(_dict(result).get("revenueCoveragePct"))
+    if service_coverage is not None:
+        review["revenueCoveragePct"] = service_coverage
+    if isinstance(_dict(result).get("materialGap"), bool):
+        review["materialGap"] = bool(result["materialGap"])
+    service_warnings = _string_list(_dict(result).get("warnings"))
+    if service_warnings:
+        review["warnings"] = dedupe(service_warnings + _string_list(review.get("warnings")))
+    return review
+
+
+def prospectus_segment_review_row(segment: dict[str, Any]) -> dict[str, Any]:
+    components = segment.get("components")
+    return {
+        "name": _string_or_none(_first_present(segment.get("segmentName"), segment.get("segment_name"), segment.get("name"))),
+        "revenueAmount": _number_or_none(_first_present(segment.get("revenueAmount"), segment.get("revenue_amount"))),
+        "revenueWeight": _number_or_none(_first_present(segment.get("revenueWeight"), segment.get("revenue_weight"))),
+        "sectorKey": _string_or_none(_first_present(segment.get("sectorKey"), segment.get("sector_key"))),
+        "mappedIndustry": _string_or_none(_first_present(segment.get("mappedIndustry"), segment.get("mapped_industry"))),
+        "mappingConfidence": _string_or_none(
+            _first_present(segment.get("mappingConfidence"), segment.get("mapping_confidence"))
+        ),
+        "mappingScore": _number_or_none(_first_present(segment.get("mappingScore"), segment.get("mapping_score"))),
+        "rationale": _string_or_none(segment.get("rationale")),
+        "components": [str(item) for item in components] if isinstance(components, list) else [],
+        "rowRole": _string_or_none(_first_present(segment.get("rowRole"), segment.get("row_role"))),
+        "warnings": _string_list(segment.get("warnings")),
+    }
+
+
+def prospectus_segment_unmapped_review_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "name": row.get("name"),
+        "revenueAmount": row.get("revenueAmount"),
+        "revenueWeight": row.get("revenueWeight"),
+        "rowRole": row.get("rowRole"),
+        "mappingConfidence": row.get("mappingConfidence"),
+        "mappingScore": row.get("mappingScore"),
+        "rationale": row.get("rationale"),
+        "warnings": row.get("warnings") or [],
+    }
+
+
+def prospectus_segment_review_weight(row: dict[str, Any]) -> float:
+    weight = _number_or_none(row.get("revenueWeight"))
+    if weight is None:
+        return 0.0
+    if weight > 1.5:
+        weight = weight / 100.0
+    return weight if weight > 0.0 else 0.0
 
 
 def prospectus_review_token(packet: dict[str, Any]) -> str | None:

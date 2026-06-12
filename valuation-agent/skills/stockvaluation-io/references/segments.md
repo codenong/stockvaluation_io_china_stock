@@ -4,7 +4,9 @@ Run segment discovery before constructing the researched mechanical baseline. Th
 
 ## Discovery
 
-Source order: latest annual report/10-K/20-F or exchange filing; then 10-Q/earnings/investor presentation; then official IR pages. For prospectus mode start from `prospectus.packet.segmentCandidateTables`: treat titles, row labels, and values as filing facts, then research which rows are true model segments vs subrows or totals, and how each maps to a service sector key or explicit scenario segment. Never rely on service-side name matching.
+Source order: latest annual report/10-K/20-F or exchange filing; then 10-Q/earnings/investor presentation; then official IR pages. When you have sourced segment rows before the evidence-review gate, call `stockvaluation.propose_segment_mappings` so Java proposes sector mappings from the canonical service data. For prospectus mode start from `prospectus.segmentReview`, `prospectus.packet.segments`, and `prospectus.packet.segmentCandidateTables`: proposed mappings must exist before the first review gate when candidate tables are present. Treat titles, row labels, and values as filing facts, then review which rows are true model segments vs subrows or totals, and how each maps to a service sector key or explicit scenario segment. Never rely on service-side name matching after the review gate.
+
+`prospectus.segmentReview` is the review starting point, not final judgment. It includes `revenueCoveragePct`, `materialGap`, `proposedMappings`, `unmappedRows`, `allowedActions`, and row-level `mappingScore`, `rationale`, `rowRole`, `components`, and `warnings`. Use the rationale and warnings to explain why a proposal should be approved, corrected, rejected, or left unmapped.
 
 A segment package must carry, per segment: name, sourced revenue weight or amount, source name/url/date, mapped industry, service `sector_key` (display labels are not enough), mapping confidence, and validation warnings. Use product/business segments for operating economics; geography is risk context unless it is the actual reported operating structure.
 
@@ -16,6 +18,7 @@ Baseline quality statuses: `segment_weighted_baseline` (credible weights mapped 
 - Generic source presence is not segment evidence; segment names without revenue weights are report-only and must not enable weighting.
 - Default coverage threshold: at least 80% of revenue mapped before a package can drive a segment-aware baseline.
 - Do not merge geography, product families, and reporting units unless the company does.
+- Treat `rowRole=grand_total` as excluded, `rowRole=geography` as non-operating context unless management reports it as the operating structure, and `rowRole=residual` as unmapped unless the user supplies a reviewed sector mapping.
 - Segment evidence must reference accepted evidence-packet items by exact driver, `source_url`, and `source_date`; blank references are rejected.
 
 ## Segment Economics Quality

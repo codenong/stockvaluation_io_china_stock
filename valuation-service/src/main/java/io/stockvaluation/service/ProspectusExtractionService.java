@@ -20,6 +20,7 @@ public class ProspectusExtractionService {
     private final ProspectusDocumentClient documentClient;
     private final ProspectusTableExtractor tableExtractor;
     private final ProspectusFinancialExtractor financialExtractor;
+    private final ProspectusSegmentAutoMapper segmentAutoMapper;
 
     public ProspectusExtractionResult extract(ProspectusExtractionRequest request) {
         if (request == null || request.filingUrl() == null || request.filingUrl().isBlank()) {
@@ -27,6 +28,7 @@ public class ProspectusExtractionService {
         }
         ProspectusDocument document = documentClient.fetch(request.filingUrl());
         ProspectusFinancialPacket packet = financialExtractor.extract(document, tableExtractor.extract(document.html()));
+        segmentAutoMapper.applyProposedMappings(packet);
         if (request.expectedCompany() != null && !request.expectedCompany().isBlank()) {
             packet.getCompany().setLegalName(request.expectedCompany());
         }

@@ -1,0 +1,78 @@
+{
+  "aerospace-defense": [
+    "space",
+    "launch",
+    "rocket",
+    "rocketry",
+    "satellite",
+    "aerospace",
+    "defense"
+  ],
+  "telecom-services": [
+    "connectivity",
+    "telecom",
+    "broadband",
+    "wireless",
+    "network",
+    "internet service"
+  ],
+  "software-infrastructure": [
+    "software",
+    "infrastructure",
+    "cloud",
+    "compute",
+    "developer tools",
+    "database"
+  ],
+  "internet-content-information": [
+    "internet content",
+    "content",
+    "information services",
+    "digital media"
+  ],
+  "advertising-agencies": [
+    "advertising",
+    "advertisements",
+    "ads",
+    "marketing services"
+  ],
+  "drug-manufacturers-general": [
+    "pharmaceutical",
+    "pharmaceuticals",
+    "drug",
+    "drugs",
+    "medicine",
+    "therapeutics"
+  ],
+  "household-personal-products": [
+    "consumer health",
+    "personal care",
+    "household products",
+    "health products"
+  ],
+  "medical-devices": [
+    "medical products",
+    "medical devices",
+    "healthcare products",
+    "devices"
+  ],
+  "consumer-electronics": [
+    "devices",
+    "consumer electronics",
+    "electronics",
+    "hardware"
+  ],
+  "information-technology-services": [
+    "consulting services",
+    "technology services",
+    "it services",
+    "managed services"
+  ],
+  "banks-diversified": [
+    "consumer banking",
+    "commercial banking",
+    "banking",
+    "lending",
+    "deposits"
+  ]
+}
