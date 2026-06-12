@@ -373,7 +373,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                     **_run_tracking_properties(),
                     "guided_question_plan": {
                         "type": "object",
-                        "description": "The guidedQuestionPlan returned by stockvaluation.plan_guided_questions.",
+                        "description": "The guidedQuestionPlan returned by stockvaluation.plan_guided_questions. Optional on tracked runs: when run_id is supplied the server uses its stored copy of the plan, so the full plan never needs to be echoed back.",
                         "additionalProperties": True,
                     },
                     "answers": {
@@ -386,7 +386,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                         "description": "When true, accept default choices for unanswered questions.",
                     },
                 },
-                ["guided_question_plan"],
+                [],
             ),
             "outputSchema": _output_schema(),
             "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
@@ -798,6 +798,22 @@ class MCPToolRegistry:
                         run,
                         tool,
                     )
+            if (
+                run is not None
+                and not scenario
+                and isinstance(run.get("material_anchor_fields"), list)
+                and self.run_store.gate_cleared(run, GATE_EVIDENCE_REVIEW)
+            ):
+                # After a guided plan exists, a scenario-less valuation with
+                # unresolved material drivers must not yield a falsely precise
+                # fallback point; value the low/high anchor sets instead.
+                unresolved = self._unresolved_anchor_fields(run, None)
+                if unresolved:
+                    return self._finish_tracked(
+                        self._prospectus_range_payload(tool, run, packet, {}, unresolved),
+                        run,
+                        tool,
+                    )
             result = self.service_client.value_prospectus(packet, scenario)
             return self._finish_tracked(prospectus_valuation_success_payload(tool, result), run, tool)
         except ValuationServiceError as exc:
@@ -926,6 +942,9 @@ class MCPToolRegistry:
                 }
             )
             run["material_anchor_fields"] = anchored_fields
+            # The server copy is canonical: apply_guided_answers uses it so a
+            # truncated or hand-rebuilt plan echo can never degrade mapping.
+            run["guided_plan"] = sanitize_for_agent(plan)
             self.run_store.update_run(run)
             self.run_store.record_event(
                 run["run_id"],
@@ -953,11 +972,16 @@ class MCPToolRegistry:
             if record_error is not None:
                 return record_error
         plan = args.get("guided_question_plan") or args.get("guidedQuestionPlan")
+        plan_source = "request"
+        stored_plan = run.get("guided_plan") if run is not None else None
+        if isinstance(stored_plan, dict) and stored_plan:
+            plan = stored_plan
+            plan_source = "run_state"
         if not isinstance(plan, dict):
             return error_payload(
                 tool,
                 "INVALID_GUIDED_QUESTION_PLAN",
-                "guided_question_plan must be the guidedQuestionPlan object returned by stockvaluation.plan_guided_questions.",
+                "guided_question_plan must be the guidedQuestionPlan object returned by stockvaluation.plan_guided_questions, or pass run_id for a tracked run so the server uses its stored plan.",
                 "invalid_guided_question_plan",
             )
         answers = args.get("answers")
@@ -975,6 +999,13 @@ class MCPToolRegistry:
             run_anchors = run.get("anchors") or {}
             for answer in judgment.get("answers") or []:
                 if not isinstance(answer, dict):
+                    continue
+                # Record only answers that actually mapped into the scenario
+                # (user story 18): an unmapped answer must stay unresolved so
+                # the range safety net can fire.
+                if answer.get("unsupported_or_report_only_reason") is not None:
+                    continue
+                if (answer.get("model_action") or "") != "user scenario override":
                     continue
                 override = _dict(answer.get("requested_override"))
                 field = _string_or_none(override.get("field"))
@@ -1005,6 +1036,7 @@ class MCPToolRegistry:
         }
         if run is not None:
             payload["guidedAnswerRecord"] = guided_answer_record
+            payload["planSource"] = plan_source
         return self._finish_tracked(payload, run, tool)
 
     def _recalculate(self, args: dict[str, Any]) -> dict[str, Any]:

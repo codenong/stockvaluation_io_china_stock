@@ -281,6 +281,109 @@ def test_range_output_names_unresolved_driver_with_low_and_high_values(tmp_path)
     assert "valuation" not in valued
 
 
+def test_apply_guided_answers_uses_stored_plan_without_echo(tmp_path):
+    registry, _ = _registry(tmp_path)
+    run_id, _ = _extract(registry)
+    _plan(registry, run_id)
+
+    applied = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {"run_id": run_id, "use_defaults": True},
+    )["structuredContent"]
+
+    assert applied["ok"] is True
+    assert applied["planSource"] == "run_state"
+    candidate = applied["prospectusScenarioCandidate"]
+    assert candidate["supported"] is True
+    assert candidate["scenario"]["compound_annual_growth_2_5"] == 34.08
+    assert {"revenue_growth", "target_operating_margin", "sales_to_capital"} <= set(applied["guidedAnswerRecord"])
+
+
+def test_degraded_plan_echo_cannot_corrupt_anchor_mapping(tmp_path):
+    """Replay of the 2026-06-11 live-tier session A failure: a truncated plan
+    echo that lost model_action must not hollow out the scenario, because the
+    server's stored plan is canonical."""
+    registry, _ = _registry(tmp_path)
+    run_id, review_reference = _extract(registry)
+    plan = _plan(registry, run_id)
+
+    degraded = json.loads(json.dumps(plan))
+    for question in degraded["questions"]:
+        question.pop("model_action", None)
+        for choice in question.get("bounded_choices", []):
+            choice.pop("model_action", None)
+
+    applied = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {"run_id": run_id, "guided_question_plan": degraded, "use_defaults": True},
+    )["structuredContent"]
+
+    assert applied["planSource"] == "run_state"
+    candidate = applied["prospectusScenarioCandidate"]
+    assert candidate["supported"] is True
+    assert candidate["scenario"]["target_operating_margin"] == 3.33
+
+    valued = registry.call(
+        "stockvaluation.value_prospectus",
+        {
+            "run_id": run_id,
+            "review_reference": review_reference,
+            "review_status": "reviewed",
+            "scenario": candidate["scenario"],
+        },
+    )["structuredContent"]
+    assert valued["ok"] is True
+    assert "valuationRange" not in valued
+
+
+def test_guided_answer_record_excludes_unmapped_answers(tmp_path):
+    registry, _ = _registry(tmp_path)
+    run_id, _ = _extract(registry)
+    # No tracked plan call: the run has no stored plan, so the degraded echo
+    # is all the server sees and nothing maps.
+    plan = build_guided_question_plan(
+        {
+            "company": "Space Exploration Technologies",
+            "workflow_type": "prospectus",
+            "prospectus_recalculate_supported": True,
+            "evidence_items": EVIDENCE_ITEMS,
+            "driver_anchors": anchors_from_prospectus_packet(_fixture_packet()),
+        }
+    )
+    degraded = json.loads(json.dumps(plan))
+    for question in degraded["questions"]:
+        question.pop("model_action", None)
+        for choice in question.get("bounded_choices", []):
+            choice.pop("model_action", None)
+
+    applied = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {"run_id": run_id, "guided_question_plan": degraded, "use_defaults": True},
+    )["structuredContent"]
+
+    assert applied["planSource"] == "request"
+    assert applied["prospectusScenarioCandidate"]["supported"] is False
+    assert applied["guidedAnswerRecord"] == {}
+    assert registry.run_store.get_run(run_id)["guided_answers"] == {}
+
+
+def test_scenario_less_call_after_plan_returns_range_for_unresolved_drivers(tmp_path):
+    registry, _ = _registry(tmp_path)
+    run_id, review_reference = _extract(registry)
+    _plan(registry, run_id)
+
+    valued = registry.call(
+        "stockvaluation.value_prospectus",
+        {"run_id": run_id, "review_reference": review_reference, "review_status": "reviewed"},
+    )["structuredContent"]
+
+    assert valued["ok"] is True
+    value_range = valued["valuationRange"]
+    assert value_range["status"] == "unresolved_material_drivers"
+    assert value_range["unresolved_drivers"] == ["revenue_growth", "sales_to_capital", "target_operating_margin"]
+    assert "dcf" not in valued
+
+
 def test_anchor_state_records_anchors_in_run_state(tmp_path):
     registry, _ = _registry(tmp_path)
     run_id, _ = _extract(registry)
