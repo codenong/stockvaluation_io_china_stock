@@ -75,6 +75,42 @@ class FixtureProspectusClient:
         return payload
 
 
+def _service_anchor(field, low, base, high):
+    return {
+        "schema_version": "driver_anchors.v1",
+        "driver": field,
+        "field": field,
+        "unit": "ratio" if field == "sales_to_capital" else "percent",
+        "source": "damodaran_segment_quantiles",
+        "anchors": {
+            "low": {"value": low, "provenance": f"service {field} low"},
+            "base": {"value": base, "provenance": f"service {field} base"},
+            "high": {"value": high, "provenance": f"service {field} high"},
+        },
+    }
+
+
+class ServiceAnchoredProspectusClient(FixtureProspectusClient):
+    def extract_prospectus(self, filing_url, expected_company=None, expected_symbol=None):
+        payload = super().extract_prospectus(filing_url, expected_company, expected_symbol)
+        payload["driverAnchors"] = {
+            "revenue_growth": _service_anchor("revenue_growth", 4.0, 8.0, 12.0),
+            "target_operating_margin": _service_anchor("target_operating_margin", 1.0, 9.0, 20.0),
+            "sales_to_capital": _service_anchor("sales_to_capital", 0.5, 1.0, 1.9),
+        }
+        return payload
+
+
+class RefreshingAnchoredProspectusClient(ServiceAnchoredProspectusClient):
+    def value_prospectus(self, packet, scenario=None):
+        payload = super().value_prospectus(packet, scenario)
+        payload["driverAnchors"] = {
+            "target_operating_margin": _service_anchor("target_operating_margin", 2.0, 14.0, 24.0),
+            "sales_to_capital": _service_anchor("sales_to_capital", 0.6, 1.2, 2.4),
+        }
+        return payload
+
+
 def _registry(tmp_path, client=None):
     client = client or FixtureProspectusClient()
     return MCPToolRegistry(client, run_store=WorkflowRunStore(root=tmp_path / "runs")), client
@@ -145,6 +181,38 @@ def test_material_numeric_questions_carry_anchor_choices_with_provenance(tmp_pat
         assert choices["D"]["anchor_label"] == "user_input"
         assert question["hidden_model_mapping"]["candidate_source"] == "anchor:base"
     assert plan["scenario_range"]["status"] == "recommended"
+
+
+def test_extract_prospectus_prefers_service_driver_anchors_and_keeps_offering_anchor(tmp_path):
+    registry, _ = _registry(tmp_path, ServiceAnchoredProspectusClient())
+    run_id, _ = _extract(registry)
+
+    run = registry.run_store.get_run(run_id)
+
+    assert run["anchors"]["target_operating_margin"]["source"] == "damodaran_segment_quantiles"
+    assert run["anchors"]["target_operating_margin"]["anchors"]["base"]["value"] == 9.0
+    assert run["anchors"]["sales_to_capital"]["anchors"]["high"]["value"] == 1.9
+    assert run["anchors"]["net_proceeds"]["anchors"]["base"]["provenance"].startswith("offering_terms")
+
+
+def test_value_prospectus_refreshes_run_anchors_from_reviewed_packet(tmp_path):
+    registry, _ = _registry(tmp_path, RefreshingAnchoredProspectusClient())
+    run_id, review_reference = _extract(registry)
+
+    result = registry.call(
+        "stockvaluation.value_prospectus",
+        {
+            "run_id": run_id,
+            "review_reference": review_reference,
+            "review_status": "reviewed",
+        },
+    )
+
+    assert result["isError"] is False
+    run = registry.run_store.get_run(run_id)
+    assert run["anchors"]["target_operating_margin"]["anchors"]["base"]["value"] == 14.0
+    assert run["anchors"]["sales_to_capital"]["anchors"]["high"]["value"] == 2.4
+    assert run["anchors"]["net_proceeds"]["anchors"]["base"]["provenance"].startswith("offering_terms")
 
 
 def test_planner_keeps_candidate_required_and_asks_user_when_no_anchor_exists():
@@ -408,3 +476,115 @@ def test_anchor_state_records_anchors_in_run_state(tmp_path):
     run = registry.run_store.get_run(run_id)
     assert set(run["material_anchor_fields"]) == {"revenue_growth", "target_operating_margin", "sales_to_capital"}
     assert any(event.get("type") == "guided_plan_created" for event in run["events"])
+
+
+class SegmentDetailedProspectusClient(FixtureProspectusClient):
+    def extract_prospectus(self, filing_url, expected_company=None, expected_symbol=None):
+        payload = super().extract_prospectus(filing_url, expected_company, expected_symbol)
+        margin_anchor = _service_anchor("target_operating_margin", -0.32, 8.95, 18.48)
+        margin_anchor["source_note"] = "filing-based segment mix plus Damodaran industry quantiles"
+        margin_anchor["segment_breakdown"] = [
+            {
+                "segment": "Space",
+                "sector_key": "aerospace-defense",
+                "industry_group": "Aerospace/Defense",
+                "mapping_confidence": "reviewed",
+                "weight": 0.264,
+                "low": -4.44,
+                "base": 6.68,
+                "high": 13.39,
+            },
+            {
+                "segment": "Connectivity",
+                "sector_key": "telecom-services",
+                "industry_group": "Telecom. Services",
+                "mapping_confidence": "reviewed",
+                "weight": 0.736,
+                "low": 1.16,
+                "base": 9.76,
+                "high": 20.31,
+            },
+        ]
+        payload["driverAnchors"] = {"target_operating_margin": margin_anchor}
+        return payload
+
+
+def test_segment_level_custom_answers_route_into_prospectus_scenario_segments(tmp_path):
+    registry, _ = _registry(tmp_path, SegmentDetailedProspectusClient())
+    run_id, _ = _extract(registry)
+    plan = _plan(registry, run_id)
+
+    segment_questions = [item for item in plan["questions"] if item.get("segment_scope")]
+    assert len(segment_questions) == 1
+    question = segment_questions[0]
+    assert question["segment_scope"] == {
+        "segment": "Space",
+        "field": "target_operating_margin",
+        "sector_key": "aerospace-defense",
+        "mapped_industry": "Aerospace/Defense",
+        "revenue_weight_pct": 26.4,
+    }
+    assert "filing-based segment mix plus Damodaran industry quantiles" in question["anchor_explanation"]["summary"]
+
+    # Answer only the segment-level question: the driver must resolve through
+    # the segment answer, without a company-level numeric answer.
+    answers = {
+        question["id"]: {
+            "choice": "D",
+            "value": [{"segment": "Space", "field": "target_operating_margin", "value": 12.0}],
+        }
+    }
+    applied = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {"run_id": run_id, "answers": answers},
+    )["structuredContent"]
+
+    assert applied["ok"] is True
+    candidate = applied["prospectusScenarioCandidate"]
+    assert candidate["supported"] is True
+    segment_rows = {row["name"]: row for row in candidate["scenario"]["segments"]}
+    assert segment_rows["Space"]["target_operating_margin"] == 12.0
+    assert segment_rows["Space"]["mapped_industry"] == "Aerospace/Defense"
+
+    record = applied["guidedAnswerRecord"]["target_operating_margin"]
+    assert record["source"] == "segments:user_input"
+    assert record["value"]["segments"][0]["target_operating_margin"] == 12.0
+
+
+def test_segment_level_defaults_use_segment_base_anchors_alongside_company_default(tmp_path):
+    registry, _ = _registry(tmp_path, SegmentDetailedProspectusClient())
+    run_id, review_reference = _extract(registry)
+    _plan(registry, run_id)
+
+    applied = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {"run_id": run_id, "use_defaults": True},
+    )["structuredContent"]
+
+    assert applied["ok"] is True
+    segment_rows = {
+        row["name"]: row
+        for row in applied["prospectusScenarioCandidate"]["scenario"]["segments"]
+    }
+    assert segment_rows["Space"]["target_operating_margin"] == 6.68
+    # The company-level margin default also answered with the weighted base
+    # anchor, so the driver record keeps numeric anchor provenance.
+    record = applied["guidedAnswerRecord"]["target_operating_margin"]
+    assert record["source"] == "anchor:base"
+    assert record["value"] == 8.95
+
+
+def test_segment_level_base_anchor_answer_records_segment_anchor_source(tmp_path):
+    registry, _ = _registry(tmp_path, SegmentDetailedProspectusClient())
+    run_id, _ = _extract(registry)
+    plan = _plan(registry, run_id)
+    question = next(item for item in plan["questions"] if item.get("segment_scope"))
+
+    applied = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {"run_id": run_id, "answers": {question["id"]: "B"}},
+    )["structuredContent"]
+
+    record = applied["guidedAnswerRecord"]["target_operating_margin"]
+    assert record["source"] == "segments:anchor:base"
+    assert record["value"]["segments"][0]["target_operating_margin"] == 6.68

@@ -1268,6 +1268,44 @@ def test_custom_choice_is_recorded_as_report_only_until_validated():
     assert judgment["report_only_assumptions"]
 
 
+def test_custom_choice_with_numeric_value_maps_as_user_input():
+    plan = build_guided_question_plan(
+        {
+            "company": "GrowthCo",
+            "workflow_type": "ticker",
+            "driver_anchors": {
+                "target_operating_margin": {
+                    "schema_version": "driver_anchors.v1",
+                    "driver": "target_operating_margin",
+                    "field": "target_operating_margin",
+                    "unit": "percent",
+                    "anchors": {
+                        "low": {"value": 8.0, "provenance": "industry Q1"},
+                        "base": {"value": 12.0, "provenance": "industry median"},
+                        "high": {"value": 18.0, "provenance": "industry Q3"},
+                    },
+                }
+            },
+            "evidence_items": [
+                _evidence(
+                    "operating_margin",
+                    evidence_summary="GrowthCo margin evidence supports a bounded margin default.",
+                    override_candidate={"field": "operating_margin", "value": 12.0},
+                )
+            ],
+        }
+    )
+    question = plan["questions"][0]
+
+    judgment = build_user_judgment_package(plan, {question["id"]: {"choice": "D", "value": 15.5}})
+    answer = judgment["answers"][0]
+
+    assert judgment["mapped_assumptions"] == {"operating_margin": 15.5}
+    assert answer["anchor_label"] == "user_input"
+    assert answer["requested_override"] == {"field": "operating_margin", "value": 15.5}
+    assert answer["unsupported_or_report_only_reason"] is None
+
+
 def test_custom_choice_preserves_unsupported_blocker_status():
     plan = build_guided_question_plan(
         {
@@ -1294,3 +1332,225 @@ def test_custom_choice_preserves_unsupported_blocker_status():
     judgment = build_user_judgment_package(plan, {question["id"]: "D"})
     assert judgment["report_only_assumptions"] == {}
     assert judgment["unsupported_assumptions"]
+
+
+def _segment_quantile_anchor_set(field="target_operating_margin", unit="percent", **overrides):
+    anchor_set = {
+        "schema_version": "driver_anchors.v1",
+        "driver": field,
+        "field": field,
+        "unit": unit,
+        "source": "damodaran_segment_quantiles",
+        "source_note": "filing-based segment mix plus Damodaran industry quantiles",
+        "anchors": {
+            "low": {"value": -0.32, "provenance": "damodaran_segment_quantiles: revenue-weighted Q1"},
+            "base": {"value": 8.95, "provenance": "damodaran_segment_quantiles: revenue-weighted median"},
+            "high": {"value": 18.48, "provenance": "damodaran_segment_quantiles: revenue-weighted Q3"},
+        },
+        "segment_breakdown": [
+            {
+                "segment": "Space",
+                "sector_key": "aerospace-defense",
+                "industry_group": "Aerospace/Defense",
+                "mapping_confidence": "reviewed",
+                "weight": 0.264,
+                "low": -4.44,
+                "base": 6.68,
+                "high": 13.39,
+            },
+            {
+                "segment": "Connectivity",
+                "sector_key": "telecom-services",
+                "industry_group": "Telecom. Services",
+                "mapping_confidence": "reviewed",
+                "weight": 0.736,
+                "low": 1.16,
+                "base": 9.76,
+                "high": 20.31,
+            },
+        ],
+    }
+    anchor_set.update(overrides)
+    return anchor_set
+
+
+def test_anchored_question_carries_anchor_explanation_with_segment_source_detail():
+    plan = build_guided_question_plan(
+        {
+            "company": "SpaceX",
+            "workflow_type": "prospectus",
+            "prospectus_recalculate_supported": True,
+            "driver_anchors": {
+                "target_operating_margin": _segment_quantile_anchor_set(
+                    warnings=["Material segment AI (revenue weight 12.0%) has no reviewed industry mapping and is omitted from this weighted anchor; the anchor is incomplete."],
+                    omitted_segments=[{"segment": "AI", "weight": 0.12, "reason": "unmapped_segment"}],
+                )
+            },
+            "evidence_items": [
+                _evidence(
+                    "operating_margin",
+                    evidence_summary="SpaceX margin evidence supports a bounded margin default.",
+                    override_candidate={"field": "operating_margin", "value": 9.0},
+                )
+            ],
+        }
+    )
+    question = next(item for item in plan["questions"] if item["driver"] == "operating_margin")
+    explanation = question["anchor_explanation"]
+
+    assert explanation["source"] == "damodaran_segment_quantiles"
+    assert explanation["source_note"] == "filing-based segment mix plus Damodaran industry quantiles"
+    assert "filing-based segment mix plus Damodaran industry quantiles" in explanation["summary"]
+    assert "from the filing" not in explanation["summary"]
+    assert explanation["weighted_anchors"] == {"low": -0.32, "base": 8.95, "high": 18.48}
+    assert "not recommendations" in explanation["anchor_meaning"]
+
+    rows = {row["segment"]: row for row in explanation["segment_rows"]}
+    assert rows["Space"]["industry_group"] == "Aerospace/Defense"
+    assert rows["Space"]["revenue_weight_pct"] == 26.4
+    assert (rows["Space"]["low"], rows["Space"]["base"], rows["Space"]["high"]) == (-4.44, 6.68, 13.39)
+    assert rows["Connectivity"]["revenue_weight_pct"] == 73.6
+
+    assert explanation["coverage"] == "incomplete"
+    assert explanation["omitted_segments"][0]["segment"] == "AI"
+    assert any("incomplete" in warning for warning in explanation["warnings"])
+
+    choices = {choice["label"]: choice for choice in question["bounded_choices"]}
+    assert choices["D"]["requires_numeric_value"] is True
+    assert "requires a numeric value" in choices["D"]["story"]
+    assert "D requires a number" in choices["D"]["custom_value_instruction"]
+
+
+def test_material_divergent_segments_get_segment_level_questions_with_segment_anchors():
+    plan = build_guided_question_plan(
+        {
+            "company": "SpaceX",
+            "workflow_type": "prospectus",
+            "prospectus_recalculate_supported": True,
+            "driver_anchors": {"target_operating_margin": _segment_quantile_anchor_set()},
+        }
+    )
+    segment_questions = [item for item in plan["questions"] if item.get("segment_scope")]
+
+    assert len(segment_questions) == 1
+    question = segment_questions[0]
+    assert question["driver"] == "segment_operating_margin"
+    assert question["segment_scope"]["segment"] == "Space"
+    assert question["segment_scope"]["field"] == "target_operating_margin"
+    assert question["hidden_model_mapping"]["supported_override_field"] == "segments"
+    assert question["model_action"] == "user scenario override"
+
+    choices = {choice["label"]: choice for choice in question["bounded_choices"]}
+    space_base = choices["B"]["override_candidate"]["value"][0]
+    assert space_base["name"] == "Space"
+    assert space_base["mapped_industry"] == "Aerospace/Defense"
+    assert space_base["target_operating_margin"] == 6.68
+    assert choices["A"]["override_candidate"]["value"][0]["target_operating_margin"] == -4.44
+    assert choices["C"]["override_candidate"]["value"][0]["target_operating_margin"] == 13.39
+    assert choices["D"]["requires_numeric_value"] is True
+    assert "stay segment-level" in choices["D"]["custom_value_instruction"]
+
+    explanation = question["anchor_explanation"]
+    assert "filing-based segment mix plus Damodaran industry quantiles" in explanation["summary"]
+    assert explanation["segment_rows"][0]["segment"] == "Space"
+
+
+def test_segment_level_structured_custom_answer_maps_into_segments_rows():
+    plan = build_guided_question_plan(
+        {
+            "company": "SpaceX",
+            "workflow_type": "prospectus",
+            "prospectus_recalculate_supported": True,
+            "driver_anchors": {"target_operating_margin": _segment_quantile_anchor_set()},
+        }
+    )
+    question = next(item for item in plan["questions"] if item.get("segment_scope"))
+
+    judgment = build_user_judgment_package(
+        plan,
+        {
+            question["id"]: {
+                "choice": "D",
+                "value": [{"segment": "Space", "field": "target_operating_margin", "value": 12.0}],
+            }
+        },
+    )
+    answer = judgment["answers"][0]
+
+    assert answer["anchor_label"] == "user_input"
+    assert answer["model_action"] == "user scenario override"
+    assert judgment["mapped_assumptions"]["segments"] == [
+        {
+            "name": "Space",
+            "sector_key": "aerospace-defense",
+            "mapped_industry": "Aerospace/Defense",
+            "target_operating_margin": 12.0,
+        }
+    ]
+
+
+def test_segment_level_scalar_custom_answer_applies_to_scoped_segment():
+    plan = build_guided_question_plan(
+        {
+            "company": "SpaceX",
+            "workflow_type": "prospectus",
+            "prospectus_recalculate_supported": True,
+            "driver_anchors": {"target_operating_margin": _segment_quantile_anchor_set()},
+        }
+    )
+    question = next(item for item in plan["questions"] if item.get("segment_scope"))
+
+    judgment = build_user_judgment_package(plan, {question["id"]: {"choice": "D", "value": 11.5}})
+
+    assert judgment["mapped_assumptions"]["segments"][0]["name"] == "Space"
+    assert judgment["mapped_assumptions"]["segments"][0]["target_operating_margin"] == 11.5
+
+
+def test_segment_level_default_uses_segment_base_anchor_and_merges_segment_rows():
+    plan = build_guided_question_plan(
+        {
+            "company": "SpaceX",
+            "workflow_type": "prospectus",
+            "prospectus_recalculate_supported": True,
+            "driver_anchors": {
+                "target_operating_margin": _segment_quantile_anchor_set(),
+                "sales_to_capital": _segment_quantile_anchor_set(
+                    field="sales_to_capital",
+                    unit="ratio",
+                    anchors={
+                        "low": {"value": 0.62, "provenance": "weighted Q1"},
+                        "base": {"value": 1.08, "provenance": "weighted median"},
+                        "high": {"value": 1.7, "provenance": "weighted Q3"},
+                    },
+                    segment_breakdown=[
+                        {
+                            "segment": "Space",
+                            "sector_key": "aerospace-defense",
+                            "industry_group": "Aerospace/Defense",
+                            "mapping_confidence": "reviewed",
+                            "weight": 0.264,
+                            "low": 0.8,
+                            "base": 2.4,
+                            "high": 3.0,
+                        },
+                        {
+                            "segment": "Connectivity",
+                            "sector_key": "telecom-services",
+                            "industry_group": "Telecom. Services",
+                            "mapping_confidence": "reviewed",
+                            "weight": 0.736,
+                            "low": 0.5,
+                            "base": 1.0,
+                            "high": 1.5,
+                        },
+                    ],
+                ),
+            },
+        }
+    )
+    judgment = build_user_judgment_package(plan, None, use_defaults=True)
+    segments = {row["name"]: row for row in judgment["mapped_assumptions"]["segments"]}
+
+    assert segments["Space"]["target_operating_margin"] == 6.68
+    assert segments["Space"]["sales_to_capital_years_1_to_5"] == 2.4
+    assert segments["Space"]["sales_to_capital_years_6_to_10"] == 2.4

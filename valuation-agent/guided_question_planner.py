@@ -172,6 +172,7 @@ def build_guided_question_plan(raw: dict[str, Any]) -> dict[str, Any]:
 
     candidates: list[dict[str, Any]] = []
     candidates.extend(_questions_from_segments(context, company, workflow_type, prospectus_recalc_supported))
+    candidates.extend(_questions_from_segment_anchors(context, company, workflow_type, prospectus_recalc_supported))
     candidates.extend(_questions_from_evidence(context, company, workflow_type, prospectus_recalc_supported))
     candidates.extend(_questions_from_baseline_plausibility(context, company, workflow_type, prospectus_recalc_supported))
     candidates.extend(_questions_from_market_diagnostics(context, company, workflow_type, prospectus_recalc_supported))
@@ -225,15 +226,38 @@ def build_user_judgment_package(
 
     for question in questions:
         question_id = _string(question.get("id"))
-        selected_choice = answer_map.get(question_id)
-        if selected_choice is None and use_defaults:
-            selected_choice = "default"
-        if selected_choice is None:
+        selected_answer = answer_map.get(question_id)
+        if selected_answer is None and use_defaults:
+            selected_answer = {"choice": "default"}
+        if selected_answer is None:
             continue
+        selected_choice = _string(selected_answer.get("choice"))
 
         choice = _selected_choice(question, selected_choice)
         model_action = _string(choice.get("model_action") or question.get("model_action"))
         requested_override = _dict(choice.get("override_candidate"))
+        mapping_field = _string_or_none(
+            requested_override.get("field")
+            or _dict(question.get("hidden_model_mapping")).get("supported_override_field")
+        )
+        custom_value = _custom_answer_value(selected_answer)
+        if selected_choice == "D" and mapping_field == "segments":
+            segment_rows = _custom_segment_answer_rows(selected_answer, question)
+            if segment_rows:
+                requested_override = {"field": "segments", "value": segment_rows}
+                model_action = "user scenario override"
+                choice = dict(choice)
+                choice["anchor_label"] = "user_input"
+                choice["model_action"] = model_action
+        elif selected_choice == "D" and custom_value is not None and mapping_field not in {"segments", "sector_overrides"}:
+            requested_override = dict(requested_override)
+            requested_override["field"] = mapping_field
+            requested_override["value"] = custom_value
+            if requested_override.get("field") in SUPPORTED_USER_SCENARIO_FIELDS:
+                model_action = "user scenario override"
+            choice = dict(choice)
+            choice["anchor_label"] = "user_input"
+            choice["model_action"] = model_action
         field = _string_or_none(requested_override.get("field"))
         value = requested_override.get("value")
         answer_record = {
@@ -517,6 +541,242 @@ def _questions_from_baseline_plausibility(
     return questions
 
 
+# Driver anchor fields that can carry per-segment quantile detail, with the
+# segment-level driver used when a material segment deserves its own question.
+SEGMENT_ANCHOR_QUESTION_DRIVERS = {
+    "revenue_growth": "segment_revenue_growth",
+    "target_operating_margin": "segment_operating_margin",
+    "sales_to_capital": "segment_sales_to_capital",
+}
+
+MATERIAL_SEGMENT_WEIGHT = 0.10
+
+
+def _questions_from_segment_anchors(
+    context: dict[str, Any],
+    company: str,
+    workflow_type: str,
+    prospectus_recalc_supported: bool,
+) -> list[dict[str, Any]]:
+    """Materiality-gated per-segment driver questions from anchor breakdowns.
+
+    Asked only when at least two material segments share an anchor and a
+    segment's own base quantile diverges from the weighted company anchor (or
+    its mapping is low-confidence). Per-segment answers stay segment-level and
+    route into explicit prospectus scenario.segments rows.
+    """
+    if workflow_type != "prospectus" or not prospectus_recalc_supported:
+        return []
+    driver_anchors = _dict(context.get("driver_anchors") or context.get("driverAnchors"))
+    questions: list[dict[str, Any]] = []
+    for anchor_field, segment_driver in SEGMENT_ANCHOR_QUESTION_DRIVERS.items():
+        anchor_set = _dict(driver_anchors.get(anchor_field))
+        breakdown = [row for row in _list(anchor_set.get("segment_breakdown")) if isinstance(row, dict)]
+        material = [
+            row
+            for row in breakdown
+            if _number(row.get("weight"), 0.0) >= MATERIAL_SEGMENT_WEIGHT and _string_or_none(row.get("segment"))
+        ]
+        if len(material) < 2:
+            continue
+        weighted_base = _dict(_dict(anchor_set.get("anchors")).get("base")).get("value")
+        unit = _string(anchor_set.get("unit")) or "value"
+        for row in material:
+            if not (
+                _segment_anchor_divergent(row.get("base"), weighted_base, unit)
+                or _low_confidence_breakdown_row(row)
+            ):
+                continue
+            questions.append(
+                _segment_anchor_question(
+                    company=company,
+                    workflow_type=workflow_type,
+                    prospectus_recalc_supported=prospectus_recalc_supported,
+                    anchor_field=anchor_field,
+                    segment_driver=segment_driver,
+                    anchor_set=anchor_set,
+                    row=row,
+                    unit=unit,
+                )
+            )
+    return questions
+
+
+def _segment_anchor_divergent(row_base: Any, weighted_base: Any, unit: str) -> bool:
+    try:
+        row = float(row_base)
+        company = float(weighted_base)
+    except (TypeError, ValueError):
+        return False
+    if not (math.isfinite(row) and math.isfinite(company)):
+        return False
+    floor = 2.0 if unit == "percent" else 0.25
+    diff = abs(row - company)
+    if diff < floor:
+        return False
+    return diff >= 0.2 * max(abs(company), floor)
+
+
+def _low_confidence_breakdown_row(row: dict[str, Any]) -> bool:
+    confidence = _string(row.get("mapping_confidence")).lower()
+    return confidence in {"low", "unmapped", "unknown"} or bool(row.get("warnings"))
+
+
+def _segment_anchor_question(
+    *,
+    company: str,
+    workflow_type: str,
+    prospectus_recalc_supported: bool,
+    anchor_field: str,
+    segment_driver: str,
+    anchor_set: dict[str, Any],
+    row: dict[str, Any],
+    unit: str,
+) -> dict[str, Any]:
+    segment_name = _string(row.get("segment"))
+    industry = _string_or_none(row.get("industry_group"))
+    weight_pct = _weight_pct(row.get("weight"))
+    family = DRIVER_TO_FAMILY[segment_driver]
+    scenario_keys = SEGMENT_ANSWER_FIELD_TO_SCENARIO_KEYS[anchor_field]
+    source_note = _string_or_none(anchor_set.get("source_note")) or SEGMENT_SOURCE_NOTE
+    driver_label = anchor_field.replace("_", " ")
+    default_story = (
+        f"Use the {industry or 'mapped industry'} median for {segment_name}; its industry quantiles "
+        f"differ from the weighted company anchor, so this segment can carry its own {driver_label}."
+    )
+    question = _question(
+        company=company,
+        workflow_type=workflow_type,
+        prospectus_recalc_supported=prospectus_recalc_supported,
+        family=family,
+        driver=segment_driver,
+        priority="P1",
+        materiality_score=int(60 + 30 * min(1.0, _number(row.get("weight"), 0.0))),
+        rationale=(
+            f"{segment_name} is {weight_pct}% of mapped revenue and its {industry or 'industry'} "
+            f"{driver_label} quantiles diverge from the weighted company anchor."
+        ),
+        evidence_summary=(
+            f"Source: {source_note}. {segment_name} -> {industry or 'unmapped'}, "
+            f"{weight_pct}% of mapped revenue, {driver_label} Q1/median/Q3 = "
+            f"{row.get('low')} / {row.get('base')} / {row.get('high')} ({unit})."
+        ),
+        evidence_used=[],
+        baseline_assumption=f"The weighted company anchor currently blends {segment_name} with the other mapped segments.",
+        default_story=default_story,
+        override_field="segments",
+        candidate_value=_segment_row_candidate(row, scenario_keys, row.get("base")),
+        confidence="medium",
+        priority_reason="Material segment whose industry anchors differ meaningfully from the weighted company anchor.",
+    )
+    question["id"] = _slug(f"{family}_{segment_driver}_{segment_name}")
+    question["company_specific_title"] = f"{company} - {segment_name} {driver_label}"
+    question["segment_scope"] = {
+        "segment": segment_name,
+        "field": anchor_field,
+        "sector_key": _string_or_none(row.get("sector_key")),
+        "mapped_industry": industry,
+        "revenue_weight_pct": weight_pct,
+    }
+    stories = {
+        "low": ("A", f"Use the {industry or 'industry'} first-quartile (Q1) value for {segment_name}.", "Baseline-leaning case", "medium"),
+        "base": ("B", default_story, "Recommended guided default", "medium"),
+        "high": ("C", f"Use the {industry or 'industry'} third-quartile (Q3) value for {segment_name}; needs stronger evidence.", "Higher-conviction case", "low"),
+    }
+    choices = []
+    for label_key in ("low", "base", "high"):
+        label, story, report_label, confidence = stories[label_key]
+        choices.append(
+            {
+                "label": label,
+                "story": story,
+                "assumption_effect": f"Use the {label_key} anchor for {segment_name} {driver_label}.",
+                "override_candidate": {
+                    "field": "segments",
+                    "value": _segment_row_candidate(row, scenario_keys, row.get(label_key)),
+                },
+                "anchor_label": label_key,
+                "anchor_provenance": (
+                    f"{source_note}: {industry or 'mapped industry'} "
+                    f"{'Q1' if label_key == 'low' else 'median' if label_key == 'base' else 'Q3'} for {segment_name}"
+                ),
+                "model_action": "user scenario override",
+                "confidence": confidence,
+                "report_label": report_label,
+            }
+        )
+    choices.append(
+        {
+            "label": "D",
+            "story": f"Enter your own {driver_label} for {segment_name} ({unit}). D requires a numeric value.",
+            "assumption_effect": "A user-supplied per-segment value overrides the anchors; it is recorded as user input and stays segment-level.",
+            "override_candidate": {"field": "segments", "value": None},
+            "anchor_label": "user_input",
+            "requires_numeric_value": True,
+            "custom_value_instruction": (
+                f'D requires a number ({unit}). Pass {{"choice": "D", "value": <number>}} for this segment, or '
+                f'{{"choice": "D", "value": [{{"segment": "{segment_name}", "field": "{anchor_field}", "value": <number>}}]}} '
+                "for several segments; values are recorded as user_input and stay segment-level."
+            ),
+            "model_action": "report-only user judgment",
+            "confidence": "low",
+            "report_label": "Custom user judgment",
+        }
+    )
+    question["bounded_choices"] = choices
+    question["hidden_model_mapping"] = {
+        "supported_override_field": "segments",
+        "candidate_value": _segment_row_candidate(row, scenario_keys, row.get("base")),
+        "candidate_source": "anchor:base",
+        "send_to_mcp_by_default": True,
+    }
+    question["anchor_explanation"] = {
+        "source": _string_or_none(anchor_set.get("source")),
+        "source_note": source_note,
+        "summary": (
+            f"Anchors for {segment_name} use {source_note}: the filing supplies the segment and its revenue weight "
+            f"({weight_pct}% of mapped revenue); the reviewed mapping to {industry or 'an industry'} supplies the "
+            "Damodaran Q1/median/Q3 values."
+        ),
+        "unit": unit,
+        "anchor_meaning": ANCHOR_MEANING,
+        "segment_rows": [
+            {
+                "segment": segment_name,
+                "industry_group": industry,
+                "revenue_weight_pct": weight_pct,
+                "low": row.get("low"),
+                "base": row.get("base"),
+                "high": row.get("high"),
+                "mapping_confidence": _string_or_none(row.get("mapping_confidence")),
+            }
+        ],
+        "custom_value_note": f"Choice D requires a number ({unit}) and is recorded as user_input.",
+    }
+    return question
+
+
+def _segment_row_candidate(
+    row: dict[str, Any],
+    scenario_keys: tuple[str, ...],
+    value: Any,
+) -> list[dict[str, Any]] | None:
+    number = _custom_answer_value({"value": value})
+    name = _string_or_none(row.get("segment"))
+    if number is None or name is None:
+        return None
+    candidate: dict[str, Any] = {"name": name}
+    if _string_or_none(row.get("sector_key")):
+        candidate["sector_key"] = row.get("sector_key")
+    if _string_or_none(row.get("industry_group")):
+        candidate["mapped_industry"] = row.get("industry_group")
+    for key in scenario_keys:
+        bounded = _contract_bounded_candidate(key, number)
+        if bounded is not None:
+            candidate[key] = bounded
+    return [candidate]
+
+
 def _questions_from_market_diagnostics(
     context: dict[str, Any],
     company: str,
@@ -659,6 +919,7 @@ def _attach_anchor_set(
     )
     if model_action != "user scenario override":
         question["anchor_set"] = anchor_set
+        question["anchor_explanation"] = _anchor_explanation(anchor_set)
         return
     confidence = _string(question.get("confidence")) or "medium"
     default_story = _string(_dict(question.get("default_answer")).get("why_default_selected"))
@@ -684,19 +945,26 @@ def _attach_anchor_set(
                 "report_label": report_label,
             }
         )
+    unit = _string(anchor_set.get("unit")) or "value"
     choices.append(
         {
             "label": "D",
-            "story": "Type your own number for this driver.",
+            "story": f"Enter your own number ({unit}). D requires a numeric value.",
             "assumption_effect": "A user-supplied value overrides the anchors; it is recorded as user input.",
             "override_candidate": {"field": effective_field, "value": None},
             "anchor_label": "user_input",
+            "requires_numeric_value": True,
+            "custom_value_instruction": (
+                f'D requires a number ({unit}). Pass it as {{"choice": "D", "value": <number>}}; '
+                "it is recorded as user_input, not a service anchor."
+            ),
             "model_action": "report-only user judgment",
             "confidence": "low",
             "report_label": "Custom user judgment",
         }
     )
     question["anchor_set"] = anchor_set
+    question["anchor_explanation"] = _anchor_explanation(anchor_set)
     question["status"] = status
     question["model_action"] = model_action
     question["bounded_choices"] = choices
@@ -714,6 +982,82 @@ def _attach_anchor_set(
     recommended = _dict(question.get("recommended_answer"))
     recommended["model_action"] = model_action
     question["recommended_answer"] = recommended
+
+
+SEGMENT_SOURCE = "damodaran_segment_quantiles"
+SEGMENT_SOURCE_NOTE = "filing-based segment mix plus Damodaran industry quantiles"
+ANCHOR_MEANING = (
+    "Low is the first quartile (Q1), base is the median, and high is the third quartile (Q3) of the source data. "
+    "Low, base, and high are bounded modeling anchors for this educational scenario, not recommendations."
+)
+
+
+def _anchor_explanation(anchor_set: dict[str, Any]) -> dict[str, Any]:
+    """Plain-language source trail for an anchor set, for question cards and report data.
+
+    Segment-quantile anchors must never be described as simply "from the
+    filing": the filing supplies the segment mix, Damodaran supplies the
+    industry quantiles.
+    """
+    anchors = _dict(anchor_set.get("anchors"))
+    unit = _string_or_none(anchor_set.get("unit"))
+    source = _string_or_none(anchor_set.get("source"))
+    breakdown = [row for row in _list(anchor_set.get("segment_breakdown")) if isinstance(row, dict)]
+    omitted = [row for row in _list(anchor_set.get("omitted_segments")) if isinstance(row, dict)]
+    warnings = [_string(item) for item in _list(anchor_set.get("warnings")) if _string(item)]
+
+    explanation: dict[str, Any] = {
+        "source": source,
+        "unit": unit,
+        "anchor_meaning": ANCHOR_MEANING,
+        "weighted_anchors": {
+            label: _dict(anchors.get(label)).get("value") for label in ("low", "base", "high")
+        },
+    }
+    if breakdown or source == SEGMENT_SOURCE:
+        explanation["source_note"] = _string_or_none(anchor_set.get("source_note")) or SEGMENT_SOURCE_NOTE
+        explanation["summary"] = (
+            "These anchors use " + explanation["source_note"] + ": each reviewed filing segment maps to a "
+            "Damodaran industry row, and the industry low/base/high values are combined using segment revenue weights."
+        )
+        explanation["segment_rows"] = [
+            {
+                "segment": _string_or_none(row.get("segment")),
+                "industry_group": _string_or_none(row.get("industry_group")),
+                "revenue_weight_pct": _weight_pct(row.get("weight")),
+                "low": row.get("low"),
+                "base": row.get("base"),
+                "high": row.get("high"),
+                "mapping_confidence": _string_or_none(row.get("mapping_confidence")),
+                **({"warnings": row.get("warnings")} if row.get("warnings") else {}),
+            }
+            for row in breakdown
+        ]
+    else:
+        explanation["source_note"] = _string_or_none(anchor_set.get("source_note"))
+        explanation["summary"] = (
+            _dict(anchors.get("base")).get("provenance")
+            or "Server-computed deterministic anchors for this driver."
+        )
+    if omitted:
+        explanation["omitted_segments"] = omitted
+    if warnings:
+        explanation["warnings"] = warnings
+        explanation["coverage"] = "incomplete" if omitted else "complete_with_warnings"
+    explanation["custom_value_note"] = (
+        f"Choice D requires a number ({unit or 'value'}) and is recorded as user_input."
+    )
+    return explanation
+
+
+def _weight_pct(weight: Any) -> float | None:
+    try:
+        number = float(weight)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    return round(number * 100.0, 1)
 
 
 def _model_action(
@@ -1171,6 +1515,26 @@ def _merge_mapped_assumption(target: dict[str, Any], field: str, value: Any) -> 
         else:
             target[field] = list(value)
         return
+    if field == "segments" and isinstance(value, list):
+        # Segment rows from separate questions (roster, per-segment economics)
+        # must combine into one scenario.segments list keyed by segment name,
+        # so the service does the weighting instead of the agent.
+        existing = target.get(field)
+        merged: list[dict[str, Any]] = [dict(row) for row in existing if isinstance(row, dict)] if isinstance(existing, list) else []
+        index = {_slug(_string(row.get("name"))): row for row in merged if _string(row.get("name"))}
+        for row in value:
+            if not isinstance(row, dict):
+                continue
+            key = _slug(_string(row.get("name")))
+            if key and key in index:
+                index[key].update({k: v for k, v in row.items() if v is not None})
+            else:
+                new_row = dict(row)
+                merged.append(new_row)
+                if key:
+                    index[key] = new_row
+        target[field] = merged
+        return
     target[field] = value
 
 
@@ -1289,14 +1653,24 @@ def _mapping_notes(model_action: str, field: str | None, workflow_type: str) -> 
     return "No governed guided-refinement mapping exists for this driver."
 
 
-def _answer_map(answers: dict[str, Any] | list[dict[str, Any]] | None) -> dict[str, str]:
+def _answer_map(answers: dict[str, Any] | list[dict[str, Any]] | None) -> dict[str, dict[str, Any]]:
     if answers is None:
         return {}
     if isinstance(answers, dict):
         if "answers" in answers:
             return _answer_map(answers.get("answers"))
-        return {_string(key): _string(value) for key, value in answers.items()}
-    mapped: dict[str, str] = {}
+        mapped: dict[str, dict[str, Any]] = {}
+        for key, value in answers.items():
+            question_id = _string(key)
+            if isinstance(value, dict):
+                mapped[question_id] = {
+                    "choice": _string(value.get("selected_choice") or value.get("choice") or value.get("answer")),
+                    "value": _first_present(value.get("value"), value.get("custom_value"), value.get("customValue")),
+                }
+            else:
+                mapped[question_id] = {"choice": _string(value)}
+        return mapped
+    mapped: dict[str, dict[str, Any]] = {}
     if isinstance(answers, list):
         for item in answers:
             if not isinstance(item, dict):
@@ -1304,8 +1678,91 @@ def _answer_map(answers: dict[str, Any] | list[dict[str, Any]] | None) -> dict[s
             question_id = _string(item.get("question_id") or item.get("id"))
             selected = _string(item.get("selected_choice") or item.get("choice") or item.get("answer"))
             if question_id and selected:
-                mapped[question_id] = selected
+                mapped[question_id] = {
+                    "choice": selected,
+                    "value": _first_present(item.get("value"), item.get("custom_value"), item.get("customValue")),
+                }
     return mapped
+
+
+# Driver fields a structured per-segment answer may name, mapped to the
+# prospectus scenario.segments keys the service accepts.
+SEGMENT_ANSWER_FIELD_TO_SCENARIO_KEYS = {
+    "revenue_growth": ("compound_annual_growth_2_5",),
+    "compound_annual_growth_2_5": ("compound_annual_growth_2_5",),
+    "operating_margin": ("target_operating_margin",),
+    "target_operating_margin": ("target_operating_margin",),
+    "target_pre_tax_operating_margin": ("target_operating_margin",),
+    "sales_to_capital": ("sales_to_capital_years_1_to_5", "sales_to_capital_years_6_to_10"),
+    "sales_to_capital_years_1_to_5": ("sales_to_capital_years_1_to_5",),
+    "sales_to_capital_years_6_to_10": ("sales_to_capital_years_6_to_10",),
+}
+
+SEGMENT_DRIVER_TO_ANSWER_FIELD = {
+    "segment_revenue_growth": "revenue_growth",
+    "segment_operating_margin": "target_operating_margin",
+    "segment_sales_to_capital": "sales_to_capital",
+}
+
+
+def _custom_segment_answer_rows(
+    answer: dict[str, Any],
+    question: dict[str, Any],
+) -> list[dict[str, Any]] | None:
+    """Normalize a structured per-segment D answer into scenario.segments rows.
+
+    Per-segment values stay per-segment: they are never collapsed into one
+    agent-computed company number, so the service performs the weighting.
+    """
+    raw = answer.get("value")
+    scope = _dict(question.get("segment_scope"))
+    default_field = (
+        _string_or_none(scope.get("field"))
+        or SEGMENT_DRIVER_TO_ANSWER_FIELD.get(_string(question.get("driver")))
+    )
+    items: list[dict[str, Any]] = []
+    if isinstance(raw, list):
+        items = [item for item in raw if isinstance(item, dict)]
+    elif _string_or_none(scope.get("segment")) is not None and _custom_answer_value(answer) is not None:
+        items = [{"segment": scope.get("segment"), "field": default_field, "value": _custom_answer_value(answer)}]
+    rows: dict[str, dict[str, Any]] = {}
+    for item in items:
+        name = _string_or_none(item.get("segment") or item.get("name") or _dict(question.get("segment_scope")).get("segment"))
+        field = _string_or_none(item.get("field")) or default_field
+        keys = SEGMENT_ANSWER_FIELD_TO_SCENARIO_KEYS.get(field or "")
+        value = _custom_answer_value({"value": item.get("value")})
+        if not name or not keys or value is None:
+            continue
+        row = rows.setdefault(name, {"name": name})
+        for sector_field in ("sector_key", "mapped_industry"):
+            if scope.get(sector_field) and _string(scope.get("segment")) == name:
+                row.setdefault(sector_field, scope.get(sector_field))
+        for key in keys:
+            bounded = _contract_bounded_candidate(key, value)
+            if bounded is not None:
+                row[key] = bounded
+    normalized = [row for row in rows.values() if len(row) > 1]
+    return normalized or None
+
+
+def _custom_answer_value(answer: dict[str, Any]) -> float | None:
+    value = answer.get("value")
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    return round(number, 2)
+
+
+def _first_present(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
 
 
 def _selected_choice(question: dict[str, Any], selected: str) -> dict[str, Any]:

@@ -21,6 +21,7 @@ public class ProspectusExtractionService {
     private final ProspectusTableExtractor tableExtractor;
     private final ProspectusFinancialExtractor financialExtractor;
     private final ProspectusSegmentAutoMapper segmentAutoMapper;
+    private final SegmentEconomicAnchorService segmentEconomicAnchorService;
 
     public ProspectusExtractionResult extract(ProspectusExtractionRequest request) {
         if (request == null || request.filingUrl() == null || request.filingUrl().isBlank()) {
@@ -38,7 +39,8 @@ public class ProspectusExtractionService {
         return new ProspectusExtractionResult(
                 "requires_review",
                 packet,
-                extractionReviewGate());
+                extractionReviewGate(),
+                segmentEconomicAnchorService.anchorsForPacket(packet));
     }
 
     public static SourceQualityGateDTO extractionReviewGate() {

@@ -73,6 +73,7 @@ yarn-error.log*
 .eslintcache
 .stylelintcache
 coverage/
+docs/internal
 
 # --- Docker & Data ---
 db_data/
@@ -93,6 +94,7 @@ prompt_dump/
 *.tmp
 *.bak
 *~
+issues/
 
 # Ensure standard script directory is tracked, but ignore any local overrides if needed
 !/scripts/
@@ -103,3 +105,9 @@ prompt_dump/
 **/.angular/
 **/__pycache__/
 *.pyc
+# Claude Code session-recovery runtime state
+HANDOFF.md
+.claude/settings.local.json
+.claude/rate-limit-state.json
+.claude/stop-failure-events.jsonl
+.claude/quota-blocked.json

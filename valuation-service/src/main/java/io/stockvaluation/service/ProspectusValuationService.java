@@ -20,7 +20,7 @@ import io.stockvaluation.provider.prospectus.ProspectusValuationRequest;
 import io.stockvaluation.provider.prospectus.ProspectusValuationBasis;
 import io.stockvaluation.provider.prospectus.ProspectusValuationResult;
 import io.stockvaluation.utils.SegmentParameterContext;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -34,7 +34,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 public class ProspectusValuationService {
 
     private final ProspectusPacketValidator validator;
@@ -42,6 +41,32 @@ public class ProspectusValuationService {
     private final CommonService commonService;
     private final ValuationTemplateService templateService;
     private final ValuationOutputService outputService;
+    private final SegmentEconomicAnchorService segmentEconomicAnchorService;
+
+    @Autowired
+    public ProspectusValuationService(
+            ProspectusPacketValidator validator,
+            ProspectusCompanyDataAssembler assembler,
+            CommonService commonService,
+            ValuationTemplateService templateService,
+            ValuationOutputService outputService,
+            SegmentEconomicAnchorService segmentEconomicAnchorService) {
+        this.validator = validator;
+        this.assembler = assembler;
+        this.commonService = commonService;
+        this.templateService = templateService;
+        this.outputService = outputService;
+        this.segmentEconomicAnchorService = segmentEconomicAnchorService;
+    }
+
+    ProspectusValuationService(
+            ProspectusPacketValidator validator,
+            ProspectusCompanyDataAssembler assembler,
+            CommonService commonService,
+            ValuationTemplateService templateService,
+            ValuationOutputService outputService) {
+        this(validator, assembler, commonService, templateService, outputService, null);
+    }
 
     public ProspectusValuationResult value(ProspectusValuationRequest request) {
         SegmentParameterContext.clear();
@@ -81,10 +106,17 @@ public class ProspectusValuationService {
                     valuationCaseStatus,
                     basis.proceedsBasis(),
                     basis.warnings(),
-                    output);
+                    output,
+                    driverAnchors(packet, request.scenario()));
         } finally {
             SegmentParameterContext.clear();
         }
+    }
+
+    private Map<String, Object> driverAnchors(ProspectusFinancialPacket packet, ProspectusScenario scenario) {
+        return segmentEconomicAnchorService == null
+                ? Map.of()
+                : segmentEconomicAnchorService.anchorsForPacketAndScenario(packet, scenario);
     }
 
     private static FinancialDataInput initializeInput(CompanyDataDTO companyData) {

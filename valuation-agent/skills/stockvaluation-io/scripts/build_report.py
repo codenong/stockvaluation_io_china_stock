@@ -13,7 +13,7 @@ Input: one JSON file (or stdin) with:
              {range: {low, high, unresolved_drivers: [...]}}
   prose: {business_story, growth, profitability, reinvestment, risk, bottom_line}
   market_implied_diagnostics?: {rows: [{assumption, required_value, note?}]}
-  key_assumptions?: [{driver, value, unit?, source}]  # source: anchor:<label>|user_input|service
+  key_assumptions?: [{driver, value, unit?, source}]  # source: anchor:<label>|user_input|service|segments:anchor:<label>|segments:user_input
   guided_judgment?: [{question, driver, answer, source?}]
   data_limits?: [string]
   sources?: [{title, url?, date?}]

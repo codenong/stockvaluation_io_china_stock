@@ -25,7 +25,11 @@ from .driver_anchors import (
     matches_anchor,
 )
 from .evidence_packet import validate_evidence_packet
-from .guided_question_planner import build_guided_question_plan, build_user_judgment_package
+from .guided_question_planner import (
+    SEGMENT_DRIVER_TO_ANSWER_FIELD,
+    build_guided_question_plan,
+    build_user_judgment_package,
+)
 from .security import sanitize_for_agent
 from .segment_discovery import parse_revenue_weight, sanitize_segment_package
 from .segment_economics import validate_segment_economics
@@ -400,7 +404,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                     },
                     "answers": {
                         "type": "object",
-                        "description": "Map of question id to selected choice label, such as A, B, C, D, or default.",
+                        "description": "Map of question id to selected choice label, such as A, B, C, D, or default. For custom D values, pass an object like {\"choice\":\"D\",\"value\":15.5}; the value is recorded as user_input. For segment-scoped questions, structured custom D is {\"choice\":\"D\",\"value\":[{\"segment\":\"<name>\",\"field\":\"<driver>\",\"value\":12.0}]}; rows stay segment-level and route into scenario.segments.",
                         "additionalProperties": True,
                     },
                     "use_defaults": {
@@ -783,12 +787,16 @@ class MCPToolRegistry:
             if review_reference:
                 self._prospectus_packet_cache[review_reference] = copy.deepcopy(packet)
             payload = prospectus_extraction_success_payload(tool, result, review_reference=review_reference)
+            anchors = anchors_from_prospectus_packet(packet)
+            service_anchors = _dict(result.get("driverAnchors") or result.get("driver_anchors"))
+            if service_anchors:
+                anchors.update(service_anchors)
             self._start_tracked_run(
                 payload,
                 workflow_type="prospectus",
                 subject=filing_url,
                 tool=tool,
-                anchors=anchors_from_prospectus_packet(packet),
+                anchors=anchors,
             )
             return payload
         except ValuationServiceError as exc:
@@ -873,6 +881,14 @@ class MCPToolRegistry:
                         tool,
                     )
             result = self.service_client.value_prospectus(packet, scenario)
+            if run is not None:
+                anchors = anchors_from_prospectus_packet(packet)
+                service_anchors = _dict(result.get("driverAnchors") or result.get("driver_anchors"))
+                if service_anchors:
+                    anchors.update(service_anchors)
+                if anchors:
+                    run["anchors"] = sanitize_for_agent(anchors)
+                    self.run_store.update_run(run)
             return self._finish_tracked(prospectus_valuation_success_payload(tool, result), run, tool)
         except ValuationServiceError as exc:
             return self._finish_tracked(service_exception_payload(tool, exc), run, tool)
@@ -1055,6 +1071,7 @@ class MCPToolRegistry:
         guided_answer_record: dict[str, Any] = {}
         if run is not None:
             run_anchors = run.get("anchors") or {}
+            segment_answers: dict[str, list[dict[str, Any]]] = {}
             for answer in judgment.get("answers") or []:
                 if not isinstance(answer, dict):
                     continue
@@ -1068,6 +1085,11 @@ class MCPToolRegistry:
                 override = _dict(answer.get("requested_override"))
                 field = _string_or_none(override.get("field"))
                 value = override.get("value")
+                if field == "segments" and isinstance(value, list):
+                    driver_field = SEGMENT_DRIVER_TO_ANSWER_FIELD.get(_string_or_none(answer.get("mapped_driver")) or "")
+                    if driver_field:
+                        segment_answers.setdefault(driver_field, []).append(answer)
+                    continue
                 if not field or not isinstance(value, (int, float)) or isinstance(value, bool):
                     continue
                 field = driver_field_for_key(field) or field
@@ -1080,6 +1102,7 @@ class MCPToolRegistry:
                     "question_id": answer.get("question_id"),
                     "selected_choice": answer.get("selected_choice"),
                 }
+            self._record_segment_level_answers(guided_answer_record, segment_answers, plan)
             run["guided_answers"] = sanitize_for_agent(guided_answer_record)
             self.run_store.update_run(run)
             self.run_store.record_gate(run["run_id"], GATE_GUIDED_REFINEMENT, "applied")
@@ -1096,6 +1119,45 @@ class MCPToolRegistry:
             payload["guidedAnswerRecord"] = guided_answer_record
             payload["planSource"] = plan_source
         return self._finish_tracked(payload, run, tool)
+
+    @staticmethod
+    def _record_segment_level_answers(
+        guided_answer_record: dict[str, Any],
+        segment_answers: dict[str, list[dict[str, Any]]],
+        plan: dict[str, Any],
+    ) -> None:
+        """Mark a driver resolved by segment-level answers only when every
+        planned segment question for that driver mapped; partial segment
+        coverage keeps the driver unresolved so the range safety net fires."""
+        planned_counts: dict[str, int] = {}
+        for question in plan.get("questions") or []:
+            scope = question.get("segment_scope") if isinstance(question, dict) else None
+            field = _string_or_none(_dict(scope).get("field")) if isinstance(scope, dict) else None
+            if field:
+                planned_counts[field] = planned_counts.get(field, 0) + 1
+        for field, answers in segment_answers.items():
+            if field in guided_answer_record:
+                continue
+            if len(answers) < planned_counts.get(field, 0):
+                continue
+            labels = {_string_or_none(answer.get("anchor_label")) for answer in answers}
+            if labels == {"user_input"}:
+                source = "segments:user_input"
+            elif len(labels) == 1 and labels & {"low", "base", "high"}:
+                source = f"segments:anchor:{labels.pop()}"
+            else:
+                source = "segments:mixed"
+            rows: list[Any] = []
+            for answer in answers:
+                value = _dict(answer.get("requested_override")).get("value")
+                if isinstance(value, list):
+                    rows.extend(value)
+            guided_answer_record[field] = {
+                "value": {"segments": rows},
+                "source": source,
+                "question_ids": [answer.get("question_id") for answer in answers],
+                "selected_choices": [answer.get("selected_choice") for answer in answers],
+            }
 
     def _recalculate(self, args: dict[str, Any]) -> dict[str, Any]:
         tool = "stockvaluation.recalculate"
@@ -2120,6 +2182,7 @@ def prospectus_extraction_success_payload(
         },
         "provenance": extract_prospectus_source_provenance(_dict(packet.get("sourceProvenance") or packet.get("source_provenance"))),
         "sourceQualityGate": normalize_source_quality_gate(_dict(result.get("sourceQualityGate") or result.get("source_quality_gate"))),
+        "driverAnchors": sanitize_for_agent(_dict(result.get("driverAnchors") or result.get("driver_anchors"))),
         "version": {"mcp": mcp_metadata()},
         "policy": policy_metadata("prospectus_extraction"),
     }
@@ -2288,6 +2351,7 @@ def prospectus_valuation_success_payload(tool: str, result: dict[str, Any]) -> d
         "accountingAndClaims": extract_accounting_and_claims(valuation),
         "provenance": extract_prospectus_source_provenance(provenance),
         "sourceQualityGate": normalize_source_quality_gate(_dict(result.get("sourceQualityGate") or result.get("source_quality_gate"))),
+        "driverAnchors": sanitize_for_agent(_dict(result.get("driverAnchors") or result.get("driver_anchors"))),
         "growthAnchor": extract_growth_anchor(valuation),
         "referenceData": prospectus_reference_data_status(valuation),
         "version": version_metadata(valuation),

@@ -15,10 +15,12 @@ import org.junit.jupiter.api.Test;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -30,17 +32,20 @@ class ProspectusExtractionServiceTest {
         String html = Files.readString(Path.of("src/test/resources/prospectus/spacex_s1a_trimmed.html"));
         ProspectusDocumentClient client = mock(ProspectusDocumentClient.class);
         SectorMappingRepository sectorMappingRepository = mock(SectorMappingRepository.class);
+        SegmentEconomicAnchorService economicAnchorService = mock(SegmentEconomicAnchorService.class);
         when(client.fetch(filingUrl)).thenReturn(new ProspectusDocument(filingUrl, html));
         when(sectorMappingRepository.findUsableForSegmentValuation()).thenReturn(List.of(
                 new SectorMapping(1L, "industrials", "aerospace-defense", "Aerospace/Defense"),
                 new SectorMapping(2L, "communication-services", "telecom-services", "Telecom. Services"),
                 new SectorMapping(3L, "technology", "software-infrastructure", "Software (System & Application)"),
                 new SectorMapping(4L, "communication-services", "advertising-agencies", "Advertising")));
+        when(economicAnchorService.anchorsForPacket(any())).thenReturn(Map.of("sales_to_capital", Map.of("source", "test")));
         ProspectusExtractionService service = new ProspectusExtractionService(
                 client,
                 new ProspectusTableExtractor(),
                 new ProspectusFinancialExtractor(),
-                new ProspectusSegmentAutoMapper(new SegmentMappingProposalService(sectorMappingRepository)));
+                new ProspectusSegmentAutoMapper(new SegmentMappingProposalService(sectorMappingRepository)),
+                economicAnchorService);
 
         ProspectusExtractionResult result = service.extract(new ProspectusExtractionRequest(filingUrl, "SpaceX", "SPCX"));
 
@@ -74,5 +79,6 @@ class ProspectusExtractionServiceTest {
         assertEquals("requires_user_decision", gate.getStatus());
         assertEquals("prospectus_extraction_review_required", gate.getReason());
         assertEquals("approve_extracted_packet", gate.getAllowedActions().get(0));
+        assertEquals("test", ((Map<?, ?>) result.driverAnchors().get("sales_to_capital")).get("source"));
     }
 }
