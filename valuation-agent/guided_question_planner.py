@@ -214,7 +214,7 @@ def build_user_judgment_package(
     use_defaults: bool = False,
 ) -> dict[str, Any]:
     """Convert guided answers or accepted defaults into user judgment metadata."""
-    question_list = plan.get("questions") if isinstance(plan, dict) else []
+    question_list = (plan.get("questions") or []) if isinstance(plan, dict) else []
     questions = [item for item in question_list if isinstance(item, dict)]
     answer_map = _answer_map(answers)
     recorded_answers: list[dict[str, Any]] = []

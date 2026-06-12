@@ -384,6 +384,19 @@ def test_scenario_less_call_after_plan_returns_range_for_unresolved_drivers(tmp_
     assert "dcf" not in valued
 
 
+def test_apply_guided_answers_handles_plan_without_questions(tmp_path):
+    registry, _ = _registry(tmp_path)
+
+    applied = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {"guided_question_plan": {"plan_id": "placeholder"}, "use_defaults": True},
+    )["structuredContent"]
+
+    assert applied["ok"] is True
+    assert applied["userJudgment"]["answers"] == []
+    assert applied["prospectusScenarioCandidate"]["supported"] is False
+
+
 def test_anchor_state_records_anchors_in_run_state(tmp_path):
     registry, _ = _registry(tmp_path)
     run_id, _ = _extract(registry)
