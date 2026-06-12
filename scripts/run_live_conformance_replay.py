@@ -74,16 +74,17 @@ def main() -> int:
         },
     )
 
-    # Simulated user: accepts the default for every guided question.
+    # Simulated user: accepts the default for every guided question. The plan
+    # is not echoed back; the server uses its stored copy (planSource).
     applied = _call(
         registry,
         "stockvaluation.apply_guided_answers",
         {
             "run_id": run_id,
-            "guided_question_plan": planned["guidedQuestionPlan"],
             "use_defaults": True,
         },
     )
+    assert applied.get("planSource") == "run_state", applied.get("planSource")
     candidate = applied["prospectusScenarioCandidate"]
     if not candidate.get("supported"):
         raise SystemExit(f"scenario candidate unsupported: {json.dumps(candidate)}")
