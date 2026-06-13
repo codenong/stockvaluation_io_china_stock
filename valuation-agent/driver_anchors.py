@@ -27,6 +27,8 @@ SALES_TO_CAPITAL_MAX = 20.0
 PROSPECTUS_SCENARIO_KEY_TO_DRIVER_FIELD = {
     "net_proceeds": "net_proceeds",
     "compound_annual_growth_2_5": "revenue_growth",
+    "target_revenue": "terminal_revenue",
+    "terminal_return_on_capital": "terminal_roic",
     "target_operating_margin": "target_operating_margin",
     "sales_to_capital_years_1_to_5": "sales_to_capital",
     "sales_to_capital_years_6_to_10": "sales_to_capital",
@@ -46,12 +48,19 @@ ANCHOR_FIELD_TO_PROSPECTUS_KEYS = {
 RECALCULATE_KEY_TO_DRIVER_FIELD = {
     "net_proceeds": "net_proceeds",
     "revenue_growth": "revenue_growth",
+    "terminal_revenue": "terminal_revenue",
+    "target_revenue": "terminal_revenue",
+    "revenue_year_10": "terminal_revenue",
+    "year_10_revenue": "terminal_revenue",
     "operating_margin": "target_operating_margin",
     "target_operating_margin": "target_operating_margin",
     "target_pre_tax_operating_margin": "target_operating_margin",
     "sales_to_capital": "sales_to_capital",
     "sales_to_capital_years_1_to_5": "sales_to_capital",
     "sales_to_capital_years_6_to_10": "sales_to_capital",
+    "terminal_roic": "terminal_roic",
+    "terminal_return_on_capital": "terminal_roic",
+    "terminal_return_on_invested_capital": "terminal_roic",
 }
 
 # Numeric scenario keys that are driver inputs but may have no computable

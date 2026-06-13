@@ -81,6 +81,7 @@ MECHANICAL_VALUE_FIELDS = {
 USER_REFINED_EXPLICIT_ONLY_MAPPED_FIELDS = {
     "initialCostCapital",
     "terminalGrowthRate",
+    "overrideAssumptionReturnOnCapital",
     "overrideAssumptionTaxRate",
     "growthPatternOverride",
     "isExpensesCapitalize",

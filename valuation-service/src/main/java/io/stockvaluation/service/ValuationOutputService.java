@@ -54,6 +54,11 @@ public class ValuationOutputService {
 
     private final DecimalFormat df = new DecimalFormat("0.00");
 
+    private static final double DEFAULT_TERMINAL_GROWTH_CAP_PERCENT = 2.5;
+    private static final double MIN_SOLVED_REVENUE_GROWTH_PERCENT = -95.0;
+    private static final double MAX_SOLVED_REVENUE_GROWTH_PERCENT = 200.0;
+    private static final int REVENUE_SOLVER_ITERATIONS = 80;
+
     // company data calculation method
     public CompanyDTO calculateCompanyData(FinancialDTO financialDTO, FinancialDataInput valuationInputDTO,
             OptionValueResultDTO optionValueResultDTO, LeaseResultDTO leaseResultDTO) {
@@ -666,15 +671,67 @@ public class ValuationOutputService {
             if (financialDataInput.getSegments() == null ||
                     financialDataInput.getSegments().getSegments() == null ||
                     financialDataInput.getSegments().getSegments().size() <= 1) {
-                terminalYear = riskFreeRate; // Use risk-free rate as terminal growth
+                terminalYear = defaultTerminalGrowthPercent(riskFreeRate);
             } else {
-                // CRITICAL FIX: Allow terminal growth to converge to risk-free rate (4.6%)
-                // This is the natural convergence point for sustainable long-term growth
-                terminalYear = riskFreeRate * 100; // Use risk-free rate as terminal growth in percentage format
+                terminalYear = defaultTerminalGrowthPercent(riskFreeRate * 100);
             }
         }
+        Double riskFreeRateCap = riskFreeRate;
+        if (financialDataInput.getSegments() != null &&
+                financialDataInput.getSegments().getSegments() != null &&
+                financialDataInput.getSegments().getSegments().size() > 1) {
+            riskFreeRateCap = riskFreeRate * 100; // Convert to percentage format for segments
+        }
+        Double effectiveTerminalYear = financialDataInput.getTerminalGrowthRate() != null
+                ? terminalYear
+                : Math.min(terminalYear, riskFreeRateCap);
+
+        if (financialDataInput.getTerminalRevenue() != null) {
+            int targetYear = terminalRevenueTargetYear(financialDataInput, projectionYears);
+            if (targetYear == 1) {
+                growthRateForNext = impliedSingleYearRevenueGrowthPercent(financialDataInput);
+            } else {
+                compoundedAnnualGrowthRateFor2To5Years = solveCompoundGrowthForTerminalRevenue(
+                        financialDataInput,
+                        growthRateForNext,
+                        effectiveTerminalYear,
+                        targetYear,
+                        arrayLength);
+            }
+            log.info("Terminal revenue target solved into growth path: targetRevenue={}, targetYear={}, impliedGrowth2_5={}%",
+                    financialDataInput.getTerminalRevenue(), targetYear, compoundedAnnualGrowthRateFor2To5Years);
+        }
+
+        growthRate = buildRevenueGrowthPath(
+                arrayLength,
+                growthRateForNext,
+                compoundedAnnualGrowthRateFor2To5Years,
+                terminalYear);
+
+        // DAMODARAN CONSTRAINT: Terminal growth must not exceed risk-free rate
+        // This is a fundamental constraint in DCF valuation - no company can grow
+        // faster than the economy indefinitely
+        if (financialDataInput.getTerminalGrowthRate() != null) {
+            growthRate[terminalIndex] = terminalYear;
+            log.info("Terminal growth rate override accepted within risk-free-rate cap: {}%", terminalYear);
+        } else {
+            growthRate[terminalIndex] = effectiveTerminalYear;
+
+            log.debug("Terminal growth rate: {} (capped at risk-free rate: {})",
+                    growthRate[terminalIndex], riskFreeRateCap);
+        }
+
+        return growthRate;
+    }
+
+    private Double[] buildRevenueGrowthPath(
+            int arrayLength,
+            Double growthRateForNext,
+            Double compoundedAnnualGrowthRateFor2To5Years,
+            Double terminalYear) {
+        Double[] growthRate = new Double[arrayLength];
+        int projectionYears = arrayLength - 2;
         int adjustmentYears = projectionYears / 2;
-        // Dynamic calculation based on projection years
         for (int year = 1; year <= projectionYears; year++) {
             if (year == 1) {
                 growthRate[year] = growthRateForNext;
@@ -687,26 +744,100 @@ public class ValuationOutputService {
                         - ((compoundedAnnualGrowthRateFor2To5Years - terminalYear) / convergenceYears) * n;
             }
         }
-        // DAMODARAN CONSTRAINT: Terminal growth must not exceed risk-free rate
-        // This is a fundamental constraint in DCF valuation - no company can grow
-        // faster than the economy indefinitely
-        if (financialDataInput.getTerminalGrowthRate() != null) {
-            growthRate[terminalIndex] = terminalYear;
-            log.info("Terminal growth rate override accepted within risk-free-rate cap: {}%", terminalYear);
-        } else {
-            Double riskFreeRateCap = riskFreeRate;
-            if (financialDataInput.getSegments() != null &&
-                    financialDataInput.getSegments().getSegments() != null &&
-                    financialDataInput.getSegments().getSegments().size() > 1) {
-                riskFreeRateCap = riskFreeRate * 100; // Convert to percentage format for segments
-            }
-            growthRate[terminalIndex] = Math.min(terminalYear, riskFreeRateCap);
+        return growthRate;
+    }
 
-            log.debug("Terminal growth rate: {} (capped at risk-free rate: {})",
-                    growthRate[terminalIndex], riskFreeRateCap);
+    private int terminalRevenueTargetYear(FinancialDataInput financialDataInput, int projectionYears) {
+        Integer requestedYear = financialDataInput.getTerminalRevenueYear();
+        int targetYear = requestedYear != null ? requestedYear : projectionYears;
+        if (targetYear < 1 || targetYear > projectionYears) {
+            throw new IllegalArgumentException(String.format(Locale.ROOT,
+                    "TERMINAL_REVENUE_YEAR_UNSUPPORTED: terminalRevenueYear must be between 1 and %d; provided %d.",
+                    projectionYears,
+                    targetYear));
+        }
+        return targetYear;
+    }
+
+    private double impliedSingleYearRevenueGrowthPercent(FinancialDataInput financialDataInput) {
+        double baseRevenue = baseRevenueForTerminalSolver(financialDataInput);
+        double targetRevenue = terminalRevenueForSolver(financialDataInput);
+        return ((targetRevenue / baseRevenue) - 1.0) * 100.0;
+    }
+
+    private double solveCompoundGrowthForTerminalRevenue(
+            FinancialDataInput financialDataInput,
+            Double growthRateForNext,
+            Double terminalYear,
+            int targetYear,
+            int arrayLength) {
+        double baseRevenue = baseRevenueForTerminalSolver(financialDataInput);
+        double targetRevenue = terminalRevenueForSolver(financialDataInput);
+        double lowRevenue = projectedRevenueAtYear(
+                baseRevenue,
+                buildRevenueGrowthPath(arrayLength, growthRateForNext, MIN_SOLVED_REVENUE_GROWTH_PERCENT, terminalYear),
+                targetYear);
+        double highRevenue = projectedRevenueAtYear(
+                baseRevenue,
+                buildRevenueGrowthPath(arrayLength, growthRateForNext, MAX_SOLVED_REVENUE_GROWTH_PERCENT, terminalYear),
+                targetYear);
+        if (targetRevenue < lowRevenue || targetRevenue > highRevenue) {
+            throw new IllegalArgumentException(String.format(Locale.ROOT,
+                    "TERMINAL_REVENUE_UNREACHABLE: terminalRevenue %.4f cannot be reached by the supported growth range %.2f%% to %.2f%%.",
+                    targetRevenue,
+                    MIN_SOLVED_REVENUE_GROWTH_PERCENT,
+                    MAX_SOLVED_REVENUE_GROWTH_PERCENT));
         }
 
-        return growthRate;
+        double low = MIN_SOLVED_REVENUE_GROWTH_PERCENT;
+        double high = MAX_SOLVED_REVENUE_GROWTH_PERCENT;
+        for (int iteration = 0; iteration < REVENUE_SOLVER_ITERATIONS; iteration++) {
+            double mid = (low + high) / 2.0;
+            double projectedRevenue = projectedRevenueAtYear(
+                    baseRevenue,
+                    buildRevenueGrowthPath(arrayLength, growthRateForNext, mid, terminalYear),
+                    targetYear);
+            if (projectedRevenue < targetRevenue) {
+                low = mid;
+            } else {
+                high = mid;
+            }
+        }
+        return Math.round(((low + high) / 2.0) * 100.0) / 100.0;
+    }
+
+    private double baseRevenueForTerminalSolver(FinancialDataInput financialDataInput) {
+        if (financialDataInput == null
+                || financialDataInput.getFinancialDataDTO() == null
+                || financialDataInput.getFinancialDataDTO().getRevenueTTM() == null
+                || !Double.isFinite(financialDataInput.getFinancialDataDTO().getRevenueTTM())
+                || financialDataInput.getFinancialDataDTO().getRevenueTTM() <= 0.0) {
+            throw new IllegalArgumentException("TERMINAL_REVENUE_BASE_UNAVAILABLE: base revenue must be positive.");
+        }
+        return financialDataInput.getFinancialDataDTO().getRevenueTTM();
+    }
+
+    private double terminalRevenueForSolver(FinancialDataInput financialDataInput) {
+        Double terminalRevenue = financialDataInput != null ? financialDataInput.getTerminalRevenue() : null;
+        if (terminalRevenue == null || !Double.isFinite(terminalRevenue) || terminalRevenue <= 0.0) {
+            throw new IllegalArgumentException("TERMINAL_REVENUE_UNSAFE: terminalRevenue must be positive and finite.");
+        }
+        return terminalRevenue;
+    }
+
+    private double projectedRevenueAtYear(double baseRevenue, Double[] growthRate, int targetYear) {
+        double revenue = baseRevenue;
+        for (int year = 1; year <= targetYear; year++) {
+            revenue *= 1.0 + (growthRate[year] / 100.0);
+        }
+        return revenue;
+    }
+
+    private double defaultTerminalGrowthPercent(Double riskFreeRateCapPercent) {
+        if (riskFreeRateCapPercent == null || !Double.isFinite(riskFreeRateCapPercent)) {
+            return 0.0;
+        }
+        return Math.max(0.0, Math.min(DEFAULT_TERMINAL_GROWTH_CAP_PERCENT, riskFreeRateCapPercent));
     }
 
     private void validateTerminalGrowthOverride(FinancialDataInput financialDataInput) {
@@ -1538,9 +1669,7 @@ public class ValuationOutputService {
         } else if (financialDataInput.getOverrideAssumptionRiskFreeRate().getIsOverride()) {
             terminalYear = financialDataInput.getOverrideAssumptionRiskFreeRate().getOverrideCost();
         } else {
-            // CRITICAL FIX: Allow terminal growth to converge to risk-free rate (4.6%)
-            // This is the natural convergence point for sustainable long-term growth
-            terminalYear = terminalGrowthRate; // Use risk-free rate as terminal growth
+            terminalYear = defaultTerminalGrowthPercent(terminalGrowthRate);
         }
 
         int adjustmentYears = projectionYears / 2;

@@ -1492,10 +1492,13 @@ def test_recalculate_maps_supported_overrides_and_separates_requested_from_effec
             "ticker": "MSFT",
             "overrides": {
                 "revenue_growth": 0.09,
+                "terminal_revenue": 2_000.0,
+                "terminal_revenue_year": 10,
                 "operating_margin": 44.0,
                 "sales_to_capital": 2.3,
                 "wacc": 0.085,
                 "terminal_growth": 0.03,
+                "terminal_roic": 0.14,
                 "tax_rate": 0.21,
             },
         },
@@ -1505,7 +1508,10 @@ def test_recalculate_maps_supported_overrides_and_separates_requested_from_effec
     assumptions = result["structuredContent"]["assumptions"]
     assert assumptions["requested"]["revenue_growth"] == 0.09
     assert assumptions["mapped"]["compoundAnnualGrowth2_5"] == 9.0
+    assert assumptions["mapped"]["terminalRevenue"] == 2_000.0
+    assert assumptions["mapped"]["terminalRevenueYear"] == 10
     assert assumptions["mapped"]["initialCostCapital"] == 8.5
+    assert assumptions["mapped"]["overrideAssumptionReturnOnCapital"]["overrideCost"] == 14.0
     assert assumptions["mapped"]["overrideAssumptionTaxRate"]["overrideCost"] == 21.0
     assert assumptions["unsupported"] == {}
     assert assumptions["effective"]["operating_margin"] == 45.0
@@ -1522,6 +1528,8 @@ def test_user_refined_scenario_maps_direct_margin_path_and_capital_efficiency_fi
             "ticker": "MSFT",
             "overrides": {
                 "request_policy": {"mode": "user_refined_scenario"},
+                "terminal_revenue": 2_000.0,
+                "terminal_revenue_year": 10,
                 "operating_margin_next_year": 0.38,
                 "target_operating_margin": 43.5,
                 "margin_convergence_year": 7,
@@ -1540,6 +1548,8 @@ def test_user_refined_scenario_maps_direct_margin_path_and_capital_efficiency_fi
     assert assumptions["metadata"]["request_policy"] == {"mode": "user_refined_scenario"}
     assert assumptions["metadata"]["user_judgment"]["source_type"] == "user_judgment"
     assert assumptions["mapped"]["requestPolicyMode"] == "user_refined_scenario"
+    assert assumptions["mapped"]["terminalRevenue"] == 2_000.0
+    assert assumptions["mapped"]["terminalRevenueYear"] == 10
     assert assumptions["mapped"]["operatingMarginNextYear"] == 38.0
     assert assumptions["mapped"]["targetPreTaxOperatingMargin"] == 43.5
     assert assumptions["mapped"]["convergenceYearMargin"] == 7
@@ -1614,6 +1624,7 @@ def test_user_refined_scenario_rejects_explicit_scenario_only_fields():
                 "revenue_growth": 8.0,
                 "wacc": 8.5,
                 "terminal_growth": 3.0,
+                "terminal_roic": 14.0,
                 "tax_rate": 21.0,
                 "growth_pattern_override": "THREE_STAGE",
             },
@@ -1627,6 +1638,7 @@ def test_user_refined_scenario_rejects_explicit_scenario_only_fields():
     assert set(assumptions["unsupported"]) == {
         "wacc",
         "terminal_growth",
+        "terminal_roic",
         "tax_rate",
         "growth_pattern_override",
     }

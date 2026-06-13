@@ -247,6 +247,67 @@ class CoverageSmokeTest {
     }
 
     @Test
+    void userRefinedScenarioAcceptsTerminalRevenueButRejectsTerminalRoic() throws Exception {
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
+                "applyUserOverrides",
+                FinancialDataInput.class,
+                FinancialDataInput.class);
+        applyUserOverrides.setAccessible(true);
+
+        FinancialDataInput baseline = new FinancialDataInput();
+        baseline.setRiskFreeRate(4.0);
+
+        FinancialDataInput overrides = new FinancialDataInput();
+        overrides.setRequestPolicyMode("user_refined_scenario");
+        overrides.setTerminalRevenue(2_000.0);
+        overrides.setTerminalRevenueYear(10);
+
+        @SuppressWarnings("unchecked")
+        java.util.List<String> adjusted = (java.util.List<String>) applyUserOverrides.invoke(workflow, baseline,
+                overrides);
+
+        assertEquals(2_000.0, baseline.getTerminalRevenue());
+        assertEquals(10, baseline.getTerminalRevenueYear());
+        assertTrue(adjusted.contains("terminalRevenue"));
+
+        FinancialDataInput terminalRoicOverride = new FinancialDataInput();
+        terminalRoicOverride.setRequestPolicyMode("user_refined_scenario");
+        terminalRoicOverride.setOverrideAssumptionReturnOnCapital(new OverrideAssumption(14.0, true, 0.0, null));
+
+        InvocationTargetException exception = assertThrows(
+                InvocationTargetException.class,
+                () -> applyUserOverrides.invoke(workflow, baseline, terminalRoicOverride));
+        assertTrue(exception.getCause() instanceof ResponseStatusException);
+        assertTrue(exception.getCause().getMessage().contains("overrideAssumptionReturnOnCapital"));
+    }
+
+    @Test
+    void explicitScenarioAcceptsTerminalRoicOverride() throws Exception {
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
+                "applyUserOverrides",
+                FinancialDataInput.class,
+                FinancialDataInput.class);
+        applyUserOverrides.setAccessible(true);
+
+        FinancialDataInput baseline = new FinancialDataInput();
+        baseline.setRiskFreeRate(4.0);
+
+        FinancialDataInput overrides = new FinancialDataInput();
+        overrides.setRequestPolicyMode("explicit_scenario");
+        overrides.setOverrideAssumptionReturnOnCapital(new OverrideAssumption(14.0, true, 0.0, null));
+
+        @SuppressWarnings("unchecked")
+        java.util.List<String> adjusted = (java.util.List<String>) applyUserOverrides.invoke(workflow, baseline,
+                overrides);
+
+        assertTrue(baseline.getOverrideAssumptionReturnOnCapital().getIsOverride());
+        assertEquals(14.0, baseline.getOverrideAssumptionReturnOnCapital().getOverrideCost());
+        assertTrue(adjusted.contains("overrideAssumptionReturnOnCapital"));
+    }
+
+    @Test
     void invalidTerminalGrowthOverrideIsRejectedWithAgentReadableError() throws Exception {
         ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
         Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(

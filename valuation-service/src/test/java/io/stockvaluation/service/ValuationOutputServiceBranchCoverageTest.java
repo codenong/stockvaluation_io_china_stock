@@ -522,16 +522,51 @@ class ValuationOutputServiceBranchCoverageTest {
     }
 
     @Test
-    void calculateRevenueGrowthRate_noOverride_terminalCappedAtRiskFreeRate() {
+    void calculateRevenueGrowthRate_noOverride_defaultsBelowRiskFreeRate() {
         // riskFreeRate = 400.0 stored → divide by 100 → 4.0%
-        // compound growth 8% → terminal should be capped at riskFree (4.0 in % or 0.04)
+        // compound growth 8% → terminal should default below the risk-free cap.
         Double[] result = ReflectionTestUtils.invokeMethod(
                 valuationOutputService, "calculateRevenueGrowthRate", baseInput, 12);
 
         assertNotNull(result);
-        // Terminal (index 11) growth must be <= risk-free rate
-        assertNotNull(result[11]);
-        assertTrue(result[11] <= 4.0);
+        assertEquals(2.5, result[11], 0.01);
+    }
+
+    @Test
+    void calculateRevenueGrowthRate_noOverride_respectsLowRiskFreeCap() {
+        baseInput.setRiskFreeRate(150.0);
+
+        Double[] result = ReflectionTestUtils.invokeMethod(
+                valuationOutputService, "calculateRevenueGrowthRate", baseInput, 12);
+
+        assertNotNull(result);
+        assertEquals(1.5, result[11], 0.01);
+    }
+
+    @Test
+    void calculateRevenueGrowthRate_terminalRevenueSolvesImpliedGrowthPath() {
+        baseInput.setTerminalRevenue(2_000.0);
+        baseInput.setTerminalRevenueYear(10);
+
+        Double[] result = ReflectionTestUtils.invokeMethod(
+                valuationOutputService, "calculateRevenueGrowthRate", baseInput, 12);
+
+        assertNotNull(result);
+        assertEquals(2.5, result[11], 0.01);
+        double revenue = baseInput.getFinancialDataDTO().getRevenueTTM();
+        for (int year = 1; year <= 10; year++) {
+            revenue *= 1.0 + result[year] / 100.0;
+        }
+        assertEquals(2_000.0, revenue, 1.0);
+    }
+
+    @Test
+    void calculateRevenueGrowthRate_terminalRevenueRejectsUnsupportedTargetYear() {
+        baseInput.setTerminalRevenue(2_000.0);
+        baseInput.setTerminalRevenueYear(11);
+
+        assertThrows(IllegalArgumentException.class, () -> ReflectionTestUtils.invokeMethod(
+                valuationOutputService, "calculateRevenueGrowthRate", baseInput, 12));
     }
 
     // =========================================================

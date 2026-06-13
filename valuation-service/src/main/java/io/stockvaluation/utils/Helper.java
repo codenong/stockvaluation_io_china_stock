@@ -22,13 +22,15 @@ public class Helper {
      * guardrail, not a verdict: it supplies a fallback only when the company signal is unusable.
      * It never clamps a genuinely high-margin company down to the industry (the old behavior,
      * which systematically under-valued franchises) and never lifts a genuinely low-margin
-     * company up to the industry (which would over-value laggards).
+     * company up to the industry (which would over-value laggards). When a
+     * company is materially above the industry, apply a deterministic competitive
+     * fade: keep the target above the industry, but do not carry an exceptional
+     * current margin flat into maturity without user judgment.
      *
      * <p>Over-earning is handled by anchoring on a <em>normalized</em> (multi-period) company
      * margin rather than the latest peak, so a cyclical/temporary spike is not carried to the
-     * terminal year. Any long-run competitive fade is a narrative judgment set in the guided
-     * framing layer, not a mechanical haircut imposed here against often-unreliable industry
-     * quartiles.
+     * terminal year. The guided framing layer can still override this mature margin
+     * through governed user input.
      *
      * @param industryFirstQuartile   industry pre-tax operating margin Q1 (percent); reserved guardrail input
      * @param industryMedian          industry pre-tax operating margin median (percent); fallback for unusable data
@@ -48,10 +50,22 @@ public class Helper {
             return industryMedian;
         }
 
-        // Anchor on the company's own normalized margin. No mechanical lift or clamp toward the
-        // industry: a franchise keeps its margin, a laggard keeps its margin, and the competitive
-        // fade (if any) is decided in the narrative/framing layer.
-        return companyNormalizedMargin;
+        if (!Double.isFinite(industryThirdQuartile) || industryThirdQuartile <= 0.0
+                || companyNormalizedMargin <= industryThirdQuartile) {
+            return companyNormalizedMargin;
+        }
+
+        double excessMargin = companyNormalizedMargin - industryThirdQuartile;
+        double fadeRate = companyNormalizedMargin >= 40.0 && companyNormalizedMargin >= 1.5 * industryThirdQuartile
+                ? 0.50
+                : 0.10;
+        double fadedMargin = companyNormalizedMargin - (excessMargin * fadeRate);
+
+        // Keep winners above the industry. This is a fade, not the old industry clamp.
+        if (fadedMargin <= industryThirdQuartile) {
+            return Math.nextUp(industryThirdQuartile);
+        }
+        return fadedMargin;
     }
 
     public static double targetOperatingMargin(double preTaxOperatingMarginFirstQuartile,

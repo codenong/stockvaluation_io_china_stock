@@ -38,6 +38,8 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
         private static final double MAX_MARGIN_CONVERGENCE_YEAR = 10.0;
         private static final double MIN_SALES_TO_CAPITAL = 0.05;
         private static final double MAX_SALES_TO_CAPITAL = 20.0;
+        private static final double MIN_TERMINAL_ROIC = 0.0;
+        private static final double MAX_TERMINAL_ROIC = 100.0;
         private static final String POLICY_AUTONOMOUS_RESEARCHED = "autonomous_researched";
         private static final String POLICY_USER_REFINED_SCENARIO = "user_refined_scenario";
         private static final String POLICY_EXPLICIT_SCENARIO = "explicit_scenario";
@@ -2492,6 +2494,10 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 return POLICY_USER_REFINED_SCENARIO.equals(resolveRequestPolicyMode(financialDataInput));
         }
 
+        private boolean isActiveOverride(OverrideAssumption override) {
+                return override != null && Boolean.TRUE.equals(override.getIsOverride());
+        }
+
         private void rejectExplicitOnlyUserRefinedScenarioOverrides(
                         FinancialDataInput baseline,
                         FinancialDataInput overrides) {
@@ -2510,6 +2516,9 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 }
                 if (overrides.getTerminalGrowthRate() != null) {
                         unsupported.add("terminalGrowthRate");
+                }
+                if (isActiveOverride(overrides.getOverrideAssumptionReturnOnCapital())) {
+                        unsupported.add("overrideAssumptionReturnOnCapital");
                 }
                 if (!unsupported.isEmpty()) {
                         String unsupportedJson = unsupported.stream()
@@ -2546,8 +2555,10 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 || adjusted.contains("operatingMarginNextYear")
                                 || adjusted.contains("targetPreTaxOperatingMargin")
                                 || adjusted.contains("convergenceYearMargin")
+                                || adjusted.contains("terminalRevenue")
                                 || adjusted.contains("salesToCapitalYears1To5")
                                 || adjusted.contains("salesToCapitalYears6To10")
+                                || adjusted.contains("overrideAssumptionReturnOnCapital")
                                 || adjusted.contains("sectorOverrides")
                                 || adjusted.contains("isExpensesCapitalize");
         }
@@ -2605,6 +2616,24 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                         provided,
                                         minimum,
                                         maximum);
+                        throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, msg);
+                }
+        }
+
+        private void validatePositiveScenarioInput(String field, Double value, String unit) {
+                if (value == null) {
+                        return;
+                }
+                if (!Double.isFinite(value) || value <= 0.0) {
+                        String provided = Double.isFinite(value)
+                                        ? String.format(Locale.ROOT, "%.4f", value)
+                                        : String.format(Locale.ROOT, "\"%s\"", value);
+                        String msg = String.format(Locale.ROOT,
+                                        "{\"error\":\"SCENARIO_INPUT_OUT_OF_BOUNDS\",\"message\":\"%s must be a positive finite %s value.\",\"field\":\"%s\",\"provided\":%s}",
+                                        field,
+                                        unit,
+                                        field,
+                                        provided);
                         throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, msg);
                 }
         }
@@ -2880,6 +2909,17 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         adjustedParameters.add("salesToCapitalYears6To10");
                 }
 
+                if (overrides.getTerminalRevenue() != null) {
+                        validatePositiveScenarioInput("terminalRevenue", overrides.getTerminalRevenue(), "revenue");
+                        baseline.setTerminalRevenue(overrides.getTerminalRevenue());
+                        baseline.setTerminalRevenueYear(overrides.getTerminalRevenueYear());
+                        log.info("   Override: terminalRevenue = {} at year {}",
+                                        overrides.getTerminalRevenue(),
+                                        overrides.getTerminalRevenueYear());
+                        overrideCount++;
+                        adjustedParameters.add("terminalRevenue");
+                }
+
                 if (overrides.getRiskFreeRate() != null) {
                         baseline.setRiskFreeRate(overrides.getRiskFreeRate());
                         log.info("   Override: riskFreeRate = {}", overrides.getRiskFreeRate());
@@ -2901,6 +2941,20 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         log.info("   Override: terminalGrowthRate = {}%", overrides.getTerminalGrowthRate());
                         overrideCount++;
                         adjustedParameters.add("terminalGrowthRate");
+                }
+
+                if (isActiveOverride(overrides.getOverrideAssumptionReturnOnCapital())) {
+                        validateBoundedScenarioInput(
+                                        "overrideAssumptionReturnOnCapital",
+                                        overrides.getOverrideAssumptionReturnOnCapital().getOverrideCost(),
+                                        MIN_TERMINAL_ROIC,
+                                        MAX_TERMINAL_ROIC,
+                                        "percent");
+                        baseline.setOverrideAssumptionReturnOnCapital(overrides.getOverrideAssumptionReturnOnCapital());
+                        log.info("   Override: overrideAssumptionReturnOnCapital = {}%",
+                                        overrides.getOverrideAssumptionReturnOnCapital().getOverrideCost());
+                        overrideCount++;
+                        adjustedParameters.add("overrideAssumptionReturnOnCapital");
                 }
 
                 // Copy caller-provided segments for multi-segment DCF breakdown and weighting.

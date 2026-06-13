@@ -10,7 +10,7 @@ Output: `report.md` and `index.html` (a faithful rendering). Always return the c
 
 ## Visible Spine (owned by the builder)
 
-Valuation View (point or range), Business Story, Growth, Profitability, Reinvestment, Risk, What The Price Would Need (only when the service returned diagnostics), Key Assumptions (each value labeled `anchor:<label>`, `user_input`, `service`, or the segment-level forms `segments:anchor:<label>` / `segments:user_input` from `guidedAnswerRecord`), Guided Judgment, Data Limits, Bottom Line, Sources, Audit (gates from run state, evidence/guided status, source class, skill and service versions). When an assumption came from segment-quantile anchors, describe it in prose as filing-based segment mix plus Damodaran industry quantiles — not as a filing fact and not as a recommendation.
+Valuation View (point or range), Business Story, Growth, Profitability, Reinvestment, Risk, What The Price Would Need (only when the service returned diagnostics), Projection Walk (when raw `financialDTO` arrays are supplied), Valuation Bridge and Terminal Value (when raw company/terminal DTOs are supplied), Scenario Cases (when a Scenario Book or scenario rows are supplied), Key Assumptions (each value labeled `anchor:<label>`, `user_input`, `service`, or the segment-level forms `segments:anchor:<label>` / `segments:user_input` from `guidedAnswerRecord`), Guided Judgment, Data Limits, Bottom Line, Sources, Audit (gates from run state, evidence/guided status, source class, skill and service versions). When an assumption came from segment-quantile anchors, describe it in prose as filing-based segment mix plus Damodaran industry quantiles — not as a filing fact and not as a recommendation.
 
 ## What The Model Writes
 

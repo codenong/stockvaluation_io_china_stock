@@ -50,6 +50,7 @@ public class FinancialDataInput {
                 + convergenceYearMargin
                 + ", salesToCapitalYears1To5=" + salesToCapitalYears1To5 + ", salesToCapitalYears6To10="
                 + salesToCapitalYears6To10
+                + ", terminalRevenue=" + terminalRevenue + ", terminalRevenueYear=" + terminalRevenueYear
                 + ", riskFreeRate=" + riskFreeRate + ", initialCostCapital=" + initialCostCapital + ", industry="
                 + industry + ", growthPatternOverride=" + growthPatternOverride
                 + ", researchedBaselineMode=" + researchedBaselineMode + ", requestPolicyMode=" + requestPolicyMode
@@ -91,6 +92,10 @@ public class FinancialDataInput {
     private Double convergenceYearMargin;
     private Double salesToCapitalYears1To5;
     private Double salesToCapitalYears6To10;
+    @JsonAlias({"terminal_revenue", "target_revenue", "revenue_year_10", "year_10_revenue"})
+    private Double terminalRevenue;
+    @JsonAlias({"terminal_revenue_year", "target_revenue_year", "revenue_target_year"})
+    private Integer terminalRevenueYear;
     private Double riskFreeRate;
     @JsonAlias("wacc")
     private Double initialCostCapital;
@@ -139,6 +144,8 @@ public class FinancialDataInput {
             this.convergenceYearMargin = financialDataInput.convergenceYearMargin;
             this.salesToCapitalYears1To5 = financialDataInput.salesToCapitalYears1To5;
             this.salesToCapitalYears6To10 = financialDataInput.salesToCapitalYears6To10;
+            this.terminalRevenue = financialDataInput.terminalRevenue;
+            this.terminalRevenueYear = financialDataInput.terminalRevenueYear;
             this.riskFreeRate = financialDataInput.riskFreeRate;
             this.initialCostCapital = financialDataInput.initialCostCapital;
             this.terminalGrowthRate = financialDataInput.terminalGrowthRate;

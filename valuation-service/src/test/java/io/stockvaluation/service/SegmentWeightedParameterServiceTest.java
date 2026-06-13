@@ -224,7 +224,7 @@ class SegmentWeightedParameterServiceTest {
     }
 
     @Test
-    void applySegmentWeightedParameters_withIndustryData_doesNotFloorSectorTargetMarginsToCompanyOverride() {
+    void applySegmentWeightedParameters_withIndustryData_fadesExceptionalSectorTargetMarginsAboveIndustry() {
         FinancialDataInput input = baselineInput();
         input.setOperatingMarginNextYear(36.0);
         input.setTargetPreTaxOperatingMargin(36.0);
@@ -260,9 +260,9 @@ class SegmentWeightedParameterServiceTest {
 
         SegmentWeightedParameters context = SegmentParameterContext.getParameters();
         assertNotNull(context);
-        assertEquals(31.2, input.getTargetPreTaxOperatingMargin(), 0.0001);
-        assertEquals(31.2, context.getSectorParameters("sector-a").getTargetPreTaxOperatingMargin(), 0.0001);
-        assertEquals(31.2, context.getSectorParameters("sector-b").getTargetPreTaxOperatingMargin(), 0.0001);
+        assertEquals(34.4, input.getTargetPreTaxOperatingMargin(), 0.0001);
+        assertEquals(34.4, context.getSectorParameters("sector-a").getTargetPreTaxOperatingMargin(), 0.0001);
+        assertEquals(34.4, context.getSectorParameters("sector-b").getTargetPreTaxOperatingMargin(), 0.0001);
     }
 
     @Test

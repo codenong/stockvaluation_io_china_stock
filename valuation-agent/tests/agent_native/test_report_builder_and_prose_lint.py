@@ -140,6 +140,142 @@ def test_report_builder_audit_block_carries_gates_and_assumption_sources():
     assert "| terminal growth | 2.5 percent | service |" in markdown
 
 
+def test_report_builder_renders_dcf_walk_bridge_terminal_and_scenarios():
+    build_report = _load("build_report")
+    markdown = build_report.build_report_markdown(
+        _report_data(
+            valuation_output={
+                "projectionYears": 3,
+                "companyDTO": {
+                    "pvCFOverNext10Years": 1200.0,
+                    "pvTerminalValue": 2800.0,
+                    "valueOfOperatingAssets": 4000.0,
+                    "cash": 500.0,
+                    "debt": 800.0,
+                    "valueOfEquity": 3700.0,
+                    "numberOfShares": 100.0,
+                    "estimatedValuePerShare": 37.0,
+                    "price": 30.0,
+                    "terminalCashFlow": 250.0,
+                    "terminalValue": 3500.0,
+                },
+                "financialDTO": {
+                    "revenues": [1000.0, 1100.0, 1210.0, 1331.0, 1364.0],
+                    "revenueGrowthRate": [None, 10.0, 10.0, 10.0, 2.5],
+                    "ebitOperatingMargin": [20.0, 22.0, 24.0, 25.0, 25.0],
+                    "ebitOperatingIncome": [200.0, 242.0, 290.4, 332.75, 341.0],
+                    "fcff": [None, 150.0, 180.0, 220.0, 230.0],
+                    "pvFcff": [0.0, 140.0, 155.0, 175.0, 0.0],
+                },
+                "terminalValueDTO": {
+                    "growthRate": 2.5,
+                    "costOfCapital": 8.0,
+                    "returnOnCapital": 12.0,
+                    "reinvestmentRate": 20.0,
+                },
+            },
+            scenario_book={
+                "scenarios": [
+                    {
+                        "scenario_id": "base",
+                        "label": "Base case",
+                        "type": "user_refined_scenario",
+                        "status": "completed",
+                        "source": "guided_user_judgment",
+                        "value_per_share": 37.0,
+                    }
+                ]
+            },
+        )
+    )
+
+    assert "## Projection Walk" in markdown
+    assert "| Year 3 | 1,331.00 | 10.00% | 25.00% | 332.75 | 220.00 | 175.00 |" in markdown
+    assert "## Valuation Bridge" in markdown
+    assert "| PV terminal value | 2,800.00 |" in markdown
+    assert "| Estimated value per share | 37.00 |" in markdown
+    assert "## Terminal Value" in markdown
+    assert "| Terminal return on capital | 12.00% |" in markdown
+    assert "| PV terminal share of operating assets | 70.00% |" in markdown
+    assert "## Scenario Cases" in markdown
+    assert "| Base case | user_refined_scenario | 37.00 | completed | guided_user_judgment |" in markdown
+    assert "Unavailable" not in markdown
+
+
+def test_report_builder_renders_service_driver_and_priced_in_expectation_tables():
+    build_report = _load("build_report")
+    markdown = build_report.build_report_markdown(
+        _report_data(
+            key_assumptions=[],
+            valuation_output={
+                "terminalValueDTO": {
+                    "growthRate": 2.5,
+                    "costOfCapital": 9.09,
+                    "returnOnCapital": 9.09,
+                },
+                "assumptionTransparency": {
+                    "operatingAssumptions": {
+                        "revenueGrowthRateYears2To5": 17.33,
+                        "operatingMarginNextYear": 33.0,
+                        "targetOperatingMargin": 30.43,
+                        "convergenceYearMargin": 10.0,
+                        "salesToCapitalYears1To5": 3.55,
+                        "salesToCapitalYears6To10": 1.77,
+                        "revenueGrowthSource": "Valuation input baseline/override",
+                        "operatingMarginSource": "Single-industry mechanical fallback",
+                        "operatingMarginRationale": "Anchored to normalized company margin.",
+                        "salesToCapitalSource": "Valuation input baseline/override",
+                    },
+                    "discountRate": {
+                        "initialCostOfCapital": 10.05,
+                        "initialCostOfCapitalSource": "Final FCFF output",
+                        "equityRiskPremiumSource": "Configured ERP",
+                        "costOfCapitalFormula": "Terminal WACC = risk-free rate + country ERP.",
+                    },
+                    "marketImpliedExpectations": {
+                        "metrics": [
+                            {
+                                "label": "Operating Margin",
+                                "unit": "percent",
+                                "modelValue": 30.43,
+                                "impliedValue": 36.37,
+                                "gap": 5.94,
+                                "note": "Solved to current market price.",
+                            }
+                        ]
+                    },
+                    "pricedInExpectations": {
+                        "marketPrice": 358.16,
+                        "baseCase": {
+                            "intrinsicValue": 304.85,
+                            "gapToMarket": -53.31,
+                            "gapToMarketPct": -14.88,
+                        },
+                        "frontier": [
+                            {
+                                "operatingMargin": 35.43,
+                                "impliedRevenueGrowth": 17.38,
+                                "intrinsicValue": 358.16,
+                                "solved": True,
+                                "note": "Interpolated.",
+                            }
+                        ],
+                    },
+                },
+            },
+        )
+    )
+
+    assert "## Model Driver Snapshot" in markdown
+    assert "| Target operating margin | 30.43% | Single-industry mechanical fallback | Anchored to normalized company margin. |" in markdown
+    assert "## What The Price Would Need" in markdown
+    assert "| Operating Margin | 30.43% | 36.37% | 5.94% | Solved to current market price. |" in markdown
+    assert "## Priced-In Expectations" in markdown
+    assert "Base case value is 304.85 versus market price 358.16. Gap to market is -53.31 (-14.88%)." in markdown
+    assert "| 35.43% | 17.38% | 358.16 | Solved | Interpolated. |" in markdown
+    assert "Unavailable" not in markdown
+
+
 def test_report_builder_renders_selected_anchor_explanation():
     build_report = _load("build_report")
     data = _report_data(

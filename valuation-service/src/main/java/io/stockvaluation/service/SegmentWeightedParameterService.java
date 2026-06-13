@@ -25,7 +25,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static io.stockvaluation.service.GrowthCalculatorService.adjustAnnualGrowth2_5years;
-import static io.stockvaluation.utils.Helper.targetOperatingMargin;
+import static io.stockvaluation.utils.Helper.companyAnchoredTargetOperatingMargin;
 
 @Service
 @Slf4j
@@ -445,7 +445,7 @@ public class SegmentWeightedParameterService {
             Double segmentTargetMargin;
             if (inputStatDist.isPresent()) {
                 segmentTargetMargin = convertPercentage(
-                        targetOperatingMargin(
+                        companyAnchoredTargetOperatingMargin(
                                 inputStatDist.get().getPreTaxOperatingMarginFirstQuartile(),
                                 inputStatDist.get().getPreTaxOperatingMarginMedian(),
                                 inputStatDist.get().getPreTaxOperatingMarginThirdQuartile(),
@@ -640,7 +640,7 @@ public class SegmentWeightedParameterService {
             Double segmentTargetMargin;
             if (inputStatDist.isPresent()) {
                 segmentTargetMargin = convertPercentage(
-                        targetOperatingMargin(
+                        companyAnchoredTargetOperatingMargin(
                                 inputStatDist.get().getPreTaxOperatingMarginFirstQuartile(),
                                 inputStatDist.get().getPreTaxOperatingMarginMedian(),
                                 inputStatDist.get().getPreTaxOperatingMarginThirdQuartile(),

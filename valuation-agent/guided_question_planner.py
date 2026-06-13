@@ -14,6 +14,10 @@ PLANNING_RULE = "story_to_driver_materiality_cap_15_no_minimum"
 SUPPORTED_USER_SCENARIO_FIELDS = {
     "net_proceeds",
     "revenue_growth",
+    "terminal_revenue",
+    "target_revenue",
+    "revenue_year_10",
+    "year_10_revenue",
     "operating_margin_next_year",
     "operating_margin",
     "target_operating_margin",
@@ -29,6 +33,10 @@ SUPPORTED_USER_SCENARIO_FIELDS = {
 
 FIELD_BOUNDS = {
     "net_proceeds": (0.0, 10_000_000_000_000.0),
+    "terminal_revenue": (0.01, 100_000_000_000_000.0),
+    "target_revenue": (0.01, 100_000_000_000_000.0),
+    "revenue_year_10": (0.01, 100_000_000_000_000.0),
+    "year_10_revenue": (0.01, 100_000_000_000_000.0),
     "margin_convergence_year": (1.0, 10.0),
     "convergence_year_margin": (1.0, 10.0),
     "sales_to_capital": (0.05, 20.0),
@@ -40,6 +48,9 @@ DRIVER_TO_OVERRIDE_FIELD = {
     "net_proceeds": "net_proceeds",
     "offering_basis": "net_proceeds",
     "revenue_growth": "revenue_growth",
+    "terminal_revenue": "terminal_revenue",
+    "target_revenue": "terminal_revenue",
+    "year_10_revenue": "terminal_revenue",
     "segment_revenue_growth": "sector_overrides",
     "operating_margin": "operating_margin",
     "segment_operating_margin": "sector_overrides",
@@ -67,6 +78,10 @@ DRIVER_ALIASES = {
     "proceeds": "net_proceeds",
     "net_proceeds": "net_proceeds",
     "growth": "revenue_growth",
+    "terminal_revenue": "terminal_revenue",
+    "target_revenue": "terminal_revenue",
+    "year_10_revenue": "terminal_revenue",
+    "revenue_end_state": "terminal_revenue",
     "margin": "operating_margin",
     "profitability": "operating_margin",
     "reinvestment": "reinvestment_sales_to_capital",
@@ -133,6 +148,9 @@ DRIVER_TO_FAMILY = {
     "net_proceeds": "capital_claims",
     "offering_basis": "capital_claims",
     "revenue_growth": "revenue_runway",
+    "terminal_revenue": "revenue_runway",
+    "target_revenue": "revenue_runway",
+    "year_10_revenue": "revenue_runway",
     "segment_revenue_growth": "revenue_runway",
     "operating_margin": "margin_path",
     "segment_operating_margin": "margin_path",
@@ -1060,7 +1078,7 @@ def _attach_anchor_set(
                 f'D requires a number ({unit}). Pass it as {{"choice": "D", "value": <number>}}; '
                 "it is recorded as user_input, not a service anchor."
             ),
-            "model_action": "report-only user judgment",
+            "model_action": "user scenario override",
             "confidence": "low",
             "report_label": "Custom user judgment",
         }
@@ -1232,10 +1250,19 @@ def _bounded_choices(default_story: str, field: str | None, value: Any, model_ac
         },
         {
             "label": "D",
-            "story": "Use a custom scenario note.",
-            "assumption_effect": "Requires a user-supplied assumption before it can become a model override.",
-            "override_candidate": {"field": None, "value": None},
-            "model_action": "unsupported" if model_action == "unsupported" else "report-only user judgment",
+            "story": "Enter your own number. D requires a numeric value.",
+            "assumption_effect": "A user-supplied value overrides the guided choices; it is recorded as user input.",
+            "override_candidate": {"field": field if model_action == "user scenario override" else None, "value": None},
+            "model_action": (
+                "user scenario override"
+                if model_action == "user scenario override" and field in SUPPORTED_USER_SCENARIO_FIELDS
+                else ("unsupported" if model_action == "unsupported" else "report-only user judgment")
+            ),
+            "requires_numeric_value": model_action == "user scenario override" and field in SUPPORTED_USER_SCENARIO_FIELDS,
+            "custom_value_instruction": (
+                f'D requires a number. Pass it as {{"choice": "D", "value": <number>}}; '
+                "it is recorded as user_input."
+            ),
             "confidence": "low",
             "report_label": "Custom user judgment",
         },
@@ -1714,6 +1741,8 @@ def _baseline_assumption_for_driver(context: dict[str, Any], driver: str) -> str
 
 
 def _default_story_for_driver(company: str, driver: str) -> str:
+    if driver in {"terminal_revenue", "target_revenue", "year_10_revenue"}:
+        return f"Use an end-state revenue view for {company}; the service derives the implied growth path."
     if driver in {"revenue_growth", "segment_revenue_growth"}:
         return f"Use a company-specific growth runway for {company}, but do not assume indefinite above-industry growth."
     if driver in {"operating_margin", "segment_operating_margin", "margin_path"}:

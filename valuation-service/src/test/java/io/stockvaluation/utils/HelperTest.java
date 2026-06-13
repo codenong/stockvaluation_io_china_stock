@@ -79,7 +79,7 @@ class HelperTest {
         double oldTarget = Helper.targetOperatingMargin(13.0, 20.0, 22.0, 32.0, 5.0);
         double newTarget = Helper.companyAnchoredTargetOperatingMargin(13.0, 20.0, 22.0, 32.0, 5.0);
 
-        assertEquals(32.0, newTarget, 1e-9);          // anchored on the company, not capped at the industry
+        assertEquals(31.0, newTarget, 1e-9);          // faded modestly, still not capped at the industry
         assertTrue(oldTarget < 32.0);                  // old behavior dragged the franchise below its own margin
         assertTrue(newTarget > oldTarget);             // un-clamping lifts the target back to reality
     }
@@ -96,5 +96,14 @@ class HelperTest {
         // Unusable company signal -> industry median fallback (not zero, not a crash).
         assertEquals(20.0, Helper.companyAnchoredTargetOperatingMargin(13.0, 20.0, 22.0, 0.0, 15.0), 1e-9);
         assertEquals(20.0, Helper.companyAnchoredTargetOperatingMargin(13.0, 20.0, 22.0, Double.NaN, 15.0), 1e-9);
+    }
+
+    @Test
+    void companyAnchoredTargetMarginFadesExceptionalMarginsWithoutIndustryClamp() {
+        double target = Helper.companyAnchoredTargetOperatingMargin(18.0, 24.0, 30.0, 46.8, 25.0);
+
+        assertEquals(38.4, target, 1e-9);
+        assertTrue(target < 46.8);
+        assertTrue(target > 30.0);
     }
 }

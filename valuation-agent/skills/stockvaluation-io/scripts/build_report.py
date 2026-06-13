@@ -56,11 +56,67 @@ def _text(value) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
+def _dict(value) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _list(value) -> list:
+    return value if isinstance(value, list) else []
+
+
+def _number(value) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _fmt(value, suffix: str = "", decimals: int = 2) -> str:
+    number = _number(value)
+    if number is None:
+        return ""
+    formatted = f"{number:,.{decimals}f}"
+    return f"{formatted}{suffix}" if suffix else formatted
+
+
+def _fmt_unit(value, unit: str = "") -> str:
+    normalized = _text(unit).lower()
+    if normalized in {"percent", "%"}:
+        return _fmt(value, "%")
+    if normalized in {"multiple", "x", "ratio"}:
+        return _fmt(value, "x")
+    return _fmt(value)
+
+
+def _first_present(*values):
+    for value in values:
+        if value not in (None, ""):
+            return value
+    return None
+
+
 def _table(headers: list[str], rows: list[list[str]]) -> list[str]:
     lines = ["| " + " | ".join(headers) + " |", "| " + " | ".join("---" for _ in headers) + " |"]
     for row in rows:
         lines.append("| " + " | ".join(str(cell) for cell in row) + " |")
     return lines
+
+
+def _valuation_output(data: dict) -> dict:
+    for key in ("valuation_output", "valuationOutput", "raw_valuation", "rawValuation", "valuation_json", "valuationJson"):
+        value = data.get(key)
+        if isinstance(value, dict):
+            return value
+    valuation = data.get("valuation")
+    if isinstance(valuation, dict) and any(key in valuation for key in ("companyDTO", "financialDTO", "terminalValueDTO")):
+        return valuation
+    return {}
+
+
+def _series(container: dict, key: str) -> list:
+    value = container.get(key)
+    return value if isinstance(value, list) else []
 
 
 def _valuation_view(data: dict) -> list[str]:
@@ -102,8 +158,143 @@ def _market_implied_section(data: dict) -> list[str]:
             continue
         table_rows.append([assumption, required, _text(row.get("note"))])
     if not table_rows:
-        return []
+        return _service_market_implied_section(data)
     return ["## What The Price Would Need", ""] + _table(["Assumption", "Required value", "Note"], table_rows)
+
+
+def _service_market_implied_section(data: dict) -> list[str]:
+    transparency = _dict(_valuation_output(data).get("assumptionTransparency"))
+    diagnostics = _dict(transparency.get("marketImpliedExpectations"))
+    rows = []
+    for metric in _list(diagnostics.get("metrics")):
+        if not isinstance(metric, dict):
+            continue
+        label = _text(metric.get("label") or metric.get("key"))
+        if not label:
+            continue
+        unit = _text(metric.get("unit"))
+        rows.append(
+            [
+                label,
+                _fmt_unit(metric.get("modelValue"), unit),
+                _fmt_unit(metric.get("impliedValue"), unit),
+                _fmt_unit(metric.get("gap"), unit),
+                _text(metric.get("note")),
+            ]
+        )
+    if not rows:
+        return []
+    return ["## What The Price Would Need", ""] + _table(
+        ["Driver", "Model", "Market-implied", "Gap", "Note"],
+        rows,
+    )
+
+
+def _service_key_drivers_section(data: dict) -> list[str]:
+    if data.get("key_assumptions"):
+        return []
+    valuation = _valuation_output(data)
+    transparency = _dict(valuation.get("assumptionTransparency"))
+    operating = _dict(transparency.get("operatingAssumptions"))
+    discount = _dict(transparency.get("discountRate"))
+    terminal = _dict(valuation.get("terminalValueDTO"))
+    rows = []
+
+    def add(label: str, value, unit: str = "", source: str = "", rationale: str = "") -> None:
+        formatted = _fmt_unit(value, unit)
+        if formatted:
+            rows.append([label, formatted, _text(source), _text(rationale)])
+
+    add(
+        "Revenue growth years 2-5",
+        operating.get("revenueGrowthRateYears2To5"),
+        "percent",
+        operating.get("revenueGrowthSource"),
+        operating.get("revenueGrowthRationale"),
+    )
+    add(
+        "Operating margin next year",
+        operating.get("operatingMarginNextYear"),
+        "percent",
+        operating.get("operatingMarginSource"),
+        operating.get("operatingMarginRationale"),
+    )
+    add(
+        "Target operating margin",
+        operating.get("targetOperatingMargin"),
+        "percent",
+        operating.get("operatingMarginSource"),
+        operating.get("operatingMarginRationale"),
+    )
+    add("Margin convergence year", operating.get("convergenceYearMargin"))
+    add(
+        "Sales-to-capital years 1-5",
+        operating.get("salesToCapitalYears1To5"),
+        "multiple",
+        operating.get("salesToCapitalSource"),
+        operating.get("salesToCapitalRationale"),
+    )
+    add(
+        "Sales-to-capital years 6-10",
+        operating.get("salesToCapitalYears6To10"),
+        "multiple",
+        operating.get("salesToCapitalSource"),
+        operating.get("salesToCapitalRationale"),
+    )
+    add(
+        "Initial cost of capital",
+        discount.get("initialCostOfCapital"),
+        "percent",
+        discount.get("initialCostOfCapitalSource"),
+    )
+    add(
+        "Terminal cost of capital",
+        _first_present(terminal.get("costOfCapital"), discount.get("terminalCostOfCapital")),
+        "percent",
+        discount.get("equityRiskPremiumSource"),
+        discount.get("costOfCapitalFormula"),
+    )
+    add("Terminal growth", terminal.get("growthRate"), "percent")
+    add("Terminal return on capital", terminal.get("returnOnCapital"), "percent")
+    if not rows:
+        return []
+    has_detail = any(row[2] or row[3] for row in rows)
+    if has_detail:
+        return ["## Model Driver Snapshot", ""] + _table(["Driver", "Value", "Source", "Rationale"], rows)
+    return ["## Model Driver Snapshot", ""] + _table(["Driver", "Value"], [row[:2] for row in rows])
+
+
+def _priced_in_expectations_section(data: dict) -> list[str]:
+    transparency = _dict(_valuation_output(data).get("assumptionTransparency"))
+    priced_in = _dict(transparency.get("pricedInExpectations"))
+    base_case = _dict(priced_in.get("baseCase"))
+    frontier = _list(priced_in.get("frontier"))
+    lines: list[str] = []
+    base_value = _fmt(base_case.get("intrinsicValue"))
+    market_price = _fmt(priced_in.get("marketPrice"))
+    if base_value and market_price:
+        gap = _fmt(base_case.get("gapToMarket"))
+        gap_pct = _fmt(base_case.get("gapToMarketPct"), "%")
+        detail = f"Base case value is {base_value} versus market price {market_price}."
+        if gap and gap_pct:
+            detail += f" Gap to market is {gap} ({gap_pct})."
+        lines.extend(["## Priced-In Expectations", "", detail, ""])
+    rows = []
+    for row in frontier:
+        if not isinstance(row, dict):
+            continue
+        margin = _fmt(row.get("operatingMargin"), "%")
+        implied_growth = _fmt(row.get("impliedRevenueGrowth"), "%")
+        value = _fmt(row.get("intrinsicValue"))
+        if not margin or not implied_growth:
+            continue
+        status = "Solved" if row.get("solved") is True else "Nearest sampled point"
+        rows.append([margin, implied_growth, value, status, _text(row.get("note"))])
+    if rows:
+        if not lines:
+            lines.extend(["## Priced-In Expectations", ""])
+        lines.extend(_table(["Operating margin", "Implied growth", "Value/share", "Status", "Note"], rows))
+    return lines
 
 
 def _key_assumptions_section(data: dict) -> list[str]:
@@ -126,6 +317,128 @@ def _key_assumptions_section(data: dict) -> list[str]:
     if has_source_detail:
         return ["## Key Assumptions", ""] + _table(["Driver", "Value", "Source", "Source detail"], rows)
     return ["## Key Assumptions", ""] + _table(["Driver", "Value", "Source"], [row[:3] for row in rows])
+
+
+def _projection_walk_section(data: dict) -> list[str]:
+    valuation = _valuation_output(data)
+    financial = _dict(valuation.get("financialDTO"))
+    revenues = _series(financial, "revenues")
+    if not revenues:
+        return []
+    revenue_growth = _series(financial, "revenueGrowthRate")
+    margins = _series(financial, "ebitOperatingMargin")
+    ebit = _series(financial, "ebitOperatingIncome")
+    fcff = _series(financial, "fcff")
+    pv_fcff = _series(financial, "pvFcff")
+    projection_years = int(_number(valuation.get("projectionYears")) or max(0, len(revenues) - 2))
+    max_year = min(projection_years, len(revenues) - 2, 10)
+    rows: list[list[str]] = []
+    for year in range(0, max_year + 1):
+        rows.append(
+            [
+                "Base" if year == 0 else f"Year {year}",
+                _fmt(_first_present(revenues[year] if year < len(revenues) else None)),
+                _fmt(revenue_growth[year] if year < len(revenue_growth) else None, "%"),
+                _fmt(margins[year] if year < len(margins) else None, "%"),
+                _fmt(ebit[year] if year < len(ebit) else None),
+                _fmt(fcff[year] if year < len(fcff) else None),
+                _fmt(pv_fcff[year] if year < len(pv_fcff) else None),
+            ]
+        )
+    if len(rows) <= 1:
+        return []
+    return ["## Projection Walk", ""] + _table(
+        ["Year", "Revenue", "Growth", "EBIT margin", "EBIT", "FCFF", "PV FCFF"],
+        rows,
+    )
+
+
+def _valuation_bridge_section(data: dict) -> list[str]:
+    valuation = _valuation_output(data)
+    company = _dict(valuation.get("companyDTO"))
+    rows = []
+    for label, value, suffix in (
+        ("PV explicit cash flows", company.get("pvCFOverNext10Years"), ""),
+        ("PV terminal value", company.get("pvTerminalValue"), ""),
+        ("Operating asset value", company.get("valueOfOperatingAssets"), ""),
+        ("Cash", company.get("cash"), ""),
+        ("Non-operating assets", company.get("nonOperatingAssets"), ""),
+        ("Debt", company.get("debt"), ""),
+        ("Minority interests", company.get("minorityInterests"), ""),
+        ("Equity value", company.get("valueOfEquity"), ""),
+        ("Option value", company.get("valueOfOptions"), ""),
+        ("Common equity value", company.get("valueOfEquityInCommonStock"), ""),
+        ("Shares", company.get("numberOfShares"), ""),
+        ("Estimated value per share", company.get("estimatedValuePerShare"), ""),
+        ("Market price", company.get("price"), ""),
+        ("Price as percent of value", company.get("priceAsPercentageOfValue"), "%"),
+    ):
+        formatted = _fmt(value, suffix)
+        if formatted:
+            rows.append([label, formatted])
+    if not rows:
+        return []
+    return ["## Valuation Bridge", ""] + _table(["Item", "Value"], rows)
+
+
+def _terminal_value_section(data: dict) -> list[str]:
+    valuation = _valuation_output(data)
+    terminal = _dict(valuation.get("terminalValueDTO"))
+    company = _dict(valuation.get("companyDTO"))
+    rows = []
+    for label, value, suffix in (
+        ("Terminal growth", terminal.get("growthRate"), "%"),
+        ("Terminal cost of capital", terminal.get("costOfCapital"), "%"),
+        ("Terminal return on capital", terminal.get("returnOnCapital"), "%"),
+        ("Terminal reinvestment rate", terminal.get("reinvestmentRate"), "%"),
+        ("Terminal cash flow", company.get("terminalCashFlow"), ""),
+        ("Terminal value", company.get("terminalValue"), ""),
+        ("PV terminal value", company.get("pvTerminalValue"), ""),
+    ):
+        formatted = _fmt(value, suffix)
+        if formatted:
+            rows.append([label, formatted])
+    pv_terminal = _number(company.get("pvTerminalValue"))
+    operating_assets = _number(company.get("valueOfOperatingAssets"))
+    if pv_terminal is not None and operating_assets and operating_assets != 0:
+        rows.append(["PV terminal share of operating assets", _fmt(pv_terminal / operating_assets * 100.0, "%")])
+    if not rows:
+        return []
+    return ["## Terminal Value", ""] + _table(["Driver", "Value"], rows)
+
+
+def _scenario_section(data: dict) -> list[str]:
+    book = _dict(data.get("scenario_book") or data.get("scenarioBook"))
+    scenarios = _list(book.get("scenarios"))
+    if not scenarios:
+        scenarios = _list(_dict(book.get("book")).get("scenarios"))
+    if not scenarios:
+        scenarios = _list(data.get("scenarios"))
+    rows = []
+    for scenario in scenarios:
+        if not isinstance(scenario, dict):
+            continue
+        label = _text(scenario.get("label") or scenario.get("scenario_id") or scenario.get("scenarioId"))
+        scenario_type = _text(scenario.get("type"))
+        status = _text(scenario.get("status"))
+        source = _text(scenario.get("source"))
+        value = _scenario_value_text(scenario)
+        if label and (value or status or source):
+            rows.append([label, scenario_type, value, status, source])
+    if not rows:
+        return []
+    return ["## Scenario Cases", ""] + _table(["Case", "Type", "Value/share", "Status", "Source"], rows)
+
+
+def _scenario_value_text(scenario: dict) -> str:
+    for key in ("value_per_share", "valuePerShare", "estimatedValuePerShare", "estimated_value_per_share"):
+        formatted = _fmt(scenario.get(key))
+        if formatted:
+            return formatted
+    response = _dict(scenario.get("service_response") or scenario.get("serviceResponse"))
+    company = _dict(response.get("companyDTO"))
+    formatted = _fmt(company.get("estimatedValuePerShare"))
+    return formatted
 
 
 def _anchor_explanation_text(item: dict) -> str:
@@ -283,7 +596,13 @@ def build_report_markdown(data: dict) -> str:
             sections.append([f"## {heading}", "", body])
 
     for builder in (
+        _service_key_drivers_section,
         _market_implied_section,
+        _priced_in_expectations_section,
+        _projection_walk_section,
+        _valuation_bridge_section,
+        _terminal_value_section,
+        _scenario_section,
         _key_assumptions_section,
         _guided_judgment_section,
     ):

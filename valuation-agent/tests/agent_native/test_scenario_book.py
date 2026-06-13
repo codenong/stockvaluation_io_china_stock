@@ -331,6 +331,7 @@ def test_user_refined_scenario_rejects_explicit_only_and_direct_output_fields_in
                             "requestPolicyMode": "user_refined_scenario",
                             "initialCostCapital": 8.5,
                             "terminalGrowthRate": 3.0,
+                            "overrideAssumptionReturnOnCapital": {"overrideCost": 14.0},
                             "overrideAssumptionTaxRate": {"overrideCost": 21.0},
                             "growthPatternOverride": "THREE_STAGE",
                             "targetPrice": 500.0,

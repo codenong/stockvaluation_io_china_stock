@@ -57,9 +57,20 @@ MIN_MARGIN_CONVERGENCE_YEAR = 1.0
 MAX_MARGIN_CONVERGENCE_YEAR = 10.0
 MIN_SALES_TO_CAPITAL = 0.05
 MAX_SALES_TO_CAPITAL = 20.0
+MIN_TERMINAL_ROIC = 0.0
+MAX_TERMINAL_ROIC = 100.0
+MIN_TERMINAL_REVENUE_YEAR = 1.0
+MAX_TERMINAL_REVENUE_YEAR = 15.0
 
 SUPPORTED_OVERRIDE_FIELDS = {
     "revenue_growth",
+    "terminal_revenue",
+    "target_revenue",
+    "revenue_year_10",
+    "year_10_revenue",
+    "terminal_revenue_year",
+    "target_revenue_year",
+    "revenue_target_year",
     "operating_margin_next_year",
     "operating_margin",
     "target_operating_margin",
@@ -71,6 +82,9 @@ SUPPORTED_OVERRIDE_FIELDS = {
     "sales_to_capital_years_6_to_10",
     "wacc",
     "terminal_growth",
+    "terminal_roic",
+    "terminal_return_on_capital",
+    "terminal_return_on_invested_capital",
     "tax_rate",
     "segments",
     "sector_overrides",
@@ -117,6 +131,13 @@ AUTONOMOUS_RESEARCHED_FIELDS = {"revenue_growth", "operating_margin", "sales_to_
 USER_REFINED_SCENARIO_FIELDS = {
     "net_proceeds",
     "revenue_growth",
+    "terminal_revenue",
+    "target_revenue",
+    "revenue_year_10",
+    "year_10_revenue",
+    "terminal_revenue_year",
+    "target_revenue_year",
+    "revenue_target_year",
     "operating_margin_next_year",
     "operating_margin",
     "target_operating_margin",
@@ -437,7 +458,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                     **ticker_property,
                     "overrides": {
                         "type": "object",
-                        "description": "Supported keys: revenue_growth, operating_margin_next_year, operating_margin/target_operating_margin, margin_convergence_year, sales_to_capital, sales_to_capital_years_1_to_5, sales_to_capital_years_6_to_10, segments, sector_overrides, segment_economics, rd_capitalization (explicit governed accounting scenario only), leases (report-only AccountingAndClaims status), wacc, terminal_growth, tax_rate, growth_pattern_override, request_policy, rationale, evidence_used, evidence_packet, user_judgment, baseline_plausibility, assumption_judgment, guided_refinement.",
+                        "description": "Supported keys: revenue_growth, terminal_revenue, terminal_revenue_year, operating_margin_next_year, operating_margin/target_operating_margin, margin_convergence_year, sales_to_capital, sales_to_capital_years_1_to_5, sales_to_capital_years_6_to_10, segments, sector_overrides, segment_economics, rd_capitalization (explicit governed accounting scenario only), leases (report-only AccountingAndClaims status), wacc, terminal_growth, terminal_roic (explicit scenario only), tax_rate, growth_pattern_override, request_policy, rationale, evidence_used, evidence_packet, user_judgment, baseline_plausibility, assumption_judgment, guided_refinement.",
                         "additionalProperties": True,
                     },
                 },
@@ -1529,6 +1550,8 @@ def guided_prospectus_scenario_candidate(judgment: dict[str, Any]) -> dict[str, 
             _put_numeric_prospectus_scenario_value(scenario, unsupported, key, "net_proceeds", value)
         elif key == "revenue_growth":
             _put_numeric_prospectus_scenario_value(scenario, unsupported, key, "compound_annual_growth_2_5", value)
+        elif key in {"terminal_revenue", "target_revenue", "revenue_year_10", "year_10_revenue"}:
+            _put_numeric_prospectus_scenario_value(scenario, unsupported, key, "target_revenue", value)
         elif key == "operating_margin_next_year":
             _put_numeric_prospectus_scenario_value(scenario, unsupported, key, "operating_margin_next_year", value)
         elif key in {"operating_margin", "target_operating_margin", "target_pre_tax_operating_margin"}:
@@ -1640,6 +1663,8 @@ def prospectus_scenario_keys_for_source_field(source_key: str, value: Any) -> li
         return ["net_proceeds"]
     if source_key == "revenue_growth":
         return ["compound_annual_growth_2_5"]
+    if source_key in {"terminal_revenue", "target_revenue", "revenue_year_10", "year_10_revenue"}:
+        return ["target_revenue"]
     if source_key == "operating_margin_next_year":
         return ["operating_margin_next_year"]
     if source_key in {"operating_margin", "target_operating_margin", "target_pre_tax_operating_margin"}:
@@ -1784,6 +1809,33 @@ def map_recalculate_overrides(requested: dict[str, Any]) -> tuple[dict[str, Any]
             continue
         if key == "revenue_growth":
             mapped["compoundAnnualGrowth2_5"] = round(normalize_percent(number), 2)
+        elif key in {"terminal_revenue", "target_revenue", "revenue_year_10", "year_10_revenue"}:
+            if number <= 0:
+                unsupported[key] = {
+                    "value": sanitize_for_agent(value),
+                    "status": "scenario_input_out_of_bounds",
+                    "reason": "scenario_input_out_of_bounds",
+                    "message": f"{key} must be a positive finite revenue value.",
+                    "minimum": 0.0,
+                    "unit": "revenue",
+                }
+                continue
+            mapped["terminalRevenue"] = round(number, 2)
+        elif key in {"terminal_revenue_year", "target_revenue_year", "revenue_target_year"}:
+            rounded_year = round(number)
+            if (
+                not math.isclose(number, rounded_year, rel_tol=0.0, abs_tol=0.0001)
+                or not within_bounds(number, MIN_TERMINAL_REVENUE_YEAR, MAX_TERMINAL_REVENUE_YEAR)
+            ):
+                unsupported[key] = bounded_numeric_unsupported(
+                    key,
+                    value,
+                    MIN_TERMINAL_REVENUE_YEAR,
+                    MAX_TERMINAL_REVENUE_YEAR,
+                    "projection year",
+                )
+                continue
+            mapped["terminalRevenueYear"] = int(rounded_year)
         elif key == "operating_margin_next_year":
             mapped["operatingMarginNextYear"] = round(normalize_percent(number), 2)
         elif key == "operating_margin":
@@ -1842,6 +1894,23 @@ def map_recalculate_overrides(requested: dict[str, Any]) -> tuple[dict[str, Any]
             mapped["initialCostCapital"] = round(normalize_percent(number), 2)
         elif key == "terminal_growth":
             mapped["terminalGrowthRate"] = round(normalize_percent(number), 2)
+        elif key in {"terminal_roic", "terminal_return_on_capital", "terminal_return_on_invested_capital"}:
+            normalized = normalize_percent(number)
+            if not within_bounds(normalized, MIN_TERMINAL_ROIC, MAX_TERMINAL_ROIC):
+                unsupported[key] = bounded_numeric_unsupported(
+                    key,
+                    value,
+                    MIN_TERMINAL_ROIC,
+                    MAX_TERMINAL_ROIC,
+                    "percent",
+                )
+                continue
+            mapped["overrideAssumptionReturnOnCapital"] = {
+                "overrideCost": round(normalized, 2),
+                "isOverride": True,
+                "additionalInputValue": 0.0,
+                "additionalRadioValue": None,
+            }
         elif key == "tax_rate":
             mapped["overrideAssumptionTaxRate"] = {
                 "overrideCost": round(normalize_percent(number), 2),

@@ -87,6 +87,36 @@ def test_supported_non_default_choices_map_to_real_bounded_values():
     assert higher_judgment["scenario_label"] == "user-refined scenario"
 
 
+def test_terminal_revenue_end_state_question_maps_to_user_refined_scenario():
+    plan = build_guided_question_plan(
+        {
+            "company": "EndStateCo",
+            "ticker": "END",
+            "workflow_type": "ticker",
+            "evidence_items": [
+                _evidence(
+                    "terminal_revenue",
+                    evidence_summary="EndStateCo backlog and market-size evidence support a year-10 revenue view.",
+                    override_candidate={"field": "terminal_revenue", "value": 2_000.0},
+                )
+            ],
+        }
+    )
+    question = plan["questions"][0]
+    choices = {choice["label"]: choice for choice in question["bounded_choices"]}
+
+    assert question["driver"] == "terminal_revenue"
+    assert question["model_action"] == "user scenario override"
+    assert choices["D"]["model_action"] == "user scenario override"
+    assert choices["D"]["requires_numeric_value"] is True
+
+    judgment = build_user_judgment_package(plan, {question["id"]: {"choice": "D", "value": 2_500.0}})
+
+    assert judgment["mapped_assumptions"] == {"terminal_revenue": 2_500.0}
+    assert judgment["answers"][0]["anchor_label"] == "user_input"
+    assert judgment["scenario_label"] == "user-refined scenario"
+
+
 def test_supported_choices_respect_mcp_numeric_bounds():
     cases = [
         ("reinvestment_sales_to_capital", "sales_to_capital", 0.05, {"A": 0.05, "B": 0.05, "C": 0.06}),
@@ -1262,10 +1292,12 @@ def test_custom_choice_is_recorded_as_report_only_until_validated():
     question = plan["questions"][0]
     choices = {choice["label"]: choice for choice in question["bounded_choices"]}
 
-    assert choices["D"]["model_action"] == "report-only user judgment"
+    assert choices["D"]["model_action"] == "user scenario override"
+    assert choices["D"]["requires_numeric_value"] is True
     judgment = build_user_judgment_package(plan, {question["id"]: "D"})
     assert judgment["mapped_assumptions"] == {}
-    assert judgment["report_only_assumptions"]
+    assert judgment["unsupported_assumptions"]
+    assert judgment["answers"][0]["unsupported_or_report_only_reason"] == "invalid_or_missing_override_candidate"
 
 
 def test_custom_choice_with_numeric_value_maps_as_user_input():
