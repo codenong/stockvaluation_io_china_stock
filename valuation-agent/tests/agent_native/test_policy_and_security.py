@@ -354,7 +354,7 @@ def test_default_readme_keeps_runtime_guidance_user_facing():
     lower = readme.lower()
 
     assert "docker desktop or a compatible docker engine with compose" in lower
-    assert "runtime-and-data-details.md" in readme
+    assert "docs/runtime-and-data-details.md" not in readme
     assert "sourcequalitygate" not in lower
     assert "sec_user_agent" not in readme
     assert "bullbeargpt" not in lower
@@ -363,24 +363,31 @@ def test_default_readme_keeps_runtime_guidance_user_facing():
     assert "bootstrap_local_secrets.sh" not in readme
 
 
-def test_runtime_details_documents_agent_native_runtime_and_data_boundaries():
-    details_path = REPO_ROOT / "docs" / "runtime-and-data-details.md"
-    archived_details_path = (
-        REPO_ROOT / "docs" / "internal" / "archive" / "runtime-and-data-details.md"
+def test_runtime_boundaries_are_documented_in_canonical_sources():
+    compose = (REPO_ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
+    mcp_reference = (bundled_skill_dir() / "references" / "mcp-tools.md").read_text(encoding="utf-8")
+    workflow_reference = (bundled_skill_dir() / "references" / "workflow.md").read_text(encoding="utf-8")
+    method_reference = (bundled_skill_dir() / "references" / "valuation-method.md").read_text(encoding="utf-8")
+    field_definitions = (
+        REPO_ROOT
+        / "valuation-service"
+        / "src"
+        / "main"
+        / "resources"
+        / "data"
+        / "financial_field_definitions.json"
     )
-    if not details_path.exists() and archived_details_path.exists():
-        details_path = archived_details_path
-    details = details_path.read_text(encoding="utf-8")
-    lower = details.lower()
+    combined = "\n".join([compose, mcp_reference, workflow_reference, method_reference])
+    lower = combined.lower()
 
-    assert "docker-compose.local.yml" in details
+    assert not (REPO_ROOT / "docs" / "runtime-and-data-details.md").exists()
     assert "postgres" in lower
     assert "yfinance" in lower
     assert "valuation-service" in lower
-    assert "SEC_USER_AGENT" in details
-    assert "stockvaluation.researched_baseline" in details
-    assert "sourceQualityGate" in details
-    assert "valuation-service/src/main/resources/data/financial_field_definitions.json" in details
+    assert "SEC_USER_AGENT" in compose
+    assert "stockvaluation.researched_baseline" in mcp_reference
+    assert "sourceQualityGate" in mcp_reference
+    assert field_definitions.exists()
     assert "bullbeargpt" not in lower
     assert "angular" not in lower
 

@@ -191,8 +191,6 @@ Some inputs still come from outside your machine:
 
 This repo does not ship a fully local LLM stack.
 
-For runtime, data-source, and tool details, see [Runtime and data details](docs/runtime-and-data-details.md).
-
 ## Limits
 
 - Public filings and market-data providers control data coverage.
