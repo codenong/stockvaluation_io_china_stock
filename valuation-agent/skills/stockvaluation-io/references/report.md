@@ -6,7 +6,7 @@ The final report is assembled by code, not written from a template. Run `{baseDi
 python3 {baseDir}/scripts/build_report.py --input report_data.json --out-dir tmp/valuation-reports/<slug>
 ```
 
-Output: `report.md` and `index.html` (a faithful rendering). Always return the clickable `index.html` link after the final report; skip the artifact only when local file creation is unavailable, and say so.
+Output: `report.md` and `index.html`. The HTML artifact is a designed local report packet: it keeps the Markdown report intact while adding a summary panel, driver cards, market-expectation context, and simple local visuals when structured data is available. By default, `build_report.py` opens `index.html` in the user's default browser after writing it. Use `--no-open` or `STOCKVALUATION_OPEN_REPORT=0` for CI, automation, or tests. Always return the clickable `index.html` link after the final report; skip the artifact only when local file creation is unavailable, and say so.
 
 ## Visible Spine (owned by the builder)
 

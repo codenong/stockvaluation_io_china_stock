@@ -29,7 +29,7 @@ The MCP server tracks each run. Always pass the `run_id` returned by `stockvalua
 5. Stop at the evidence review gate (`{baseDir}/references/workflow.md`); record the outcome via `gate_records`.
 6. Run baseline plausibility and the method checks (`{baseDir}/references/valuation-method.md`), produce `assumption_judgment`, and auto-recalculate once via `stockvaluation.recalculate` with `request_policy.mode = "autonomous_researched"` when a governed change is supported. Do not hand-compute valuation math.
 7. Run guided refinement: `stockvaluation.plan_guided_questions` with the `run_id` (the server attaches anchored low/base/high choices), ask one question at a time, then `stockvaluation.apply_guided_answers` and one final recalculation with `request_policy.mode = "user_refined_scenario"`. See `{baseDir}/references/workflow.md`.
-8. Build the report with `{baseDir}/scripts/build_report.py` per `{baseDir}/references/report.md`; the prose linter runs inside it. Return the clickable `index.html` link.
+8. Build the report with `{baseDir}/scripts/build_report.py` per `{baseDir}/references/report.md`; the prose linter runs inside it and the generated `index.html` opens automatically unless disabled with `--no-open` or `STOCKVALUATION_OPEN_REPORT=0`. Return the clickable `index.html` link.
 
 ## Prospectus Workflow
 

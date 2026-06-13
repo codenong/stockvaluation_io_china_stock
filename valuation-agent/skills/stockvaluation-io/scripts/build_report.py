@@ -27,7 +27,9 @@ import argparse
 import datetime as dt
 import importlib.util
 import json
+import os
 import sys
+import webbrowser
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -630,11 +632,36 @@ def build_report_markdown(data: dict) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _browser_open_default() -> bool:
+    value = os.environ.get("STOCKVALUATION_OPEN_REPORT", "1").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
+def _open_report_in_browser(html_path: Path, renderer) -> bool:
+    try:
+        return bool(webbrowser.open_new_tab(renderer._file_uri(html_path)))
+    except Exception:
+        return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build the StockValuation report from structured run data.")
     parser.add_argument("--input", type=Path, default=None, help="Report data JSON; defaults to stdin.")
     parser.add_argument("--out-dir", type=Path, required=True, help="Directory for report artifacts.")
     parser.add_argument("--skip-html", action="store_true", help="Emit markdown only.")
+    parser.add_argument(
+        "--open-browser",
+        dest="open_browser",
+        action="store_true",
+        default=None,
+        help="Open the generated HTML report in the default browser.",
+    )
+    parser.add_argument(
+        "--no-open",
+        dest="open_browser",
+        action="store_false",
+        help="Do not open the generated HTML report.",
+    )
     args = parser.parse_args()
 
     raw = args.input.read_text(encoding="utf-8") if args.input else sys.stdin.read()
@@ -660,11 +687,20 @@ def main() -> int:
         html_path = out_dir / "index.html"
         generated_at = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z")
         html_path.write_text(
-            renderer.build_html(markdown, title, _text(data.get("company")) or None, _text(data.get("ticker")) or None, generated_at),
+            renderer.build_html(
+                markdown,
+                title,
+                _text(data.get("company")) or None,
+                _text(data.get("ticker")) or None,
+                generated_at,
+                report_data=data,
+            ),
             encoding="utf-8",
         )
         outputs["html"] = str(html_path)
         outputs["browser_link"] = renderer._file_uri(html_path)
+        should_open = args.open_browser if args.open_browser is not None else _browser_open_default()
+        outputs["browser_opened"] = _open_report_in_browser(html_path, renderer) if should_open else False
 
     print(json.dumps(outputs, indent=2))
     return 0

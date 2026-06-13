@@ -1,5 +1,6 @@
 """M4: code-assembled report builder and deterministic prose linter."""
 
+import io
 import importlib.util
 import json
 import subprocess
@@ -289,6 +290,61 @@ def test_report_builder_renders_service_driver_and_priced_in_expectation_tables(
     assert "Unavailable" not in markdown
 
 
+def test_html_renderer_builds_report_packet_from_structured_data():
+    build_report = _load("build_report")
+    renderer = _load("render_report_html")
+    data = _report_data(
+        valuation={"point": {"value_per_share": 37.0}},
+        valuation_output={
+            "companyDTO": {
+                "price": 30.0,
+                "priceAsPercentageOfValue": -18.92,
+                "valueOfEquity": 3700.0,
+                "pvCFOverNext10Years": 1200.0,
+                "pvTerminalValue": 2800.0,
+                "cash": 500.0,
+                "debt": 800.0,
+            },
+            "financialDTO": {
+                "revenues": [1000.0, 1100.0, 1210.0, 1331.0],
+                "ebitOperatingMargin": [20.0, 22.0, 24.0, 25.0],
+                "fcff": [None, 150.0, 180.0, 220.0],
+            },
+            "assumptionTransparency": {
+                "pricedInExpectations": {
+                    "marketPrice": 30.0,
+                    "baseCase": {"intrinsicValue": 37.0, "gapToMarketPct": -18.92},
+                    "frontier": [
+                        {
+                            "operatingMargin": 25.0,
+                            "impliedRevenueGrowth": 9.0,
+                            "solved": True,
+                        }
+                    ],
+                }
+            },
+        }
+    )
+    markdown = build_report.build_report_markdown(data)
+    html_text = renderer.build_html(
+        markdown,
+        "Space Exploration Technologies Valuation Report",
+        "Space Exploration Technologies",
+        "SPCX",
+        "2026-06-13 12:00 UTC",
+        report_data=data,
+    )
+
+    assert 'class="report-brief"' in html_text
+    assert 'class="market-panel"' in html_text
+    assert 'class="driver-grid"' in html_text
+    assert 'class="visual-grid"' in html_text
+    assert "37.00 USD" in html_text
+    assert "25.00%" in html_text
+    assert "margin needs about" in html_text
+    assert "Valuation bridge" in html_text
+
+
 def test_report_builder_renders_selected_anchor_explanation():
     build_report = _load("build_report")
     data = _report_data(
@@ -401,7 +457,7 @@ def test_report_builder_refuses_to_render_advice_like_language(tmp_path):
 def test_report_builder_writes_markdown_and_faithful_html(tmp_path):
     out_dir = tmp_path / "out"
     result = subprocess.run(
-        [sys.executable, str(SCRIPTS_DIR / "build_report.py"), "--out-dir", str(out_dir)],
+        [sys.executable, str(SCRIPTS_DIR / "build_report.py"), "--out-dir", str(out_dir), "--no-open"],
         input=json.dumps(_report_data()),
         text=True,
         capture_output=True,
@@ -413,12 +469,30 @@ def test_report_builder_writes_markdown_and_faithful_html(tmp_path):
     markdown = (out_dir / "report.md").read_text(encoding="utf-8")
     html_text = (out_dir / "index.html").read_text(encoding="utf-8")
     assert output["browser_link"].startswith("file://")
+    assert output["browser_opened"] is False
     for heading in ("Valuation View", "Business Story", "Guided Judgment", "Bottom Line", "Audit"):
         assert f"## {heading}" in markdown or heading in markdown
         assert heading in html_text
+    assert 'class="report-brief"' in html_text
+    assert 'class="driver-grid"' in html_text
     assert "anchor:base" in html_text
     assert "<table>" in html_text
     assert "4.07" in html_text
+
+
+def test_report_builder_opens_html_report_by_default(monkeypatch, tmp_path, capsys):
+    build_report = _load("build_report")
+    opened_urls = []
+    monkeypatch.setattr(build_report.webbrowser, "open_new_tab", lambda url: opened_urls.append(url) or True)
+    monkeypatch.setattr(sys, "argv", ["build_report.py", "--out-dir", str(tmp_path / "out")])
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(_report_data())))
+
+    assert build_report.main() == 0
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["ok"] is True
+    assert output["browser_opened"] is True
+    assert opened_urls == [output["browser_link"]]
 
 
 def test_no_stop_slop_reference_remains_in_skill_bundle():
