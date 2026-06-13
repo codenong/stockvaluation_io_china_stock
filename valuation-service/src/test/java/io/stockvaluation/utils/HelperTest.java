@@ -13,6 +13,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HelperTest {
 
@@ -69,5 +70,31 @@ class HelperTest {
         industryGlobal.setMarketDebtToCapital(0.0);
         assertEquals(9.625, Helper.costOfCapital(costOfCapital, basicInfo, financialData, null, industryGlobal,
                 Optional.empty()), 1e-9);
+    }
+
+    @Test
+    void companyAnchoredTargetMarginKeepsHighMarginFranchiseAboveIndustry() {
+        // Winner: company earns a normalized 32% in an industry whose quartiles top out at 22%.
+        // Old logic drags the target below the company's own margin; new logic anchors on it.
+        double oldTarget = Helper.targetOperatingMargin(13.0, 20.0, 22.0, 32.0, 5.0);
+        double newTarget = Helper.companyAnchoredTargetOperatingMargin(13.0, 20.0, 22.0, 32.0, 5.0);
+
+        assertEquals(32.0, newTarget, 1e-9);          // anchored on the company, not capped at the industry
+        assertTrue(oldTarget < 32.0);                  // old behavior dragged the franchise below its own margin
+        assertTrue(newTarget > oldTarget);             // un-clamping lifts the target back to reality
+    }
+
+    @Test
+    void companyAnchoredTargetMarginDoesNotLiftLaggardOrCarryPeak() {
+        // Average company sitting at the industry median is unchanged.
+        assertEquals(20.0, Helper.companyAnchoredTargetOperatingMargin(13.0, 20.0, 22.0, 20.0, 15.0), 1e-9);
+        // Genuine laggard (8%) is NOT lifted up to the industry -> no over-valuation of weak firms.
+        assertEquals(8.0, Helper.companyAnchoredTargetOperatingMargin(13.0, 20.0, 22.0, 8.0, 15.0), 1e-9);
+        // Over-earner guardrail: feed the NORMALIZED multi-year margin (21%), not the latest peak (40%).
+        // The target follows the normalized figure, so a temporary spike is never carried to terminal.
+        assertEquals(21.0, Helper.companyAnchoredTargetOperatingMargin(13.0, 20.0, 22.0, 21.0, 15.0), 1e-9);
+        // Unusable company signal -> industry median fallback (not zero, not a crash).
+        assertEquals(20.0, Helper.companyAnchoredTargetOperatingMargin(13.0, 20.0, 22.0, 0.0, 15.0), 1e-9);
+        assertEquals(20.0, Helper.companyAnchoredTargetOperatingMargin(13.0, 20.0, 22.0, Double.NaN, 15.0), 1e-9);
     }
 }

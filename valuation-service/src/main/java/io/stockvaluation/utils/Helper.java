@@ -15,6 +15,45 @@ import java.util.Optional;
 
 public class Helper {
 
+    /**
+     * Company-anchored target operating margin for the consolidated single-industry path.
+     *
+     * <p>The company's own normalized margin is the anchor. The industry distribution is a
+     * guardrail, not a verdict: it supplies a fallback only when the company signal is unusable.
+     * It never clamps a genuinely high-margin company down to the industry (the old behavior,
+     * which systematically under-valued franchises) and never lifts a genuinely low-margin
+     * company up to the industry (which would over-value laggards).
+     *
+     * <p>Over-earning is handled by anchoring on a <em>normalized</em> (multi-period) company
+     * margin rather than the latest peak, so a cyclical/temporary spike is not carried to the
+     * terminal year. Any long-run competitive fade is a narrative judgment set in the guided
+     * framing layer, not a mechanical haircut imposed here against often-unreliable industry
+     * quartiles.
+     *
+     * @param industryFirstQuartile   industry pre-tax operating margin Q1 (percent); reserved guardrail input
+     * @param industryMedian          industry pre-tax operating margin median (percent); fallback for unusable data
+     * @param industryThirdQuartile   industry pre-tax operating margin Q3 (percent); reserved guardrail input
+     * @param companyNormalizedMargin company normalized pre-tax operating margin (percent)
+     * @param avgIndustryMargin       industry average pre-tax operating margin (percent); reserved guardrail input
+     * @return the target operating margin (percent)
+     */
+    public static double companyAnchoredTargetOperatingMargin(double industryFirstQuartile,
+            double industryMedian,
+            double industryThirdQuartile,
+            double companyNormalizedMargin,
+            double avgIndustryMargin) {
+
+        // Fall back to the industry median only when the company signal is unusable.
+        if (!Double.isFinite(companyNormalizedMargin) || companyNormalizedMargin <= 0.0) {
+            return industryMedian;
+        }
+
+        // Anchor on the company's own normalized margin. No mechanical lift or clamp toward the
+        // industry: a franchise keeps its margin, a laggard keeps its margin, and the competitive
+        // fade (if any) is decided in the narrative/framing layer.
+        return companyNormalizedMargin;
+    }
+
     public static double targetOperatingMargin(double preTaxOperatingMarginFirstQuartile,
             double preTaxOperatingMarginMedian,
             double preTaxOperatingMarginThirdQuartile,

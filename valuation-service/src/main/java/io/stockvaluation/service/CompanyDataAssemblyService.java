@@ -43,7 +43,7 @@ import java.util.Optional;
 import static io.stockvaluation.service.GrowthCalculatorService.adjustAnnualGrowth2_5years;
 import static io.stockvaluation.utils.Helper.calculateGrowthRate;
 import static io.stockvaluation.utils.Helper.costOfCapital;
-import static io.stockvaluation.utils.Helper.targetOperatingMargin;
+import static io.stockvaluation.utils.Helper.companyAnchoredTargetOperatingMargin;
 
 @Service
 @Slf4j
@@ -233,13 +233,22 @@ public class CompanyDataAssemblyService {
             optionalInputStatDistribution = inputStatRepository
                     .findFirstByIndustryGroupOrderByIdAsc(sectorMapping.getIndustryAsPerExcel());
             if (optionalInputStatDistribution.isPresent()) {
+                // Company-anchored target margin: anchor on the company's own normalized margin
+                // (industry is a guardrail, not a ceiling). Normalize across the two most recent
+                // actual periods so a temporary spike is not carried to the terminal year. A
+                // multi-year (3-5y) normalized series is the planned upgrade.
+                double ttmMarginPercent = operatingMarginNextYear * 100;
+                double ltmMarginPercent = financialDataDTO.getOperatingIncomeLTM() / financialDataDTO.getRevenueLTM() * 100;
+                double companyNormalizedMargin = (Double.isFinite(ltmMarginPercent) && ltmMarginPercent > 0)
+                        ? (ttmMarginPercent + ltmMarginPercent) / 2.0
+                        : ttmMarginPercent;
                 companyDriveDataDTO.setTargetPreTaxOperatingMargin(
                         convertPercentage(
-                                targetOperatingMargin(
+                                companyAnchoredTargetOperatingMargin(
                                         optionalInputStatDistribution.get().getPreTaxOperatingMarginFirstQuartile(),
                                         optionalInputStatDistribution.get().getPreTaxOperatingMarginMedian(),
                                         optionalInputStatDistribution.get().getPreTaxOperatingMarginThirdQuartile(),
-                                        operatingMarginNextYear * 100,
+                                        companyNormalizedMargin,
                                         avgPreTaxOperatingMargin)));
                 salesToCapitalFirstPhase = optionalInputStatDistribution.get().getSalesToInvestedCapitalThirdQuartile();
             } else {
