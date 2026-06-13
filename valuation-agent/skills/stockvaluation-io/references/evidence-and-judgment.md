@@ -16,7 +16,7 @@ Every evidence item ties to exactly one driver: `revenue_growth`, `operating_mar
 
 ## Autonomous Boundary
 
-Autonomous researched judgment may change only `revenue_cagr` (→ `revenue_growth`), `operating_margin` (target margin only), `sales_to_capital`, and sector-level versions of those three. Everything else — WACC, terminal growth, tax, growth pattern, R&D capitalization, leases, options, NOLs, one-time charges, cash, debt, share count, market price, and any direct valuation output — is explain/flag only; the server rejects unsupported payloads. `operating_margin_next_year` is scenario-only (guided or explicit); flag it as an unsupported blocker in autonomous mode.
+Autonomous researched judgment may change only `revenue_cagr` (→ `revenue_growth`), `operating_margin` (target margin only), `sales_to_capital`, sector-level versions of those three, and source-backed R&D capitalization through the AccountingAndClaims validator. Everything else — WACC, terminal growth, tax, growth pattern, leases, options, NOLs, one-time charges, cash, debt, share count, market price, and any direct valuation output — is explain/flag only; the server rejects unsupported payloads. Bare R&D mentions or one-line R&D expense values are explain/flag only. `operating_margin_next_year` is scenario-only (guided or explicit); flag it as an unsupported blocker in autonomous mode.
 
 A governed change requires all of: driver-specific dated cited evidence from a reliable source, clear direction and implication, conflicts addressed, a governed field, and a modest, explainable move relative to the baseline, growth anchor, segment mix, and data-quality warnings. Weak, mixed, stale, generic, or uncited evidence ⇒ no change, with the no-change reason stated.
 

@@ -57,7 +57,7 @@ MIN_MARGIN_CONVERGENCE_YEAR = 1.0
 MAX_MARGIN_CONVERGENCE_YEAR = 10.0
 MIN_SALES_TO_CAPITAL = 0.05
 MAX_SALES_TO_CAPITAL = 20.0
-MIN_TERMINAL_ROIC = 0.0
+MIN_TERMINAL_ROIC = 0.01
 MAX_TERMINAL_ROIC = 100.0
 MIN_TERMINAL_REVENUE_YEAR = 1.0
 MAX_TERMINAL_REVENUE_YEAR = 15.0
@@ -261,7 +261,7 @@ def _run_tracking_properties() -> dict[str, Any]:
         },
         "value_sources": {
             "type": "object",
-            "description": "On a tracked run, declares the source of a numeric driver value, e.g. {\"target_operating_margin\": \"user_input\"}. A numeric driver value must be one of the run's recorded anchors or be flagged user_input (a number the user actually typed); anything else is refused as unanchored_scenario_value.",
+            "description": "On a tracked run, declares the source of a numeric driver value, e.g. {\"target_operating_margin\": \"user_input\"}. A numeric driver value must be one of the run's recorded anchors, or must match a recorded guided answer with source=user_input; otherwise it is refused as unanchored_scenario_value or unverified_user_input.",
             "additionalProperties": True,
         },
     }
@@ -458,7 +458,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                     **ticker_property,
                     "overrides": {
                         "type": "object",
-                        "description": "Supported keys: revenue_growth, terminal_revenue, terminal_revenue_year, operating_margin_next_year, operating_margin/target_operating_margin, margin_convergence_year, sales_to_capital, sales_to_capital_years_1_to_5, sales_to_capital_years_6_to_10, segments, sector_overrides, segment_economics, rd_capitalization (explicit governed accounting scenario only), leases (report-only AccountingAndClaims status), wacc, terminal_growth, terminal_roic (explicit scenario only), tax_rate, growth_pattern_override, request_policy, rationale, evidence_used, evidence_packet, user_judgment, baseline_plausibility, assumption_judgment, guided_refinement.",
+                        "description": "Supported keys: revenue_growth, terminal_revenue, terminal_revenue_year, operating_margin_next_year, operating_margin/target_operating_margin, margin_convergence_year, sales_to_capital, sales_to_capital_years_1_to_5, sales_to_capital_years_6_to_10, segments, sector_overrides, segment_economics, rd_capitalization (automatic in autonomous_researched when source-backed; explicit governed scenario also supported), leases (report-only AccountingAndClaims status), wacc, terminal_growth, terminal_roic (explicit scenario only), tax_rate, growth_pattern_override, request_policy, rationale, evidence_used, evidence_packet, user_judgment, baseline_plausibility, assumption_judgment, guided_refinement.",
                         "additionalProperties": True,
                     },
                 },
@@ -646,8 +646,6 @@ class MCPToolRegistry:
         if not isinstance(values, dict):
             return None
         anchors = run.get("anchors") or {}
-        if not anchors:
-            return None
         sources = value_sources_from_args(args)
         for key, value in values.items():
             if key not in NUMERIC_DRIVER_KEYS:
@@ -656,7 +654,22 @@ class MCPToolRegistry:
                 continue
             field = driver_field_for_key(key) or key
             declared = str(sources.get(key) or sources.get(field) or "").lower()
+            if self._matches_recorded_user_input(run, field, value):
+                continue
             if declared == "user_input":
+                return error_payload(
+                    tool,
+                    "UNVERIFIED_USER_INPUT",
+                    f"The value for {key} is marked value_source=user_input, but this tracked run has no matching user-entered guided answer for driver {field}.",
+                    "unverified_user_input",
+                    extra={
+                        "driver": field,
+                        "scenario_key": key,
+                        "run_id": run.get("run_id"),
+                        "workflow_state": self.run_store.workflow_state(run),
+                    },
+                )
+            if not anchors:
                 continue
             anchor_set = anchors.get(field)
             if anchor_set and matches_anchor(anchor_set, value):
@@ -677,6 +690,14 @@ class MCPToolRegistry:
                 },
             )
         return None
+
+    @staticmethod
+    def _matches_recorded_user_input(run: dict[str, Any], field: str, value: float) -> bool:
+        record = _dict(_dict(run.get("guided_answers")).get(field))
+        if _string_or_none(record.get("source")) != "user_input":
+            return False
+        recorded_value = _number_or_none(record.get("value"))
+        return recorded_value is not None and math.isclose(recorded_value, value, rel_tol=0.0, abs_tol=0.005)
 
     def _unresolved_anchor_fields(self, run: dict[str, Any], pinned_values: Any) -> list[str]:
         anchors = run.get("anchors") or {}
@@ -1895,6 +1916,14 @@ def map_recalculate_overrides(requested: dict[str, Any]) -> tuple[dict[str, Any]
         elif key == "terminal_growth":
             mapped["terminalGrowthRate"] = round(normalize_percent(number), 2)
         elif key in {"terminal_roic", "terminal_return_on_capital", "terminal_return_on_invested_capital"}:
+            if request_policy_mode != "explicit_scenario":
+                unsupported[key] = {
+                    "value": sanitize_for_agent(value),
+                    "status": "explicit_scenario_required",
+                    "reason": "explicit_scenario_required",
+                    "message": f"{key} is available only when request_policy.mode is explicit_scenario.",
+                }
+                continue
             normalized = normalize_percent(number)
             if not within_bounds(normalized, MIN_TERMINAL_ROIC, MAX_TERMINAL_ROIC):
                 unsupported[key] = bounded_numeric_unsupported(
@@ -2762,8 +2791,8 @@ def default_unsupported_adjustment_fields() -> list[dict[str, str]]:
             "status": "scenario_only_in_autonomous_researched_mode",
             "reason": "Tax-rate changes are report-only or explicit-scenario fields in autonomous researched mode.",
         },
-        {"field": "rd_capitalization", "status": "blocked_report_only", "reason": "R&D capitalization is explain/flag only unless a governed service contract applies it."},
-        {"field": "leases", "status": "blocked_report_only", "reason": "Lease adjustments are report-only in Phase 5; R&D capitalization is the only governed accounting scenario path."},
+        {"field": "rd_capitalization", "status": "source_required", "reason": "R&D capitalization is automatic in autonomous researched mode only when multi-year source-backed R&D history and an amortization policy pass validation."},
+        {"field": "leases", "status": "blocked_report_only", "reason": "Lease adjustments are report-only in Phase 5; R&D capitalization is the only governed accounting model path."},
         {"field": "options", "status": "blocked_report_only", "reason": "Options and warrants are explain/flag only unless a governed service contract applies them."},
         {"field": "options_warrants", "status": "blocked_report_only", "reason": "Options and warrants are report-only unless service-calculated option inputs are available; direct claim overrides remain blocked."},
         {"field": "nols", "status": "blocked_report_only", "reason": "NOL adjustments are explain/flag only unless a governed service contract applies them."},

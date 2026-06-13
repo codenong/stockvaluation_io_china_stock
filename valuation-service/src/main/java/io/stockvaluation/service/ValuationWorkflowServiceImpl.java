@@ -38,7 +38,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
         private static final double MAX_MARGIN_CONVERGENCE_YEAR = 10.0;
         private static final double MIN_SALES_TO_CAPITAL = 0.05;
         private static final double MAX_SALES_TO_CAPITAL = 20.0;
-        private static final double MIN_TERMINAL_ROIC = 0.0;
+        private static final double MIN_TERMINAL_ROIC = 0.01;
         private static final double MAX_TERMINAL_ROIC = 100.0;
         private static final String POLICY_AUTONOMOUS_RESEARCHED = "autonomous_researched";
         private static final String POLICY_USER_REFINED_SCENARIO = "user_refined_scenario";
@@ -465,11 +465,11 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 if (rdScenarioApplied && multiYearRdHistory && sourceReturned && rdAmortizationPolicyAvailable) {
                         rdStatus = "governed_scenario_supported";
                         rdTreatment = "governed_scenario_effective";
-                        rdReason = "R&D capitalization was enabled in a governed scenario with multi-year R&D history, amortization policy, and source provenance.";
+                        rdReason = "R&D capitalization was enabled in a governed researched/scenario path with multi-year R&D history, amortization policy, and source provenance.";
                 } else if (multiYearRdHistory && sourceReturned && rdAmortizationPolicyAvailable) {
                         rdStatus = "governed_scenario_supported";
                         rdTreatment = "scenario_only";
-                        rdReason = "Multi-year R&D history, amortization policy, and source provenance are available; R&D capitalization still requires an explicit governed scenario.";
+                        rdReason = "Multi-year R&D history, amortization policy, and source provenance are available; R&D capitalization requires the automatic researched path or an explicit governed scenario payload.";
                 } else if (hasAnyPositiveValue(rdHistory)) {
                         rdStatus = "source_required";
                         rdTreatment = "report_only";
@@ -521,7 +521,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 "report_only",
                                 provenance,
                                 leaseScenario
-                                                ? "Lease conversion is report-only in Phase 5; R&D capitalization is the only governed accounting scenario path."
+                                                ? "Lease conversion is report-only in Phase 5; R&D capitalization is the only governed accounting model path."
                                                 : "No operating lease schedule was supplied; the service used a zero default rather than proof of no lease adjustment.",
                                 0.0);
                 leases.getReportedValues().put("scheduleAvailable", leaseScheduleAvailable);
@@ -556,7 +556,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 "source_required",
                                 "report_only",
                                 provenance,
-                                "NOL/tax normalization is report-only in Phase 5; R&D capitalization is the only governed accounting scenario path.",
+                                "NOL/tax normalization is report-only in Phase 5; R&D capitalization is the only governed accounting model path.",
                                 null));
 
                 dto.setCash(topic(
@@ -1106,10 +1106,10 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                                 "Terminal growth can be used for explicit scenarios, but autonomous researched baselines must not change it without a governed tested path."),
                                 baselineIssue("tax_rate", "scenario_only_in_autonomous_researched_mode",
                                                 "Tax-rate changes are report-only or explicit-scenario fields in autonomous researched mode."),
-                                baselineIssue("rd_capitalization", "blocked_report_only",
-                                                "R&D capitalization is explain/flag only unless a governed service contract applies it."),
+                                baselineIssue("rd_capitalization", "source_required",
+                                                "R&D capitalization is automatic in autonomous researched mode only when multi-year source-backed R&D history and an amortization policy pass validation."),
                                 baselineIssue("leases", "blocked_report_only",
-                                                "Lease adjustments are report-only in Phase 5; R&D capitalization is the only governed accounting scenario path."),
+                                                "Lease adjustments are report-only in Phase 5; R&D capitalization is the only governed accounting model path."),
                                 baselineIssue("options", "blocked_report_only",
                                                 "Options and warrants are explain/flag only unless a governed service contract applies them."),
                                 baselineIssue("nols", "blocked_report_only",
@@ -2494,6 +2494,10 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 return POLICY_USER_REFINED_SCENARIO.equals(resolveRequestPolicyMode(financialDataInput));
         }
 
+        private boolean isExplicitScenarioPolicy(FinancialDataInput financialDataInput) {
+                return POLICY_EXPLICIT_SCENARIO.equals(resolveRequestPolicyMode(financialDataInput));
+        }
+
         private boolean isActiveOverride(OverrideAssumption override) {
                 return override != null && Boolean.TRUE.equals(override.getIsOverride());
         }
@@ -2530,6 +2534,17 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                         unsupportedJson);
                         throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, msg);
                 }
+        }
+
+        private void rejectTerminalRoicWithoutExplicitScenarioPolicy(
+                        FinancialDataInput baseline,
+                        FinancialDataInput overrides) {
+                if (overrides == null || !isActiveOverride(overrides.getOverrideAssumptionReturnOnCapital())
+                                || isExplicitScenarioPolicy(baseline)) {
+                        return;
+                }
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                                "{\"error\":\"TERMINAL_ROIC_EXPLICIT_SCENARIO_REQUIRED\",\"message\":\"terminal return on capital can be changed only in explicit_scenario mode.\"}");
         }
 
         private boolean shouldPreserveExplicitSalesToCapitalInputs(
@@ -2618,6 +2633,18 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                         maximum);
                         throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, msg);
                 }
+        }
+
+        private void validateRequiredScenarioInput(String field, Double value, String unit) {
+                if (value != null) {
+                        return;
+                }
+                String msg = String.format(Locale.ROOT,
+                                "{\"error\":\"SCENARIO_INPUT_REQUIRED\",\"message\":\"%s requires a finite %s value when override is active.\",\"field\":\"%s\"}",
+                                field,
+                                unit,
+                                field);
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, msg);
         }
 
         private void validatePositiveScenarioInput(String field, Double value, String unit) {
@@ -2810,6 +2837,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         overrideCount++;
                 }
                 rejectExplicitOnlyUserRefinedScenarioOverrides(baseline, overrides);
+                rejectTerminalRoicWithoutExplicitScenarioPolicy(baseline, overrides);
 
                 if (Boolean.TRUE.equals(overrides.getIsExpensesCapitalize())) {
                         baseline.setRdAmortizationMethod(overrides.getRdAmortizationMethod());
@@ -2824,7 +2852,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 if (Boolean.TRUE.equals(overrides.getHasOperatingLease())) {
                         throw accountingScenarioRejected(
                                         "LEASE_REPORT_ONLY",
-                                        "Lease conversion is report-only in Phase 5; R&D capitalization is the only governed accounting scenario path.");
+                                        "Lease conversion is report-only in Phase 5; R&D capitalization is the only governed accounting model path.");
                 }
 
                 // Apply each override if present (non-null)
@@ -2944,6 +2972,10 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 }
 
                 if (isActiveOverride(overrides.getOverrideAssumptionReturnOnCapital())) {
+                        validateRequiredScenarioInput(
+                                        "overrideAssumptionReturnOnCapital",
+                                        overrides.getOverrideAssumptionReturnOnCapital().getOverrideCost(),
+                                        "percent");
                         validateBoundedScenarioInput(
                                         "overrideAssumptionReturnOnCapital",
                                         overrides.getOverrideAssumptionReturnOnCapital().getOverrideCost(),
@@ -2982,10 +3014,10 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
         }
 
         private void validateRdCapitalizationScenario(FinancialDataInput baseline) {
-                if (!POLICY_EXPLICIT_SCENARIO.equals(resolveRequestPolicyMode(baseline))) {
+                if (!isRdCapitalizationPolicy(resolveRequestPolicyMode(baseline))) {
                         throw accountingScenarioRejected(
                                         "RD_CAPITALIZATION_SCENARIO_REQUIRED",
-                                        "R&D capitalization can be applied only in explicit_scenario mode.");
+                                        "R&D capitalization can be applied only in autonomous_researched or explicit_scenario mode.");
                 }
                 FinancialDataDTO financial = baseline != null ? baseline.getFinancialDataDTO() : null;
                 if (financial == null || !hasMultiYearRdHistory(financial.getResearchAndDevelopmentMap())) {
@@ -3006,6 +3038,11 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                         "RD_CAPITALIZATION_SOURCE_REQUIRED",
                                         "R&D capitalization requires retrieved filing or company source provenance.");
                 }
+        }
+
+        private boolean isRdCapitalizationPolicy(String requestPolicyMode) {
+                return POLICY_AUTONOMOUS_RESEARCHED.equals(requestPolicyMode)
+                                || POLICY_EXPLICIT_SCENARIO.equals(requestPolicyMode);
         }
 
         private boolean validRdAmortizationPolicy(FinancialDataInput input) {

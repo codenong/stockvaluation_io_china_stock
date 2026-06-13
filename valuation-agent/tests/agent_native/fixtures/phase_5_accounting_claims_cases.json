@@ -8,7 +8,7 @@
       "rdCapitalization": ["source_required", "governed_scenario_supported"],
       "sbcDilution": ["blocked_report_only"]
     },
-    "expected_rejection_behavior": ["autonomous_rd_capitalization_blocked", "sbc_report_only"]
+    "expected_rejection_behavior": ["rd_capitalization_requires_source_backed_payload", "sbc_report_only"]
   },
   {
     "case_id": "lease_heavy",

@@ -17,7 +17,7 @@ The MCP server tracks each run. Always pass the `run_id` returned by `stockvalua
 
 - Scenario-bearing valuation before the evidence-review gate is recorded → `GATE_NOT_CLEARED`.
 - Guided-flow recalculation before answers are applied or an explicit bypass is recorded → `GATE_NOT_CLEARED`.
-- A numeric driver value that is neither a server-computed anchor nor declared `value_sources=user_input` → `UNANCHORED_SCENARIO_VALUE`. Never author scenario numbers yourself.
+- A numeric driver value that is neither a server-computed anchor nor a recorded guided answer with `source=user_input` → `UNANCHORED_SCENARIO_VALUE` or `UNVERIFIED_USER_INPUT`. Never author scenario numbers yourself.
 - While material drivers are unresolved, scenario calls return a low/high `valuationRange`; lead with that range and name the unresolved drivers. A point estimate exists only when every material driver is pinned.
 
 ## Default Workflow (ticker)
@@ -41,7 +41,7 @@ For a SEC EDGAR HTML prospectus URL: `stockvaluation.extract_prospectus`, stop a
 - Evidence must name a driver and a fact; generic source presence ("10-K found") is not evidence. User answers and approvals are user judgment, not evidence.
 - Market-implied and priced-in data are report-only diagnostics, never evidence or autonomous changes.
 - Financial firms, private companies, and insufficient-data cases stop cleanly (`{baseDir}/references/valuation-method.md`); use `stockvaluation.explain_failure` and do not invent a valuation.
-- Accounting topics follow `{baseDir}/references/accounting-and-claims.md`: explain returned values; do not toggle adjustments outside the governed R&D scenario path.
+- Accounting topics follow `{baseDir}/references/accounting-and-claims.md`: explain returned values; apply R&D capitalization only through the governed source-backed R&D path.
 - Keep MCP arguments compact (`{baseDir}/references/mcp-tools.md`).
 
 ## References

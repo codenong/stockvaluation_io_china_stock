@@ -32,5 +32,13 @@
     {"pattern": "(?i)\\bas an ai\\b", "label": "process_narration", "level": "error"},
     {"pattern": "(?i)\\bper the skill instructions\\b", "label": "process_narration", "level": "error"}
   ],
+  "prohibited_recommendation_patterns": [
+    {"pattern": "(?i)\\b(looks?|seems?|appears?)\\s+like\\s+a\\s+(buy|sell|hold)\\b", "label": "prohibited_recommendation_language", "level": "error"},
+    {"pattern": "(?i)\\b(recommend|recommendation|rated?|rating)\\s+(buy|selling?|sell|holding?|hold)\\b", "label": "prohibited_recommendation_language", "level": "error"},
+    {"pattern": "(?i)\\b(buy|sell|hold)\\s+(rating|recommendation)\\b", "label": "prohibited_recommendation_language", "level": "error"},
+    {"pattern": "(?i)\\b(should|could|would)\\s+(buy|sell|hold|invest)\\b", "label": "prohibited_recommendation_language", "level": "error"},
+    {"pattern": "(?i)\\b(actionable|investment)\\s+recommendation\\b", "label": "prohibited_recommendation_language", "level": "error"},
+    {"pattern": "(?i)\\btarget\\s+price\\b", "label": "prohibited_recommendation_language", "level": "error"}
+  ],
   "filler_cell_values": ["", "-", "—", "n/a", "na", "none", "unavailable", "not available", "unknown"]
 }

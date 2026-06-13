@@ -4,7 +4,7 @@
 
 ## Topic Rules
 
-- **R&D capitalization**: explain/flag only in autonomous mode (relevant wherever research spend looks like investment — software, semis, pharma). The one governed path: `request_policy.mode = "explicit_scenario"` with multi-year R&D history, an amortization policy (method and period), and source provenance — the validator rejects anything less. Never toggle `isExpensesCapitalize` autonomously or infer a research asset from one expense line.
+- **R&D capitalization**: automatic in the normal autonomous researched flow when the payload has multi-year R&D history, an amortization policy (method and period), and retrieved non-Yahoo source provenance. The same governed source-backed payload also works in `request_policy.mode = "explicit_scenario"`. The validator rejects anything less. Never infer a research asset from one expense line or a bare true/false flag.
 - **Operating leases**: report-only; explain returned conversions; never send lease schedules through `recalculate`.
 - **Options / warrants / dilution**: explain returned option value and dilution separately from operating performance; SBC diagnostics (SBC % of revenue, diluted share-count trend) are report-only economics.
 - **Tax and NOLs**: explain returned effective assumptions; never invent NOL schedules or tax shields.

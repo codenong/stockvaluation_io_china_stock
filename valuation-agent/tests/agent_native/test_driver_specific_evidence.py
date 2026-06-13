@@ -51,7 +51,8 @@ def test_only_governed_drivers_may_affect_autonomous_recalculation():
     assert "`operating_margin` (target margin only)" in evidence
     assert "`sales_to_capital`" in evidence
     assert "sector-level versions" in evidence
-    for blocked in ["wacc", "terminal growth", "tax", "r&d capitalization", "leases", "share count"]:
+    assert "source-backed r&d capitalization" in evidence
+    for blocked in ["wacc", "terminal growth", "tax", "leases", "share count"]:
         assert blocked in evidence
     assert "explain/flag only" in evidence
     assert "`operating_margin_next_year` is scenario-only" in evidence
@@ -59,8 +60,9 @@ def test_only_governed_drivers_may_affect_autonomous_recalculation():
 
 def test_accounting_adjustments_are_explain_flag_only_unless_supported():
     accounting = _reference("accounting-and-claims.md").lower()
-    assert "explain/flag only in autonomous mode" in accounting
-    assert "never toggle `isexpensescapitalize` autonomously" in accounting
+    assert "automatic in the normal autonomous researched flow" in accounting
+    assert "retrieved non-yahoo source provenance" in accounting
+    assert "never infer a research asset from one expense line" in accounting
     assert "report-only" in accounting
 
 

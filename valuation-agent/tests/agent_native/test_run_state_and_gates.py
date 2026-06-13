@@ -136,7 +136,7 @@ def test_baseline_prospectus_valuation_without_scenario_is_not_gated(tmp_path):
     ]
 
 
-def test_guided_flow_recalculate_refused_until_answers_applied(tmp_path):
+def test_guided_flow_recalculate_refuses_unverified_user_input_even_after_answers_applied(tmp_path):
     registry = _registry(tmp_path)
     run_id = registry.call("stockvaluation.researched_baseline", {"ticker": "MSFT"})["structuredContent"]["run_id"]
 
@@ -175,9 +175,9 @@ def test_guided_flow_recalculate_refused_until_answers_applied(tmp_path):
         "stockvaluation.recalculate",
         {"run_id": run_id, "ticker": "MSFT", "overrides": overrides, "value_sources": value_sources},
     )
-    assert result["isError"] is False
-    state = result["structuredContent"]["workflow_state"]
-    assert state["gates_passed"] == [GATE_EVIDENCE_REVIEW, GATE_GUIDED_REFINEMENT]
+    assert result["isError"] is True
+    assert result["structuredContent"]["error"]["code"] == "UNVERIFIED_USER_INPUT"
+    assert result["structuredContent"]["failureCategory"] == "unverified_user_input"
 
 
 def test_explicit_bypass_unlocks_gates_and_appears_in_workflow_state(tmp_path):
@@ -191,11 +191,10 @@ def test_explicit_bypass_unlocks_gates_and_appears_in_workflow_state(tmp_path):
             "ticker": "MSFT",
             "overrides": {
                 "request_policy": {"mode": "user_refined_scenario"},
-                "operating_margin_next_year": 39.0,
+                "target_operating_margin": 45.0,
                 "user_judgment": USER_JUDGMENT,
                 "evidence_packet": _valid_evidence_packet(confidence="low"),
             },
-            "value_sources": {"operating_margin_next_year": "user_input"},
             "gate_records": [
                 {"gate": GATE_EVIDENCE_REVIEW, "outcome": "bypassed", "reason": "quick"},
                 {"gate": GATE_GUIDED_REFINEMENT, "outcome": "bypassed", "reason": "no_questions"},

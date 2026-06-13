@@ -18,6 +18,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.server.ResponseStatusException;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -154,6 +155,34 @@ class AutomatedDCFAnalysisControllerTest {
         assertNotNull(body);
         assertFalse(body.isSuccess());
         assertEquals("missing revenue", body.getMessage());
+    }
+
+    @Test
+    void postValuation_responseStatusException_returns422() {
+        when(valuationWorkflowService.getValuation(eq("AAPL"), any(FinancialDataInput.class)))
+                .thenThrow(new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "bad terminal ROIC"));
+
+        ResponseEntity<?> response = controller.getValuationOutput("AAPL", new FinancialDataInput());
+
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, response.getStatusCode());
+        ResponseDTO<?> body = (ResponseDTO<?>) response.getBody();
+        assertNotNull(body);
+        assertFalse(body.isSuccess());
+        assertEquals("bad terminal ROIC", body.getMessage());
+    }
+
+    @Test
+    void postValuation_illegalArgumentException_returns422() {
+        when(valuationWorkflowService.getValuation(eq("AAPL"), any(FinancialDataInput.class)))
+                .thenThrow(new IllegalArgumentException("invalid scenario input"));
+
+        ResponseEntity<?> response = controller.getValuationOutput("AAPL", new FinancialDataInput());
+
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, response.getStatusCode());
+        ResponseDTO<?> body = (ResponseDTO<?>) response.getBody();
+        assertNotNull(body);
+        assertFalse(body.isSuccess());
+        assertEquals("invalid scenario input", body.getMessage());
     }
 
     @Test

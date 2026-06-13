@@ -10,9 +10,9 @@ Value operating assets from expected FCFF; reinvestment ties growth to capital t
 
 | Class | Topics | Action |
 | --- | --- | --- |
-| Supported autonomous changes | revenue growth, target operating margin, sales-to-capital, sector-level versions | governed `recalculate` with strong evidence |
+| Supported autonomous changes | revenue growth, target operating margin, sales-to-capital, sector-level versions, source-backed R&D capitalization | governed `recalculate` with strong evidence or AccountingAndClaims validation |
 | Supported explanations | model selection, terminal fields, risk/discount fields, accounting statuses, market-implied/priced-in data, composition fields | explain returned values only |
-| Explain-only / future support | WACC, terminal growth, tax, R&D capitalization, leases, options, NOLs, one-time normalization, relative valuation, acquisitions, real options | flag; user scenarios only where the contract already supports the field |
+| Explain-only / future support | WACC, terminal growth, tax, leases, options, NOLs, one-time normalization, relative valuation, acquisitions, real options | flag; user scenarios only where the contract already supports the field |
 | Unsupported stop | financial firms, unsupported companies, missing service, insufficient data, failed currency conversion | stop cleanly, `explain_failure`, no synthetic valuation |
 
 ## Method Checks

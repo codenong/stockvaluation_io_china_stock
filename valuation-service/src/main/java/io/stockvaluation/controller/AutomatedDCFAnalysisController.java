@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 @Slf4j
 @RestController
@@ -29,6 +30,12 @@ public class AutomatedDCFAnalysisController {
             return ResponseGenerator.generateSuccessResponse(valuationOutputDTO);
         } catch (InsufficientFinancialDataException e) {
             log.warn("Unprocessable valuation input in POST /{}/valuation: {}", ticker, e.getMessage());
+            return ResponseGenerator.generateUnprocessableEntityResponse(e.getMessage());
+        } catch (ResponseStatusException e) {
+            log.warn("Unprocessable valuation scenario in POST /{}/valuation: {}", ticker, e.getReason());
+            return ResponseGenerator.generateUnprocessableEntityResponse(e.getReason());
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid valuation scenario input in POST /{}/valuation: {}", ticker, e.getMessage());
             return ResponseGenerator.generateUnprocessableEntityResponse(e.getMessage());
         } catch (RuntimeException e) {
             log.error("Error in POST /{}/valuation", ticker, e);

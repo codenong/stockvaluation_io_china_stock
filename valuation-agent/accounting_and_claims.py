@@ -10,7 +10,7 @@ from .security import sanitize_for_agent
 from .source_provenance import RETRIEVAL_STATUSES, SOURCE_CLASSES
 
 ACCOUNTING_SCHEMA_VERSION = "accounting_and_claims.v1"
-GOVERNED_ACCOUNTING_MODE = "explicit_scenario"
+GOVERNED_ACCOUNTING_MODES = {"autonomous_researched", "explicit_scenario"}
 RD_ALIASES = {"rd_capitalization", "r_and_d_capitalization"}
 LEASE_ALIASES = {"leases", "operating_leases"}
 REPORT_ONLY_TOPICS = {
@@ -44,7 +44,7 @@ def validate_accounting_override(
             {
                 "topic": normalized_topic,
                 "status": "blocked_report_only",
-                "reason": f"{normalized_topic} is report-only in Phase 5; R&D capitalization is the only governed accounting scenario path.",
+                "reason": f"{normalized_topic} is report-only in Phase 5; R&D capitalization is the only governed accounting model path.",
             }
         ],
     )
@@ -94,7 +94,7 @@ def merge_accounting_metadata(existing: dict[str, Any] | None, validation: dict[
 
 
 def _validate_rd_capitalization(value: Any, request_policy_mode: str | None) -> dict[str, Any]:
-    if request_policy_mode != GOVERNED_ACCOUNTING_MODE:
+    if request_policy_mode not in GOVERNED_ACCOUNTING_MODES:
         return _result(
             ok=False,
             status="blocked_report_only",
@@ -102,7 +102,7 @@ def _validate_rd_capitalization(value: Any, request_policy_mode: str | None) -> 
                 {
                     "topic": "rd_capitalization",
                     "status": "blocked_report_only",
-                    "reason": "R&D capitalization can affect recalculation only in explicit_scenario mode.",
+                    "reason": "R&D capitalization can affect recalculation only in autonomous_researched or explicit_scenario mode.",
                 }
             ],
         )
@@ -160,7 +160,7 @@ def _validate_rd_capitalization(value: Any, request_policy_mode: str | None) -> 
             }
         ],
         limitations=[
-            "R&D capitalization is an explicit governed scenario input; autonomous researched mode must not toggle it."
+            "R&D capitalization can be applied automatically in autonomous researched mode only when the source-backed history and amortization policy pass validation."
         ],
     )
 

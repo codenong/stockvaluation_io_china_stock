@@ -74,6 +74,20 @@ def test_rd_capitalization_governed_scenario_requires_history_policy_and_provena
     assert scenario["source_provenance"]["source_class"] == "primary_filing"
 
 
+def test_rd_capitalization_autonomous_researched_accepts_source_backed_payload():
+    result = validate_accounting_override(
+        "rd_capitalization",
+        _valid_rd_payload(),
+        "autonomous_researched",
+    )
+
+    assert result["ok"] is True
+    assert result["accepted_mcp_inputs"]["isExpensesCapitalize"] is True
+    assert result["accepted_mcp_inputs"]["rdAmortizationMethod"] == "straight_line"
+    assert result["governed_scenarios"][0]["topic"] == "rd_capitalization"
+    assert "automatically" in result["limitations"][0]
+
+
 def test_lease_schedule_remains_report_only_even_in_explicit_scenario():
     result = validate_accounting_override(
         "leases",
@@ -178,11 +192,11 @@ def test_accounting_topics_without_governed_path_remain_report_only():
         assert result["accepted_mcp_inputs"] == {}
 
 
-def test_rd_capitalization_is_blocked_outside_explicit_scenario_mode():
+def test_rd_capitalization_is_blocked_outside_governed_research_or_scenario_mode():
     result = validate_accounting_override(
         "rd_capitalization",
         _valid_rd_payload(),
-        "autonomous_researched",
+        "user_refined_scenario",
     )
 
     assert result["ok"] is False

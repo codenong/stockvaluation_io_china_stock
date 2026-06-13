@@ -33,7 +33,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 NO_ADVICE_LINE = (
-    "Educational analysis only. This is not financial advice and makes no buy, sell, or hold recommendation."
+    "Educational analysis only. This is not financial advice."
 )
 
 PROSE_SECTIONS = (

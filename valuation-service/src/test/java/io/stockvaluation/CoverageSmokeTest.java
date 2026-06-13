@@ -308,6 +308,125 @@ class CoverageSmokeTest {
     }
 
     @Test
+    void terminalRoicOverrideWithoutExplicitScenarioIsRejected() throws Exception {
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
+                "applyUserOverrides",
+                FinancialDataInput.class,
+                FinancialDataInput.class);
+        applyUserOverrides.setAccessible(true);
+
+        FinancialDataInput baseline = new FinancialDataInput();
+        baseline.setRiskFreeRate(4.0);
+
+        FinancialDataInput overrides = new FinancialDataInput();
+        overrides.setOverrideAssumptionReturnOnCapital(new OverrideAssumption(14.0, true, 0.0, null));
+
+        InvocationTargetException exception = assertThrows(
+                InvocationTargetException.class,
+                () -> applyUserOverrides.invoke(workflow, baseline, overrides));
+        assertTrue(exception.getCause() instanceof ResponseStatusException);
+        assertTrue(exception.getCause().getMessage().contains("TERMINAL_ROIC_EXPLICIT_SCENARIO_REQUIRED"));
+    }
+
+    @Test
+    void explicitScenarioRejectsZeroTerminalRoicOverride() throws Exception {
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
+                "applyUserOverrides",
+                FinancialDataInput.class,
+                FinancialDataInput.class);
+        applyUserOverrides.setAccessible(true);
+
+        FinancialDataInput baseline = new FinancialDataInput();
+        baseline.setRiskFreeRate(4.0);
+
+        FinancialDataInput overrides = new FinancialDataInput();
+        overrides.setRequestPolicyMode("explicit_scenario");
+        overrides.setOverrideAssumptionReturnOnCapital(new OverrideAssumption(0.0, true, 0.0, null));
+
+        InvocationTargetException exception = assertThrows(
+                InvocationTargetException.class,
+                () -> applyUserOverrides.invoke(workflow, baseline, overrides));
+        assertTrue(exception.getCause() instanceof ResponseStatusException);
+        assertTrue(exception.getCause().getMessage().contains("SCENARIO_INPUT_OUT_OF_BOUNDS"));
+        assertTrue(exception.getCause().getMessage().contains("overrideAssumptionReturnOnCapital"));
+    }
+
+    @Test
+    void explicitScenarioRejectsNonFiniteTerminalRoicOverride() throws Exception {
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
+                "applyUserOverrides",
+                FinancialDataInput.class,
+                FinancialDataInput.class);
+        applyUserOverrides.setAccessible(true);
+
+        FinancialDataInput baseline = new FinancialDataInput();
+        baseline.setRiskFreeRate(4.0);
+
+        FinancialDataInput overrides = new FinancialDataInput();
+        overrides.setRequestPolicyMode("explicit_scenario");
+        overrides.setOverrideAssumptionReturnOnCapital(new OverrideAssumption(Double.NaN, true, 0.0, null));
+
+        InvocationTargetException exception = assertThrows(
+                InvocationTargetException.class,
+                () -> applyUserOverrides.invoke(workflow, baseline, overrides));
+        assertTrue(exception.getCause() instanceof ResponseStatusException);
+        assertTrue(exception.getCause().getMessage().contains("SCENARIO_INPUT_OUT_OF_BOUNDS"));
+        assertTrue(exception.getCause().getMessage().contains("overrideAssumptionReturnOnCapital"));
+    }
+
+    @Test
+    void explicitScenarioRejectsInfiniteTerminalRoicOverride() throws Exception {
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
+                "applyUserOverrides",
+                FinancialDataInput.class,
+                FinancialDataInput.class);
+        applyUserOverrides.setAccessible(true);
+
+        FinancialDataInput baseline = new FinancialDataInput();
+        baseline.setRiskFreeRate(4.0);
+
+        FinancialDataInput overrides = new FinancialDataInput();
+        overrides.setRequestPolicyMode("explicit_scenario");
+        overrides.setOverrideAssumptionReturnOnCapital(
+                new OverrideAssumption(Double.POSITIVE_INFINITY, true, 0.0, null));
+
+        InvocationTargetException exception = assertThrows(
+                InvocationTargetException.class,
+                () -> applyUserOverrides.invoke(workflow, baseline, overrides));
+        assertTrue(exception.getCause() instanceof ResponseStatusException);
+        assertTrue(exception.getCause().getMessage().contains("SCENARIO_INPUT_OUT_OF_BOUNDS"));
+        assertTrue(exception.getCause().getMessage().contains("overrideAssumptionReturnOnCapital"));
+    }
+
+    @Test
+    void explicitScenarioRejectsMissingTerminalRoicOverrideValue() throws Exception {
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
+                "applyUserOverrides",
+                FinancialDataInput.class,
+                FinancialDataInput.class);
+        applyUserOverrides.setAccessible(true);
+
+        FinancialDataInput baseline = new FinancialDataInput();
+        baseline.setRiskFreeRate(4.0);
+
+        FinancialDataInput overrides = new FinancialDataInput();
+        overrides.setRequestPolicyMode("explicit_scenario");
+        overrides.setOverrideAssumptionReturnOnCapital(new OverrideAssumption(null, true, 0.0, null));
+
+        InvocationTargetException exception = assertThrows(
+                InvocationTargetException.class,
+                () -> applyUserOverrides.invoke(workflow, baseline, overrides));
+        assertTrue(exception.getCause() instanceof ResponseStatusException);
+        assertTrue(exception.getCause().getMessage().contains("SCENARIO_INPUT_REQUIRED"));
+        assertTrue(exception.getCause().getMessage().contains("overrideAssumptionReturnOnCapital"));
+    }
+
+    @Test
     void invalidTerminalGrowthOverrideIsRejectedWithAgentReadableError() throws Exception {
         ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
         Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(

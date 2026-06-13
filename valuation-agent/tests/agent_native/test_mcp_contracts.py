@@ -1,5 +1,6 @@
 import copy
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -349,6 +350,42 @@ def _valid_evidence_packet(**item_overrides):
         "evidence_items": [evidence_item],
         "conflicts_or_uncertainties": [],
         "data_gaps": [],
+    }
+
+
+def _valid_rd_capitalization_payload():
+    return {
+        "enabled": True,
+        "rd_history": [
+            {
+                "fiscal_year": 2026,
+                "amount": 12_000.0,
+                "source_url": "https://example.com/nvda-2026-10k",
+                "source_date": "2026-02-26",
+            },
+            {
+                "fiscal_year": 2025,
+                "amount": 9_000.0,
+                "source_url": "https://example.com/nvda-2025-10k",
+                "source_date": "2025-02-27",
+            },
+            {
+                "fiscal_year": 2024,
+                "amount": 7_000.0,
+                "source_url": "https://example.com/nvda-2024-10k",
+                "source_date": "2024-02-28",
+            },
+        ],
+        "amortization_policy": {
+            "method": "straight_line",
+            "amortization_period_years": 4,
+        },
+        "source_provenance": {
+            "source_class": "primary_filing",
+            "provider": "sec-filing",
+            "source_date": "2026-02-26",
+            "retrieval_status": "retrieved",
+        },
     }
 
 
@@ -1491,6 +1528,7 @@ def test_recalculate_maps_supported_overrides_and_separates_requested_from_effec
         {
             "ticker": "MSFT",
             "overrides": {
+                "request_policy": {"mode": "explicit_scenario"},
                 "revenue_growth": 0.09,
                 "terminal_revenue": 2_000.0,
                 "terminal_revenue_year": 10,
@@ -1508,6 +1546,7 @@ def test_recalculate_maps_supported_overrides_and_separates_requested_from_effec
     assumptions = result["structuredContent"]["assumptions"]
     assert assumptions["requested"]["revenue_growth"] == 0.09
     assert assumptions["mapped"]["compoundAnnualGrowth2_5"] == 9.0
+    assert assumptions["mapped"]["requestPolicyMode"] == "explicit_scenario"
     assert assumptions["mapped"]["terminalRevenue"] == 2_000.0
     assert assumptions["mapped"]["terminalRevenueYear"] == 10
     assert assumptions["mapped"]["initialCostCapital"] == 8.5
@@ -1516,6 +1555,88 @@ def test_recalculate_maps_supported_overrides_and_separates_requested_from_effec
     assert assumptions["unsupported"] == {}
     assert assumptions["effective"]["operating_margin"] == 45.0
     assert client.calls[0][1]["salesToCapitalYears1To5"] == 2.3
+
+
+def test_terminal_roic_requires_explicit_scenario_policy():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {"ticker": "MSFT", "overrides": {"terminal_roic": 14.0}},
+    )
+
+    assert result["isError"] is True
+    assumptions = result["structuredContent"]["assumptions"]
+    assert assumptions["mapped"] == {}
+    assert assumptions["unsupported"]["terminal_roic"]["status"] == "explicit_scenario_required"
+    assert client.calls == []
+
+
+def test_terminal_roic_zero_is_rejected_before_service_call():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "MSFT",
+            "overrides": {
+                "request_policy": {"mode": "explicit_scenario"},
+                "terminal_roic": 0.0,
+            },
+        },
+    )
+
+    assert result["isError"] is True
+    assumptions = result["structuredContent"]["assumptions"]
+    assert assumptions["mapped"]["requestPolicyMode"] == "explicit_scenario"
+    assert assumptions["unsupported"]["terminal_roic"]["status"] == "scenario_input_out_of_bounds"
+    assert client.calls == []
+
+
+def test_terminal_roic_nan_is_rejected_before_service_call():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "MSFT",
+            "overrides": {
+                "request_policy": {"mode": "explicit_scenario"},
+                "terminal_roic": math.nan,
+            },
+        },
+    )
+
+    assert result["isError"] is True
+    assumptions = result["structuredContent"]["assumptions"]
+    assert assumptions["mapped"]["requestPolicyMode"] == "explicit_scenario"
+    assert assumptions["unsupported"]["terminal_roic"]["status"] == "invalid_numeric_value"
+    assert client.calls == []
+
+
+def test_terminal_roic_infinity_is_rejected_before_service_call():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "MSFT",
+            "overrides": {
+                "request_policy": {"mode": "explicit_scenario"},
+                "terminal_roic": math.inf,
+            },
+        },
+    )
+
+    assert result["isError"] is True
+    assumptions = result["structuredContent"]["assumptions"]
+    assert assumptions["mapped"]["requestPolicyMode"] == "explicit_scenario"
+    assert assumptions["unsupported"]["terminal_roic"]["status"] == "invalid_numeric_value"
+    assert client.calls == []
 
 
 def test_user_refined_scenario_maps_direct_margin_path_and_capital_efficiency_fields():
@@ -2590,8 +2711,9 @@ def test_recalculate_preserves_unsupported_accounting_fields_as_blocked_report_o
         "accounting_adjustments",
     }
     assert unsupported["operating_margin_next_year"]["status"] == "scenario_only_in_autonomous_researched_mode"
+    assert unsupported["rd_capitalization"]["status"] == "source_required"
     for key, item in unsupported.items():
-        if key == "operating_margin_next_year":
+        if key in {"operating_margin_next_year", "rd_capitalization"}:
             continue
         assert item["status"] == "blocked_report_only"
         assert "report-only" in item["message"]
@@ -2611,7 +2733,52 @@ def test_recalculate_preserves_unsupported_accounting_fields_as_blocked_report_o
     assert client.calls == []
 
 
-def test_recalculate_maps_governed_rd_capitalization_only_for_explicit_scenario():
+def test_recalculate_maps_source_backed_rd_capitalization_for_autonomous_researched_mode():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "NVDA",
+            "overrides": {
+                "request_policy": {"mode": "autonomous_researched"},
+                "rd_capitalization": _valid_rd_capitalization_payload(),
+            },
+        },
+    )
+
+    assert result["isError"] is False
+    assumptions = result["structuredContent"]["assumptions"]
+    assert assumptions["metadata"]["request_policy"] == {"mode": "autonomous_researched"}
+    assert assumptions["mapped"]["researchedBaselineMode"] is True
+    assert assumptions["mapped"]["requestPolicyMode"] == "autonomous_researched"
+    assert assumptions["mapped"]["isExpensesCapitalize"] is True
+    assert assumptions["mapped"]["rdAmortizationMethod"] == "straight_line"
+    assert assumptions["mapped"]["rdAmortizationPeriodYears"] == 4
+    assert client.calls[0][1]["researchedBaselineMode"] is True
+    assert client.calls[0][1]["requestPolicyMode"] == "autonomous_researched"
+    assert client.calls[0][1]["isExpensesCapitalize"] is True
+    accounting = assumptions["metadata"]["accounting_and_claims"]
+    assert accounting["status"] == "valid_accounting_and_claims"
+    assert accounting["governed_scenarios"][0]["topic"] == "rd_capitalization"
+    assert result["structuredContent"]["auditPacket"]["summary"]["final_case_type"] == (
+        "evidence_constrained_governed_recalculation"
+    )
+    audit_accounting = result["structuredContent"]["auditPacket"]["packet"]["accounting_decisions"]
+    assert audit_accounting["requested"]["rd_capitalization"]["enabled"] is True
+    assert audit_accounting["mapped"]["isExpensesCapitalize"] is True
+    assert audit_accounting["unsupported"] == {}
+    scenario_book = result["structuredContent"]["scenarioBook"]
+    assert scenario_book["summary"]["main_scenario_type"] == "evidence_constrained_base"
+    assert scenario_book["book"]["scenarios"][0]["type"] == "evidence_constrained_base"
+    assert scenario_book["book"]["scenarios"][0]["source"] == "evidence_constrained_workflow"
+    assert scenario_book["book"]["scenarios"][0]["accounting_claims_status"]["rdCapitalization"]["status"] == (
+        "governed_scenario_supported"
+    )
+
+
+def test_recalculate_maps_governed_rd_capitalization_for_explicit_scenario():
     client = FakeClient()
     registry = MCPToolRegistry(client)
 

@@ -86,6 +86,22 @@ def lint_markdown(markdown: str, rules: dict | None = None) -> list[dict]:
                     }
                 )
 
+    for entry in rules.get("prohibited_recommendation_patterns", []):
+        pattern = entry.get("pattern")
+        if not pattern:
+            continue
+        compiled = re.compile(pattern)
+        for index, line in enumerate(lines, start=1):
+            if compiled.search(line):
+                findings.append(
+                    {
+                        "rule": entry.get("label", "prohibited_recommendation_language"),
+                        "level": entry.get("level", "error"),
+                        "line": index,
+                        "excerpt": line.strip()[:160],
+                    }
+                )
+
     filler = {str(value).lower() for value in rules.get("filler_cell_values", [])}
     for start, block in _table_blocks(lines):
         data_cells: list[str] = []

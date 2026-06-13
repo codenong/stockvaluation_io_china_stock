@@ -232,7 +232,7 @@ def test_planner_keeps_candidate_required_and_asks_user_when_no_anchor_exists():
     assert plan["scenario_range"]["status"] == "candidate_values_required"
 
 
-def test_scenario_validation_refuses_unanchored_value_and_allows_user_input(tmp_path):
+def test_scenario_validation_refuses_unanchored_value_and_unverified_user_input(tmp_path):
     registry, _ = _registry(tmp_path)
     run_id, review_reference = _extract(registry)
     _plan(registry, run_id)
@@ -253,7 +253,7 @@ def test_scenario_validation_refuses_unanchored_value_and_allows_user_input(tmp_
     assert payload["failureCategory"] == "unanchored_scenario_value"
     assert payload["driver"] == "target_operating_margin"
 
-    allowed = registry.call(
+    unverified = registry.call(
         "stockvaluation.value_prospectus",
         {
             "run_id": run_id,
@@ -263,7 +263,9 @@ def test_scenario_validation_refuses_unanchored_value_and_allows_user_input(tmp_
             "value_sources": {"target_operating_margin": "user_input"},
         },
     )
-    assert allowed["structuredContent"]["error"]["code"] != "UNANCHORED_SCENARIO_VALUE" if not allowed["structuredContent"]["ok"] else True
+    assert unverified["isError"] is True
+    assert unverified["structuredContent"]["error"]["code"] == "UNVERIFIED_USER_INPUT"
+    assert unverified["structuredContent"]["failureCategory"] == "unverified_user_input"
 
 
 def test_guided_custom_scalar_candidate_can_drive_final_prospectus_value_without_manual_value_sources(tmp_path):

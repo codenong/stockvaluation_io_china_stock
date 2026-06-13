@@ -91,6 +91,19 @@ def test_prose_lint_flags_seeded_fluffy_sample_and_passes_clean_sample():
     assert "process_narration" in rules
     assert "empty_table" in rules
 
+    advice_like = "\n".join(
+        [
+            "# Report",
+            "The gap to price makes this look like a buy.",
+            "| Driver | Value | Source |",
+            "| --- | --- | --- |",
+            "| revenue growth | 34.08 percent | anchor:base |",
+        ]
+    )
+    advice_findings = prose_lint.lint_markdown(advice_like)
+    advice_rules = {finding["rule"] for finding in prose_lint.error_findings(advice_findings)}
+    assert "prohibited_recommendation_language" in advice_rules
+
     clean = "\n".join(
         [
             "# Report",
@@ -361,6 +374,26 @@ def test_report_builder_refuses_to_render_on_prose_lint_errors(tmp_path):
     output = json.loads(result.stdout)
     assert output["ok"] is False
     assert output["reason"] == "prose_lint_errors"
+    assert not (tmp_path / "out" / "index.html").exists()
+    assert not (tmp_path / "out" / "report.md").exists()
+
+
+def test_report_builder_refuses_to_render_advice_like_language(tmp_path):
+    data = _report_data()
+    data["prose"]["bottom_line"] = "The discount to price makes this look like a buy."
+    result = subprocess.run(
+        [sys.executable, str(SCRIPTS_DIR / "build_report.py"), "--out-dir", str(tmp_path / "out")],
+        input=json.dumps(data),
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    output = json.loads(result.stdout)
+    assert output["ok"] is False
+    assert output["reason"] == "prose_lint_errors"
+    rules = {finding["rule"] for finding in output["findings"]}
+    assert "prohibited_recommendation_language" in rules
     assert not (tmp_path / "out" / "index.html").exists()
     assert not (tmp_path / "out" / "report.md").exists()
 

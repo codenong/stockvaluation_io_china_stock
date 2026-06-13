@@ -345,7 +345,7 @@ class ValuationWorkflowServiceImplTest {
                                 .getNolTax();
                 assertEquals("source_required", nolTax.getStatus());
                 assertEquals("report_only", nolTax.getModelTreatment());
-                assertTrue(nolTax.getReason().contains("R&D capitalization is the only governed accounting scenario path"));
+                assertTrue(nolTax.getReason().contains("R&D capitalization is the only governed accounting model path"));
                 assertTrue(result.getAssumptionTransparency()
                                 .getAccountingAndClaims()
                                 .getEffectiveAccountingDecisions()
@@ -487,6 +487,40 @@ class ValuationWorkflowServiceImplTest {
                                 .getValuationOutput(eq("AAPL"), captor.capture(), eq(template));
                 assertTrue(captor.getAllValues().stream()
                                 .anyMatch(FinancialDataInput::getIsExpensesCapitalize));
+        }
+
+        @Test
+        void getValuation_autonomousResearchedCanApplySourceBackedRdCapitalization() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                companyData.getFinancialDataDTO().setResearchAndDevelopmentMap(Map.of(
+                                "currentR&D-0", 12_000.0,
+                                "currentR&D-1", 9_000.0,
+                                "currentR&D-2", 7_000.0));
+                companyData.getFinancialDataDTO()
+                                .setSourceProvenance(SourceProvenance.primaryFiling("sec-filing", "2026-02-26"));
+                ValuationTemplate template = fcffTemplate();
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setRequestPolicyMode("autonomous_researched");
+                overrides.setResearchedBaselineMode(true);
+                overrides.setIsExpensesCapitalize(true);
+                overrides.setRdAmortizationMethod("straight_line");
+                overrides.setRdAmortizationPeriodYears(4);
+                stubHappyPath(companyData, template, valuationOutput(100.0, 100.0), valuationOutput(100.0, 100.0));
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides);
+
+                AccountingAndClaimsDTO accounting = result.getAssumptionTransparency().getAccountingAndClaims();
+                assertEquals("governed_scenario_supported", accounting.getRdCapitalization().getStatus());
+                assertEquals("governed_scenario_effective", accounting.getRdCapitalization().getModelTreatment());
+                ArgumentCaptor<FinancialDataInput> captor = ArgumentCaptor.forClass(FinancialDataInput.class);
+                verify(valuationOutputService, atLeastOnce())
+                                .getValuationOutput(eq("AAPL"), captor.capture(), eq(template));
+                assertTrue(captor.getAllValues().stream()
+                                .anyMatch(input -> Boolean.TRUE.equals(input.getIsExpensesCapitalize())
+                                                && "autonomous_researched".equals(input.getRequestPolicyMode())
+                                                && "straight_line".equals(input.getRdAmortizationMethod())
+                                                && Integer.valueOf(4).equals(input.getRdAmortizationPeriodYears())));
         }
 
         @Test
