@@ -1479,14 +1479,20 @@ def test_segment_level_structured_custom_answer_maps_into_segments_rows():
 
     assert answer["anchor_label"] == "user_input"
     assert answer["model_action"] == "user scenario override"
-    assert judgment["mapped_assumptions"]["segments"] == [
-        {
-            "name": "Space",
-            "sector_key": "aerospace-defense",
-            "mapped_industry": "Aerospace/Defense",
-            "target_operating_margin": 12.0,
-        }
-    ]
+    segment_rows = {row["name"]: row for row in judgment["mapped_assumptions"]["segments"]}
+    assert segment_rows["Space"] == {
+        "name": "Space",
+        "sector_key": "aerospace-defense",
+        "mapped_industry": "Aerospace/Defense",
+        "target_operating_margin": 12.0,
+    }
+    assert segment_rows["Connectivity"] == {
+        "name": "Connectivity",
+        "sector_key": "telecom-services",
+        "mapped_industry": "Telecom. Services",
+        "target_operating_margin": 9.76,
+    }
+    assert answer["fallback_segments"] == ["Connectivity"]
 
 
 def test_segment_level_scalar_custom_answer_applies_to_scoped_segment():

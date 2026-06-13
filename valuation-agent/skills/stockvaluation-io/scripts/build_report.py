@@ -108,6 +108,7 @@ def _market_implied_section(data: dict) -> list[str]:
 
 def _key_assumptions_section(data: dict) -> list[str]:
     rows = []
+    has_source_detail = False
     for item in data.get("key_assumptions") or []:
         if not isinstance(item, dict):
             continue
@@ -117,10 +118,74 @@ def _key_assumptions_section(data: dict) -> list[str]:
         if not driver or value in (None, "") or not source:
             continue
         unit = _text(item.get("unit"))
-        rows.append([driver.replace("_", " "), f"{value} {unit}".strip(), source])
+        source_detail = _anchor_explanation_text(item)
+        has_source_detail = has_source_detail or bool(source_detail)
+        rows.append([driver.replace("_", " "), f"{value} {unit}".strip(), source, source_detail])
     if not rows:
         return []
-    return ["## Key Assumptions", ""] + _table(["Driver", "Value", "Source"], rows)
+    if has_source_detail:
+        return ["## Key Assumptions", ""] + _table(["Driver", "Value", "Source", "Source detail"], rows)
+    return ["## Key Assumptions", ""] + _table(["Driver", "Value", "Source"], [row[:3] for row in rows])
+
+
+def _anchor_explanation_text(item: dict) -> str:
+    explanation = item.get("anchor_explanation") or item.get("anchorExplanation")
+    if not isinstance(explanation, dict):
+        return _text(item.get("source_detail") or item.get("sourceDetail"))
+    parts: list[str] = []
+    summary = _text(explanation.get("summary"))
+    if summary:
+        parts.append(summary)
+    weighted = explanation.get("weighted_anchors") or explanation.get("weightedAnchors")
+    if isinstance(weighted, dict):
+        anchors = []
+        for label in ("low", "base", "high"):
+            value = weighted.get(label)
+            if value not in (None, ""):
+                anchors.append(f"{label} {value}")
+        if anchors:
+            parts.append("Weighted anchors: " + ", ".join(anchors))
+    for row in explanation.get("segment_rows") or explanation.get("segmentRows") or []:
+        if not isinstance(row, dict):
+            continue
+        segment = _text(row.get("segment"))
+        industry = _text(row.get("industry_group") or row.get("industryGroup"))
+        if not segment or not industry:
+            continue
+        weight_text = _anchor_weight_text(row)
+        values = [
+            str(row.get(label))
+            for label in ("low", "base", "high")
+            if row.get(label) not in (None, "")
+        ]
+        value_text = f", low/base/high {'/'.join(values)}" if values else ""
+        parts.append(f"{segment} -> {industry}{weight_text}{value_text}")
+    warnings = [_text(item) for item in explanation.get("warnings") or [] if _text(item)]
+    if warnings:
+        parts.append("Warnings: " + "; ".join(warnings))
+    return "; ".join(parts)
+
+
+def _anchor_weight_text(row: dict) -> str:
+    filing = row.get("filing_weight_pct")
+    effective = row.get("effective_anchor_weight_pct")
+    if filing in (None, ""):
+        filing = row.get("revenue_weight_pct")
+    try:
+        filing_number = float(filing)
+    except (TypeError, ValueError):
+        filing_number = None
+    try:
+        effective_number = float(effective)
+    except (TypeError, ValueError):
+        effective_number = None
+    if filing_number is None and effective_number is None:
+        return ""
+    if effective_number is None or filing_number == effective_number:
+        return f", filing weight {filing_number:g}%" if filing_number is not None else ""
+    if filing_number is None:
+        return f", effective anchor weight {effective_number:g}%"
+    return f", filing weight {filing_number:g}%, effective anchor weight {effective_number:g}%"
 
 
 def _guided_judgment_section(data: dict) -> list[str]:

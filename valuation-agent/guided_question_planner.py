@@ -273,6 +273,10 @@ def build_user_judgment_package(
             "unsupported_or_report_only_reason": None,
             "confidence": choice.get("confidence") or question.get("confidence"),
         }
+        if choice.get("anchor_provenance"):
+            answer_record["anchor_provenance"] = choice.get("anchor_provenance")
+        if question.get("anchor_explanation"):
+            answer_record["anchor_explanation"] = question.get("anchor_explanation")
         if model_action == "user scenario override" and field and _candidate_allowed_by_contract(field, value):
             _merge_mapped_assumption(requested_assumptions, field, value)
             _merge_mapped_assumption(mapped_assumptions, field, value)
@@ -298,6 +302,22 @@ def build_user_judgment_package(
                 "reason": "unsupported_or_unmapped",
             }
         recorded_answers.append(answer_record)
+
+    segment_fallbacks = _complete_segment_assumptions_with_defaults(
+        requested_assumptions,
+        mapped_assumptions,
+        questions,
+        recorded_answers,
+    )
+    if segment_fallbacks:
+        for answer_record in recorded_answers:
+            override = _dict(answer_record.get("requested_override"))
+            if override.get("field") != "segments" or answer_record.get("unsupported_or_report_only_reason") is not None:
+                continue
+            field = SEGMENT_DRIVER_TO_ANSWER_FIELD.get(_string(answer_record.get("mapped_driver")))
+            fallbacks = segment_fallbacks.get(field or "")
+            if fallbacks:
+                answer_record["fallback_segments"] = fallbacks
 
     scenario_label = _scenario_label(plan, mapped_assumptions, use_defaults)
     scenario_status = "recalculation_ready" if mapped_assumptions else (
@@ -575,7 +595,7 @@ def _questions_from_segment_anchors(
         material = [
             row
             for row in breakdown
-            if _number(row.get("weight"), 0.0) >= MATERIAL_SEGMENT_WEIGHT and _string_or_none(row.get("segment"))
+            if _row_filing_weight(row) >= MATERIAL_SEGMENT_WEIGHT and _string_or_none(row.get("segment"))
         ]
         if len(material) < 2:
             continue
@@ -635,7 +655,7 @@ def _segment_anchor_question(
 ) -> dict[str, Any]:
     segment_name = _string(row.get("segment"))
     industry = _string_or_none(row.get("industry_group"))
-    weight_pct = _weight_pct(row.get("weight"))
+    weight_pct = _weight_pct(_first_present(row.get("filing_weight"), row.get("weight")))
     family = DRIVER_TO_FAMILY[segment_driver]
     scenario_keys = SEGMENT_ANSWER_FIELD_TO_SCENARIO_KEYS[anchor_field]
     source_note = _string_or_none(anchor_set.get("source_note")) or SEGMENT_SOURCE_NOTE
@@ -651,7 +671,7 @@ def _segment_anchor_question(
         family=family,
         driver=segment_driver,
         priority="P1",
-        materiality_score=int(60 + 30 * min(1.0, _number(row.get("weight"), 0.0))),
+        materiality_score=int(60 + 30 * min(1.0, _row_filing_weight(row))),
         rationale=(
             f"{segment_name} is {weight_pct}% of mapped revenue and its {industry or 'industry'} "
             f"{driver_label} quantiles diverge from the weighted company anchor."
@@ -728,6 +748,7 @@ def _segment_anchor_question(
         "supported_override_field": "segments",
         "candidate_value": _segment_row_candidate(row, scenario_keys, row.get("base")),
         "candidate_source": "anchor:base",
+        "complete_segment_defaults": _segment_defaults_from_anchor_set(anchor_set, scenario_keys),
         "send_to_mcp_by_default": True,
     }
     question["anchor_explanation"] = {
@@ -745,6 +766,10 @@ def _segment_anchor_question(
                 "segment": segment_name,
                 "industry_group": industry,
                 "revenue_weight_pct": weight_pct,
+                "filing_weight_pct": weight_pct,
+                "effective_anchor_weight_pct": _weight_pct(
+                    _first_present(row.get("effective_anchor_weight"), row.get("weight"))
+                ),
                 "low": row.get("low"),
                 "base": row.get("base"),
                 "high": row.get("high"),
@@ -775,6 +800,83 @@ def _segment_row_candidate(
         if bounded is not None:
             candidate[key] = bounded
     return [candidate]
+
+
+def _segment_defaults_from_anchor_set(anchor_set: dict[str, Any], scenario_keys: tuple[str, ...]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in _list(anchor_set.get("segment_breakdown")):
+        if not isinstance(row, dict):
+            continue
+        candidate = _segment_row_candidate(row, scenario_keys, row.get("base"))
+        if candidate:
+            rows.extend(candidate)
+    return rows
+
+
+def _complete_segment_assumptions_with_defaults(
+    requested_assumptions: dict[str, Any],
+    mapped_assumptions: dict[str, Any],
+    questions: list[dict[str, Any]],
+    answers: list[dict[str, Any]],
+) -> dict[str, list[str]]:
+    answered_fields = {
+        SEGMENT_DRIVER_TO_ANSWER_FIELD.get(_string(answer.get("mapped_driver")))
+        for answer in answers
+        if _dict(answer.get("requested_override")).get("field") == "segments"
+        and answer.get("unsupported_or_report_only_reason") is None
+    }
+    answered_fields.discard(None)
+    fallbacks: dict[str, list[str]] = {}
+    for field in sorted(answered_fields):
+        defaults = _segment_defaults_for_field(questions, field)
+        if not defaults:
+            continue
+        for target in (requested_assumptions, mapped_assumptions):
+            fallback_names = _merge_segment_defaults(target, defaults)
+            if fallback_names:
+                fallbacks[field] = fallback_names
+    return fallbacks
+
+
+def _segment_defaults_for_field(questions: list[dict[str, Any]], field: str) -> list[dict[str, Any]]:
+    for question in questions:
+        if _string_or_none(_dict(question.get("segment_scope")).get("field")) != field:
+            continue
+        defaults = _list(_dict(question.get("hidden_model_mapping")).get("complete_segment_defaults"))
+        rows = [dict(row) for row in defaults if isinstance(row, dict) and _string_or_none(row.get("name"))]
+        if rows:
+            return rows
+    return []
+
+
+def _merge_segment_defaults(target: dict[str, Any], defaults: list[dict[str, Any]]) -> list[str]:
+    existing = target.get("segments")
+    if not isinstance(existing, list) or not existing:
+        return []
+    explicit_names = {
+        _slug(_string(row.get("name")))
+        for row in existing
+        if isinstance(row, dict) and _string_or_none(row.get("name"))
+    }
+    merged = [dict(row) for row in defaults]
+    index = {_slug(_string(row.get("name"))): row for row in merged if _string_or_none(row.get("name"))}
+    for row in existing:
+        if not isinstance(row, dict):
+            continue
+        key = _slug(_string(row.get("name")))
+        if key and key in index:
+            index[key].update({k: v for k, v in row.items() if v is not None})
+        else:
+            new_row = dict(row)
+            merged.append(new_row)
+            if key:
+                index[key] = new_row
+    target["segments"] = merged
+    return [
+        _string(row.get("name"))
+        for row in defaults
+        if _slug(_string(row.get("name"))) not in explicit_names and _string_or_none(row.get("name"))
+    ]
 
 
 def _questions_from_market_diagnostics(
@@ -1024,7 +1126,11 @@ def _anchor_explanation(anchor_set: dict[str, Any]) -> dict[str, Any]:
             {
                 "segment": _string_or_none(row.get("segment")),
                 "industry_group": _string_or_none(row.get("industry_group")),
-                "revenue_weight_pct": _weight_pct(row.get("weight")),
+                "revenue_weight_pct": _weight_pct(_first_present(row.get("filing_weight"), row.get("weight"))),
+                "filing_weight_pct": _weight_pct(_first_present(row.get("filing_weight"), row.get("weight"))),
+                "effective_anchor_weight_pct": _weight_pct(
+                    _first_present(row.get("effective_anchor_weight"), row.get("weight"))
+                ),
                 "low": row.get("low"),
                 "base": row.get("base"),
                 "high": row.get("high"),
@@ -1058,6 +1164,10 @@ def _weight_pct(weight: Any) -> float | None:
     if not math.isfinite(number):
         return None
     return round(number * 100.0, 1)
+
+
+def _row_filing_weight(row: dict[str, Any]) -> float:
+    return _number(_first_present(row.get("filing_weight"), row.get("weight")), 0.0)
 
 
 def _model_action(

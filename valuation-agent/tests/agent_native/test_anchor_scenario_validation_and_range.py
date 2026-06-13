@@ -266,6 +266,43 @@ def test_scenario_validation_refuses_unanchored_value_and_allows_user_input(tmp_
     assert allowed["structuredContent"]["error"]["code"] != "UNANCHORED_SCENARIO_VALUE" if not allowed["structuredContent"]["ok"] else True
 
 
+def test_guided_custom_scalar_candidate_can_drive_final_prospectus_value_without_manual_value_sources(tmp_path):
+    registry, _ = _registry(tmp_path)
+    run_id, review_reference = _extract(registry)
+    plan = _plan(registry, run_id)
+    answers = {}
+    for question in plan["questions"]:
+        if not question.get("anchor_set"):
+            continue
+        field = question["anchor_set"]["field"]
+        answers[question["id"]] = {"choice": "D", "value": 12.0} if field == "target_operating_margin" else "B"
+
+    applied = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {"run_id": run_id, "answers": answers},
+    )["structuredContent"]
+
+    candidate = applied["prospectusScenarioCandidate"]
+    assert candidate["value_sources"]["target_operating_margin"] == "user_input"
+    record = applied["guidedAnswerRecord"]["target_operating_margin"]
+    assert record["source"] == "user_input"
+    assert "anchor_explanation" in record
+
+    valued = registry.call(
+        "stockvaluation.value_prospectus",
+        {
+            "run_id": run_id,
+            "review_reference": review_reference,
+            "review_status": "reviewed",
+            "prospectusScenarioCandidate": candidate,
+        },
+    )["structuredContent"]
+
+    assert valued["ok"] is True
+    assert valued.get("error", {}).get("code") != "UNANCHORED_SCENARIO_VALUE"
+    assert valued["scenarioValueSources"]["target_operating_margin"] == "user_input"
+
+
 def _run_all_default_flow(tmp_path, name):
     registry, client = _registry(tmp_path / name)
     run_id, review_reference = _extract(registry)
@@ -543,12 +580,42 @@ def test_segment_level_custom_answers_route_into_prospectus_scenario_segments(tm
     candidate = applied["prospectusScenarioCandidate"]
     assert candidate["supported"] is True
     segment_rows = {row["name"]: row for row in candidate["scenario"]["segments"]}
+    assert set(segment_rows) == {"Space", "Connectivity"}
     assert segment_rows["Space"]["target_operating_margin"] == 12.0
     assert segment_rows["Space"]["mapped_industry"] == "Aerospace/Defense"
+    assert segment_rows["Connectivity"]["target_operating_margin"] == 9.76
+    assert segment_rows["Connectivity"]["mapped_industry"] == "Telecom. Services"
 
     record = applied["guidedAnswerRecord"]["target_operating_margin"]
-    assert record["source"] == "segments:user_input"
+    assert record["source"] == "segments:mixed"
     assert record["value"]["segments"][0]["target_operating_margin"] == 12.0
+
+
+def test_segment_level_partial_answer_preserves_other_reviewed_segments_with_defaults(tmp_path):
+    registry, _ = _registry(tmp_path, SegmentDetailedProspectusClient())
+    run_id, _ = _extract(registry)
+    plan = _plan(registry, run_id)
+    question = next(item for item in plan["questions"] if item.get("segment_scope"))
+
+    applied = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {
+            "run_id": run_id,
+            "answers": {
+                question["id"]: {
+                    "choice": "D",
+                    "value": [{"segment": "Space", "field": "target_operating_margin", "value": 12.0}],
+                }
+            },
+        },
+    )["structuredContent"]
+
+    candidate = applied["prospectusScenarioCandidate"]
+    assert candidate["supported"] is True
+    segment_rows = {row["name"]: row for row in candidate["scenario"]["segments"]}
+    assert set(segment_rows) == {"Space", "Connectivity"}
+    assert segment_rows["Connectivity"]["target_operating_margin"] == 9.76
+    assert applied["guidedAnswerRecord"]["target_operating_margin"]["fallback_segments"] == ["Connectivity"]
 
 
 def test_segment_level_defaults_use_segment_base_anchors_alongside_company_default(tmp_path):

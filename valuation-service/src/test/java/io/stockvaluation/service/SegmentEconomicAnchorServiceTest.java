@@ -130,6 +130,32 @@ class SegmentEconomicAnchorServiceTest {
     }
 
     @Test
+    void segmentBreakdownShowsRawAndEffectiveWeightsWhenSegmentsAreOmitted() {
+        SectorMappingRepository sectorMappings = mock(SectorMappingRepository.class);
+        InputStatRepository inputStats = mock(InputStatRepository.class);
+        when(sectorMappings.findByIndustryName("telecom-services"))
+                .thenReturn(mapping("telecom-services", "Telecom. Services"));
+        when(inputStats.findFirstByIndustryGroupOrderByIdAsc("Telecom. Services"))
+                .thenReturn(Optional.of(stats(
+                        "Telecom. Services",
+                        4.0, 8.0, 12.0,
+                        1.0, 2.0, 3.0,
+                        0.5, 1.0, 1.5)));
+
+        SegmentEconomicAnchorService service = new SegmentEconomicAnchorService(sectorMappings, inputStats);
+        Map<String, Object> anchors = service.anchorsForPacket(packet(
+                segment("Connectivity", 0.60, "telecom-services", null),
+                segment("AI", 0.40, null, null)));
+
+        assertAnchor(anchors, "target_operating_margin", 1.0, 2.0, 3.0);
+        List<Map<String, Object>> rows = listOfMaps(anchorSet(anchors, "target_operating_margin").get("segment_breakdown"));
+        assertEquals(1, rows.size());
+        Map<String, Object> connectivity = rows.get(0);
+        assertEquals(0.60, ((Number) connectivity.get("filing_weight")).doubleValue(), 0.000001);
+        assertEquals(1.0, ((Number) connectivity.get("effective_anchor_weight")).doubleValue(), 0.000001);
+    }
+
+    @Test
     void usesMappedIndustryWhenItIsAlreadyPresentOnSegmentFact() {
         SectorMappingRepository sectorMappings = mock(SectorMappingRepository.class);
         InputStatRepository inputStats = mock(InputStatRepository.class);

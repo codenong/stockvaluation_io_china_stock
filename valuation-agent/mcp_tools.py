@@ -280,6 +280,16 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "description": "Optional explicit prospectus scenario assumptions: segment revenue paths, target margins, sales-to-capital, R&D capitalization, net proceeds, terminal growth, terminal cost of capital, and terminal return on capital.",
                 "additionalProperties": True,
             },
+            "prospectusScenarioCandidate": {
+                "type": "object",
+                "description": "Optional prospectusScenarioCandidate returned by stockvaluation.apply_guided_answers. When supplied, the tool uses its scenario and source metadata together.",
+                "additionalProperties": True,
+            },
+            "prospectus_scenario_candidate": {
+                "type": "object",
+                "description": "Snake-case alias for prospectusScenarioCandidate.",
+                "additionalProperties": True,
+            },
         },
         [],
     )
@@ -617,8 +627,7 @@ class MCPToolRegistry:
         anchors = run.get("anchors") or {}
         if not anchors:
             return None
-        sources = args.get("value_sources") or args.get("valueSources")
-        sources = sources if isinstance(sources, dict) else {}
+        sources = value_sources_from_args(args)
         for key, value in values.items():
             if key not in NUMERIC_DRIVER_KEYS:
                 continue
@@ -839,7 +848,10 @@ class MCPToolRegistry:
                 tool,
             )
         try:
+            scenario_candidate = prospectus_scenario_candidate_from_args(args)
             scenario = args.get("scenario")
+            if scenario is None and scenario_candidate:
+                scenario = scenario_candidate.get("scenario")
             if scenario is not None and not isinstance(scenario, dict):
                 return self._finish_tracked(
                     error_payload(
@@ -889,7 +901,14 @@ class MCPToolRegistry:
                 if anchors:
                     run["anchors"] = sanitize_for_agent(anchors)
                     self.run_store.update_run(run)
-            return self._finish_tracked(prospectus_valuation_success_payload(tool, result), run, tool)
+            payload = prospectus_valuation_success_payload(tool, result)
+            value_sources = value_sources_from_args(args)
+            source_metadata = scenario_source_metadata_from_args(args)
+            if value_sources:
+                payload["scenarioValueSources"] = sanitize_for_agent(value_sources)
+            if source_metadata:
+                payload["scenarioSourceMetadata"] = sanitize_for_agent(source_metadata)
+            return self._finish_tracked(payload, run, tool)
         except ValuationServiceError as exc:
             return self._finish_tracked(service_exception_payload(tool, exc), run, tool)
 
@@ -1102,6 +1121,10 @@ class MCPToolRegistry:
                     "question_id": answer.get("question_id"),
                     "selected_choice": answer.get("selected_choice"),
                 }
+                if answer.get("anchor_explanation"):
+                    guided_answer_record[field]["anchor_explanation"] = sanitize_for_agent(answer.get("anchor_explanation"))
+                if answer.get("anchor_provenance"):
+                    guided_answer_record[field]["anchor_provenance"] = answer.get("anchor_provenance")
             self._record_segment_level_answers(guided_answer_record, segment_answers, plan)
             run["guided_answers"] = sanitize_for_agent(guided_answer_record)
             self.run_store.update_run(run)
@@ -1141,10 +1164,21 @@ class MCPToolRegistry:
             if len(answers) < planned_counts.get(field, 0):
                 continue
             labels = {_string_or_none(answer.get("anchor_label")) for answer in answers}
-            if labels == {"user_input"}:
+            fallback_segments = sorted(
+                {
+                    segment
+                    for answer in answers
+                    for segment in _string_list(answer.get("fallback_segments"))
+                }
+            )
+            if fallback_segments and labels == {"user_input"}:
+                source = "segments:mixed"
+            elif labels == {"user_input"}:
                 source = "segments:user_input"
             elif len(labels) == 1 and labels & {"low", "base", "high"}:
                 source = f"segments:anchor:{labels.pop()}"
+            elif fallback_segments:
+                source = "segments:mixed"
             else:
                 source = "segments:mixed"
             rows: list[Any] = []
@@ -1158,6 +1192,10 @@ class MCPToolRegistry:
                 "question_ids": [answer.get("question_id") for answer in answers],
                 "selected_choices": [answer.get("selected_choice") for answer in answers],
             }
+            if fallback_segments:
+                guided_answer_record[field]["fallback_segments"] = fallback_segments
+            if answers and answers[0].get("anchor_explanation"):
+                guided_answer_record[field]["anchor_explanation"] = sanitize_for_agent(answers[0].get("anchor_explanation"))
 
     def _recalculate(self, args: dict[str, Any]) -> dict[str, Any]:
         tool = "stockvaluation.recalculate"
@@ -1435,6 +1473,29 @@ def prospectus_review_status(packet: dict[str, Any]) -> str | None:
     return value.lower() if value else None
 
 
+def prospectus_scenario_candidate_from_args(args: dict[str, Any]) -> dict[str, Any]:
+    candidate = args.get("prospectusScenarioCandidate") or args.get("prospectus_scenario_candidate")
+    return _dict(candidate)
+
+
+def value_sources_from_args(args: dict[str, Any]) -> dict[str, Any]:
+    sources = args.get("value_sources") or args.get("valueSources")
+    if isinstance(sources, dict):
+        return sources
+    candidate = prospectus_scenario_candidate_from_args(args)
+    sources = candidate.get("value_sources") or candidate.get("valueSources")
+    return sources if isinstance(sources, dict) else {}
+
+
+def scenario_source_metadata_from_args(args: dict[str, Any]) -> dict[str, Any]:
+    metadata = args.get("scenario_source_metadata") or args.get("scenarioSourceMetadata")
+    if isinstance(metadata, dict):
+        return metadata
+    candidate = prospectus_scenario_candidate_from_args(args)
+    metadata = candidate.get("scenario_source_metadata") or candidate.get("scenarioSourceMetadata")
+    return metadata if isinstance(metadata, dict) else {}
+
+
 def guided_ticker_overrides_candidate(judgment: dict[str, Any]) -> dict[str, Any]:
     mapped = _dict(judgment.get("mapped_assumptions"))
     if not mapped:
@@ -1493,6 +1554,16 @@ def guided_prospectus_scenario_candidate(judgment: dict[str, Any]) -> dict[str, 
 
     if scenario:
         scenario = {"scenario_name": "guided_user_refined_scenario", **scenario}
+    source_metadata = prospectus_scenario_source_metadata(judgment)
+    value_sources = {
+        key: "user_input"
+        for key, metadata in source_metadata.items()
+        if _string_or_none(_dict(metadata).get("source")) == "user_input"
+    }
+    for key in list(value_sources):
+        field = driver_field_for_key(key)
+        if field:
+            value_sources.setdefault(field, "user_input")
     if not scenario and _string_or_none(judgment.get("scenario_status")) == "candidate_values_required":
         return {
             "supported": False,
@@ -1501,12 +1572,89 @@ def guided_prospectus_scenario_candidate(judgment: dict[str, Any]) -> dict[str, 
             "reason": "Guided answers require numeric candidate values before deterministic prospectus scenario inputs can be built.",
             "candidateRequirements": sanitize_for_agent(judgment.get("candidate_requirements") or []),
         }
-    return {
+    candidate = {
         "supported": bool(scenario),
         "scenario": sanitize_for_agent(scenario),
         "unsupportedMappedAssumptions": unsupported,
         "reason": None if scenario else "No guided answers mapped to deterministic prospectus scenario inputs.",
     }
+    if value_sources:
+        candidate["value_sources"] = sanitize_for_agent(value_sources)
+    if source_metadata:
+        candidate["scenario_source_metadata"] = sanitize_for_agent(source_metadata)
+    if scenario and (value_sources or source_metadata):
+        candidate["valueProspectusArgs"] = sanitize_for_agent(
+            {
+                "scenario": scenario,
+                "value_sources": value_sources,
+                "scenario_source_metadata": source_metadata,
+            }
+        )
+    return candidate
+
+
+def prospectus_scenario_source_metadata(judgment: dict[str, Any]) -> dict[str, Any]:
+    metadata: dict[str, Any] = {}
+    for answer in judgment.get("answers") or []:
+        if not isinstance(answer, dict):
+            continue
+        if answer.get("unsupported_or_report_only_reason") is not None:
+            continue
+        if (answer.get("model_action") or "") != "user scenario override":
+            continue
+        override = _dict(answer.get("requested_override"))
+        source_key = _string_or_none(override.get("field"))
+        if not source_key:
+            continue
+        keys = prospectus_scenario_keys_for_source_field(source_key, override.get("value"))
+        if not keys:
+            continue
+        label = _string_or_none(answer.get("anchor_label"))
+        if label == "user_input":
+            source = "user_input"
+        elif label in {"low", "base", "high"}:
+            source = f"anchor:{label}"
+        else:
+            source = "service"
+        entry = {
+            "source": source,
+            "question_id": answer.get("question_id"),
+            "selected_choice": answer.get("selected_choice"),
+        }
+        if answer.get("anchor_provenance"):
+            entry["anchor_provenance"] = answer.get("anchor_provenance")
+        if answer.get("anchor_explanation"):
+            entry["anchor_explanation"] = answer.get("anchor_explanation")
+        fallback_segments = _string_list(answer.get("fallback_segments"))
+        if fallback_segments:
+            entry["fallback_segments"] = fallback_segments
+        if source == "service" and set(entry) <= {"source", "question_id", "selected_choice"}:
+            continue
+        for key in keys:
+            metadata[key] = dict(entry)
+    return metadata
+
+
+def prospectus_scenario_keys_for_source_field(source_key: str, value: Any) -> list[str]:
+    if source_key == "net_proceeds":
+        return ["net_proceeds"]
+    if source_key == "revenue_growth":
+        return ["compound_annual_growth_2_5"]
+    if source_key == "operating_margin_next_year":
+        return ["operating_margin_next_year"]
+    if source_key in {"operating_margin", "target_operating_margin", "target_pre_tax_operating_margin"}:
+        return ["target_operating_margin"]
+    if source_key in {"margin_convergence_year", "convergence_year_margin"}:
+        return ["margin_convergence_year"]
+    if source_key == "sales_to_capital":
+        return ["sales_to_capital_years_1_to_5", "sales_to_capital_years_6_to_10"]
+    if source_key == "sales_to_capital_years_1_to_5":
+        return ["sales_to_capital_years_1_to_5"]
+    if source_key == "sales_to_capital_years_6_to_10":
+        return ["sales_to_capital_years_6_to_10"]
+    if source_key == "segments" and isinstance(value, list):
+        return ["segments"]
+    return []
 
 
 def _put_numeric_prospectus_scenario_value(

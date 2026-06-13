@@ -155,7 +155,7 @@ public class SegmentEconomicAnchorService {
         anchors.put("base", anchor(weighted(segmentStats, totalWeight, quantiles.base), field, "median"));
         anchors.put("high", anchor(weighted(segmentStats, totalWeight, quantiles.high), field, "Q3"));
         set.put("anchors", anchors);
-        set.put("segment_breakdown", breakdown(segmentStats, quantiles));
+        set.put("segment_breakdown", breakdown(segmentStats, totalWeight, quantiles));
         if (!omittedSegments.isEmpty()) {
             set.put("omitted_segments", List.copyOf(omittedSegments));
         }
@@ -172,7 +172,10 @@ public class SegmentEconomicAnchorService {
                 "provenance", SOURCE + ": revenue-weighted " + quantile + " for " + field);
     }
 
-    private static List<Map<String, Object>> breakdown(List<SegmentStats> segmentStats, DriverQuantiles quantiles) {
+    private static List<Map<String, Object>> breakdown(
+            List<SegmentStats> segmentStats,
+            double totalWeight,
+            DriverQuantiles quantiles) {
         return segmentStats.stream()
                 .sorted(Comparator.comparing(SegmentStats::industry))
                 .map(stats -> {
@@ -182,6 +185,8 @@ public class SegmentEconomicAnchorService {
                     row.put("industry_group", stats.industry());
                     row.put("mapping_confidence", stats.mappingConfidence());
                     row.put("weight", round6(stats.weight()));
+                    row.put("filing_weight", round6(stats.weight()));
+                    row.put("effective_anchor_weight", round6(effectiveAnchorWeight(stats.weight(), totalWeight)));
                     row.put("low", round2(value(stats.stats(), quantiles.low)));
                     row.put("base", round2(value(stats.stats(), quantiles.base)));
                     row.put("high", round2(value(stats.stats(), quantiles.high)));
@@ -248,6 +253,13 @@ public class SegmentEconomicAnchorService {
         return stats.stream()
                 .mapToDouble(row -> value(row.stats(), kind) * row.weight())
                 .sum() / totalWeight;
+    }
+
+    private static double effectiveAnchorWeight(double weight, double totalWeight) {
+        if (!positiveFinite(weight) || !positiveFinite(totalWeight)) {
+            return 0.0;
+        }
+        return weight / totalWeight;
     }
 
     private static double value(InputStatDistribution stats, ValueKind kind) {

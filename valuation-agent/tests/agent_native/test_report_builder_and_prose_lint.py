@@ -140,6 +140,50 @@ def test_report_builder_audit_block_carries_gates_and_assumption_sources():
     assert "| terminal growth | 2.5 percent | service |" in markdown
 
 
+def test_report_builder_renders_selected_anchor_explanation():
+    build_report = _load("build_report")
+    data = _report_data(
+        key_assumptions=[
+            {
+                "driver": "target_operating_margin",
+                "value": 8.95,
+                "unit": "percent",
+                "source": "anchor:base",
+                "anchor_explanation": {
+                    "summary": "These anchors use filing-based segment mix plus Damodaran industry quantiles.",
+                    "weighted_anchors": {"low": -0.32, "base": 8.95, "high": 18.48},
+                    "segment_rows": [
+                        {
+                            "segment": "Space",
+                            "industry_group": "Aerospace/Defense",
+                            "filing_weight_pct": 26.4,
+                            "effective_anchor_weight_pct": 26.4,
+                            "low": -4.44,
+                            "base": 6.68,
+                            "high": 13.39,
+                        },
+                        {
+                            "segment": "Connectivity",
+                            "industry_group": "Telecom. Services",
+                            "filing_weight_pct": 73.6,
+                            "effective_anchor_weight_pct": 73.6,
+                            "low": 1.16,
+                            "base": 9.76,
+                            "high": 20.31,
+                        },
+                    ],
+                },
+            }
+        ]
+    )
+
+    markdown = build_report.build_report_markdown(data)
+
+    assert "filing-based segment mix plus Damodaran industry quantiles" in markdown
+    assert "Space -> Aerospace/Defense" in markdown
+    assert "Weighted anchors: low -0.32, base 8.95, high 18.48" in markdown
+
+
 def test_report_builder_emits_single_no_advice_line_and_range_view():
     build_report = _load("build_report")
     data = _report_data(
