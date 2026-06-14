@@ -249,6 +249,171 @@ class SegmentMappingProposalServiceTest {
         assertNotEquals("telecom-services", consumerBanking.getSectorKey());
     }
 
+    @Test
+    void adNetworkDoesNotMapToTelecomFromNetworkTokenAlone() {
+        SectorMappingRepository repository = repositoryWith(
+                mapping(1L, "communication-services", "telecom-services", "Telecom. Services"),
+                mapping(2L, "communication-services", "advertising-agencies", "Advertising"));
+        SegmentMappingProposalService service = new SegmentMappingProposalService(repository);
+
+        SegmentMappingProposalService.SegmentMappingProposalResult result = service.proposeMappings(
+                List.of(new SegmentMappingProposalService.SegmentMappingInput(
+                        "Ad Network",
+                        1_000.0,
+                        null,
+                        List.of(),
+                        "reportable_segment",
+                        "Segment revenue",
+                        List.of())),
+                1_000.0);
+
+        SegmentMappingProposalService.SegmentMappingProposal proposal = result.proposals().getFirst();
+        assertEquals("advertising-agencies", proposal.sectorKey());
+        assertNotEquals("telecom-services", proposal.sectorKey());
+    }
+
+    @Test
+    void platformServicesWithNetworkComponentDoesNotForceTelecomMapping() {
+        SectorMappingRepository repository = repositoryWith(
+                mapping(1L, "communication-services", "telecom-services", "Telecom. Services"),
+                mapping(2L, "communication-services", "advertising-agencies", "Advertising"),
+                mapping(3L, "communication-services", "internet-content-information", "Information Services"));
+        SegmentMappingProposalService service = new SegmentMappingProposalService(repository);
+
+        SegmentMappingProposalService.SegmentMappingProposalResult result = service.proposeMappings(
+                List.of(new SegmentMappingProposalService.SegmentMappingInput(
+                        "Platform Services",
+                        800.0,
+                        null,
+                        List.of("Search ads", "Video subscriptions", "Partner network", "Devices"),
+                        "reportable_segment",
+                        "Segment revenue",
+                        List.of())),
+                1_000.0);
+
+        SegmentMappingProposalService.SegmentMappingProposal proposal = result.proposals().getFirst();
+        assertNotEquals("telecom-services", proposal.sectorKey());
+        assertTrue(result.materialGap());
+    }
+
+    @Test
+    void wirelessNetworkStillMapsToTelecomWhenNetworkHasTelecomContext() {
+        SectorMappingRepository repository = repositoryWith(
+                mapping(1L, "communication-services", "telecom-services", "Telecom. Services"),
+                mapping(2L, "communication-services", "advertising-agencies", "Advertising"));
+        SegmentMappingProposalService service = new SegmentMappingProposalService(repository);
+
+        SegmentMappingProposalService.SegmentMappingProposalResult result = service.proposeMappings(
+                List.of(new SegmentMappingProposalService.SegmentMappingInput(
+                        "Wireless Network",
+                        1_000.0,
+                        null,
+                        List.of("Broadband connectivity"),
+                        "reportable_segment",
+                        "Segment revenue",
+                        List.of())),
+                1_000.0);
+
+        SegmentMappingProposalService.SegmentMappingProposal proposal = result.proposals().getFirst();
+        assertEquals("telecom-services", proposal.sectorKey());
+        assertEquals("high", proposal.mappingConfidence());
+    }
+
+    @Test
+    void expandedSynonymsMapRepresentativeSegmentsAcrossSectors() {
+        SectorMappingRepository repository = repositoryWith(
+                mapping(1L, "technology", "semiconductors", "Semiconductor"),
+                mapping(2L, "energy", "oil-gas-midstream", "Oil/Gas Distribution"),
+                mapping(3L, "consumer-cyclical", "restaurants", "Restaurant/Dining"),
+                mapping(4L, "industrials", "railroads", "Transportation (Railroads)"),
+                mapping(5L, "financial-services", "insurance-property-casualty", "Insurance (Prop/Cas.)"),
+                mapping(6L, "utilities", "utilities-regulated-electric", "Utility (General)"));
+        SegmentMappingProposalService service = new SegmentMappingProposalService(repository);
+
+        SegmentMappingProposalService.SegmentMappingProposalResult result = service.proposeMappings(
+                List.of(
+                        segmentInput("Chips", 100.0),
+                        segmentInput("Pipeline Transportation", 100.0),
+                        segmentInput("Quick Service Restaurants", 100.0),
+                        segmentInput("Rail Freight", 100.0),
+                        segmentInput("P&C Underwriting", 100.0),
+                        segmentInput("Electric Transmission", 100.0)),
+                600.0);
+
+        assertEquals("semiconductors", result.proposals().get(0).sectorKey());
+        assertEquals("oil-gas-midstream", result.proposals().get(1).sectorKey());
+        assertEquals("restaurants", result.proposals().get(2).sectorKey());
+        assertEquals("railroads", result.proposals().get(3).sectorKey());
+        assertEquals("insurance-property-casualty", result.proposals().get(4).sectorKey());
+        assertEquals("utilities-regulated-electric", result.proposals().get(5).sectorKey());
+        assertTrue(result.proposals().stream()
+                .allMatch(proposal -> "high".equals(proposal.mappingConfidence())));
+    }
+
+    @Test
+    void energyProductDescriptorsPreferRefiningMarketingOverSpecialtyChemicals() {
+        SectorMappingRepository repository = repositoryWith(
+                mapping(1L, "energy", "oil-gas-refining-marketing", "Oil/Gas Distribution"),
+                mapping(2L, "basic-materials", "specialty-chemicals", "Chemical (Specialty)"),
+                mapping(3L, "basic-materials", "chemicals", "Chemical (Diversified)"));
+        SegmentMappingProposalService service = new SegmentMappingProposalService(repository);
+
+        SegmentMappingProposalService.SegmentMappingProposalResult result = service.proposeMappings(
+                List.of(segmentInput(
+                        "Energy Products",
+                        100.0,
+                        List.of("fuels", "aromatics", "catalysts and licensing"))),
+                100.0);
+
+        SegmentMappingProposalService.SegmentMappingProposal proposal = result.proposals().getFirst();
+        assertEquals("oil-gas-refining-marketing", proposal.sectorKey());
+        assertNotEquals("specialty-chemicals", proposal.sectorKey());
+        assertEquals("high", proposal.mappingConfidence());
+        assertFalse(result.materialGap());
+    }
+
+    @Test
+    void chemicalProductDescriptorsMapToDiversifiedChemicals() {
+        SectorMappingRepository repository = repositoryWith(
+                mapping(1L, "energy", "oil-gas-refining-marketing", "Oil/Gas Distribution"),
+                mapping(2L, "basic-materials", "specialty-chemicals", "Chemical (Specialty)"),
+                mapping(3L, "basic-materials", "chemicals", "Chemical (Diversified)"));
+        SegmentMappingProposalService service = new SegmentMappingProposalService(repository);
+
+        SegmentMappingProposalService.SegmentMappingProposalResult result = service.proposeMappings(
+                List.of(segmentInput(
+                        "Chemical Products",
+                        100.0,
+                        List.of("olefins", "polyolefins", "intermediates"))),
+                100.0);
+
+        SegmentMappingProposalService.SegmentMappingProposal proposal = result.proposals().getFirst();
+        assertEquals("chemicals", proposal.sectorKey());
+        assertEquals("high", proposal.mappingConfidence());
+        assertFalse(result.materialGap());
+    }
+
+    @Test
+    void specialtyProductDescriptorsMapToSpecialtyChemicals() {
+        SectorMappingRepository repository = repositoryWith(
+                mapping(1L, "energy", "oil-gas-refining-marketing", "Oil/Gas Distribution"),
+                mapping(2L, "basic-materials", "specialty-chemicals", "Chemical (Specialty)"),
+                mapping(3L, "basic-materials", "chemicals", "Chemical (Diversified)"));
+        SegmentMappingProposalService service = new SegmentMappingProposalService(repository);
+
+        SegmentMappingProposalService.SegmentMappingProposalResult result = service.proposeMappings(
+                List.of(segmentInput(
+                        "Specialty Products",
+                        100.0,
+                        List.of("finished lubricants", "basestocks and waxes", "synthetics", "elastomers and resins"))),
+                100.0);
+
+        SegmentMappingProposalService.SegmentMappingProposal proposal = result.proposals().getFirst();
+        assertEquals("specialty-chemicals", proposal.sectorKey());
+        assertEquals("high", proposal.mappingConfidence());
+        assertFalse(result.materialGap());
+    }
+
     private static ProspectusSegmentAutoMapper mapper(SectorMappingRepository repository) {
         return new ProspectusSegmentAutoMapper(new SegmentMappingProposalService(repository));
     }
@@ -286,6 +451,24 @@ class SegmentMappingProposalServiceTest {
 
     private static SectorMapping mapping(Long id, String sector, String key, String industry) {
         return new SectorMapping(id, sector, key, industry);
+    }
+
+    private static SegmentMappingProposalService.SegmentMappingInput segmentInput(String name, Double revenueAmount) {
+        return segmentInput(name, revenueAmount, List.of());
+    }
+
+    private static SegmentMappingProposalService.SegmentMappingInput segmentInput(
+            String name,
+            Double revenueAmount,
+            List<String> components) {
+        return new SegmentMappingProposalService.SegmentMappingInput(
+                name,
+                revenueAmount,
+                null,
+                components,
+                "reportable_segment",
+                "Segment revenue",
+                List.of());
     }
 
     private static ProspectusRawTable table(String title, Row... rows) {

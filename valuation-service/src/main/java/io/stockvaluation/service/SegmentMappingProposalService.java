@@ -42,6 +42,19 @@ public class SegmentMappingProposalService {
     private static final Pattern NON_TOKEN = Pattern.compile("[^a-z0-9]+");
     private static final Set<String> STOP_TOKENS = Set.of(
             "and", "the", "services", "service", "segment", "business", "revenue", "products", "product");
+    private static final Set<String> CONTEXT_SENSITIVE_TERMS = Set.of("network");
+    private static final Map<String, Set<String>> CONTEXT_CONFIRMING_TOKENS = Map.of(
+            "network", Set.of(
+                    "telecom",
+                    "telecommunications",
+                    "wireless",
+                    "broadband",
+                    "connectivity",
+                    "carrier",
+                    "mobile",
+                    "fiber",
+                    "fibre",
+                    "internet"));
     private static final Set<String> GEOGRAPHY_LABELS = Set.of(
             "united states", "u s", "us", "usa", "domestic", "international", "americas", "north america",
             "latin america", "emea", "europe", "middle east", "africa", "apac", "asia pacific", "asia",
@@ -432,14 +445,18 @@ public class SegmentMappingProposalService {
         double score = 0.0;
         List<String> matchedTerms = new ArrayList<>();
         for (String token : queryTokens) {
-            if (!STOP_TOKENS.contains(token) && mappingTokens.contains(token)) {
+            if (!STOP_TOKENS.contains(token)
+                    && mappingTokens.contains(token)
+                    && shouldCountTerm(token, queryTokens)) {
                 score += 1.0;
                 matchedTerms.add(token);
             }
         }
         for (String alias : aliases) {
             String normalizedAlias = normalize(alias);
-            if (!normalizedAlias.isBlank() && containsPhrase(normalizedText, normalizedAlias)) {
+            if (!normalizedAlias.isBlank()
+                    && containsPhrase(normalizedText, normalizedAlias)
+                    && shouldCountAlias(normalizedAlias, queryTokens)) {
                 score += 2.0;
                 matchedTerms.add(alias);
             }
@@ -447,6 +464,23 @@ public class SegmentMappingProposalService {
         int componentTokenCount = Math.max(0, queryTokens.size() - labelTokens.size());
         double denominator = Math.max(2.0, Math.min(6.0, labelTokens.size() * 2.0 + componentTokenCount * 0.5));
         return new ScoredMapping(mapping, Math.min(1.0, score / denominator), dedupe(matchedTerms));
+    }
+
+    private static boolean shouldCountAlias(String normalizedAlias, Set<String> queryTokens) {
+        return !CONTEXT_SENSITIVE_TERMS.contains(normalizedAlias)
+                || hasConfirmingContext(normalizedAlias, queryTokens);
+    }
+
+    private static boolean shouldCountTerm(String token, Set<String> queryTokens) {
+        return !CONTEXT_SENSITIVE_TERMS.contains(token)
+                || hasConfirmingContext(token, queryTokens);
+    }
+
+    private static boolean hasConfirmingContext(String term, Set<String> queryTokens) {
+        Set<String> confirmingTokens = CONTEXT_CONFIRMING_TOKENS.getOrDefault(term, Set.of());
+        return queryTokens.stream()
+                .filter(token -> !term.equals(token))
+                .anyMatch(confirmingTokens::contains);
     }
 
     private static String confidence(double score, double margin) {

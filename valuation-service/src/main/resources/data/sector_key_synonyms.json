@@ -1,4 +1,93 @@
 {
+  "specialty-chemicals": [
+    "specialty chemicals",
+    "chemical additives",
+    "coatings",
+    "catalysts",
+    "finished lubricants",
+    "lubricants",
+    "basestocks",
+    "base stocks",
+    "waxes",
+    "synthetics",
+    "elastomers",
+    "resins"
+  ],
+  "gold": [
+    "gold mining",
+    "gold production",
+    "precious metals"
+  ],
+  "other-precious-metals-mining": [
+    "precious metals mining",
+    "platinum",
+    "palladium"
+  ],
+  "building-materials": [
+    "building materials",
+    "construction materials",
+    "cement",
+    "aggregates"
+  ],
+  "copper": [
+    "copper mining",
+    "copper production"
+  ],
+  "steel": [
+    "steelmaking",
+    "steel products",
+    "steel mills"
+  ],
+  "agricultural-inputs": [
+    "fertilizer",
+    "fertilizers",
+    "crop inputs",
+    "seed",
+    "agrochemicals"
+  ],
+  "chemicals": [
+    "diversified chemicals",
+    "industrial chemicals",
+    "chemical products",
+    "petrochemicals",
+    "olefins",
+    "polyolefins",
+    "intermediates",
+    "chemical intermediates"
+  ],
+  "other-industrial-metals-mining": [
+    "industrial metals",
+    "base metals",
+    "mining",
+    "nickel",
+    "zinc",
+    "iron ore"
+  ],
+  "lumber-wood-production": [
+    "lumber",
+    "timber",
+    "wood products",
+    "forest products"
+  ],
+  "aluminum": [
+    "aluminium",
+    "aluminum products",
+    "aluminium products"
+  ],
+  "paper-paper-products": [
+    "paper",
+    "paper products",
+    "pulp"
+  ],
+  "coking-coal": [
+    "coking coal",
+    "metallurgical coal",
+    "met coal"
+  ],
+  "silver": [
+    "silver mining",
+    "silver production"
+  ],
   "aerospace-defense": [
     "space",
     "launch",
@@ -8,6 +97,15 @@
     "aerospace",
     "defense"
   ],
+  "internet-content-information": [
+    "internet content",
+    "content",
+    "information services",
+    "digital media",
+    "search",
+    "online content",
+    "web services"
+  ],
   "telecom-services": [
     "connectivity",
     "telecom",
@@ -15,6 +113,371 @@
     "wireless",
     "network",
     "internet service"
+  ],
+  "entertainment": [
+    "film",
+    "films",
+    "streaming",
+    "media entertainment",
+    "studio",
+    "studios"
+  ],
+  "electronic-gaming-multimedia": [
+    "gaming",
+    "video games",
+    "interactive entertainment",
+    "esports",
+    "game publishing"
+  ],
+  "advertising-agencies": [
+    "ad",
+    "ad network",
+    "advertising",
+    "advertisements",
+    "ads",
+    "digital advertising",
+    "marketing services"
+  ],
+  "broadcasting": [
+    "broadcast",
+    "broadcasting",
+    "television",
+    "radio",
+    "tv stations"
+  ],
+  "publishing": [
+    "publishing",
+    "newspapers",
+    "news publishing",
+    "books",
+    "magazines"
+  ],
+  "internet-retail": [
+    "ecommerce",
+    "e-commerce",
+    "online retail",
+    "marketplace",
+    "digital commerce"
+  ],
+  "auto-manufacturers": [
+    "vehicles",
+    "vehicle manufacturing",
+    "automotive oem",
+    "cars",
+    "electric vehicles",
+    "evs"
+  ],
+  "restaurants": [
+    "restaurants",
+    "restaurant",
+    "quick service restaurants",
+    "fast casual",
+    "dining",
+    "cafes"
+  ],
+  "home-improvement-retail": [
+    "home improvement",
+    "hardware stores",
+    "building supply retail",
+    "diy retail"
+  ],
+  "travel-services": [
+    "travel",
+    "travel booking",
+    "online travel agency",
+    "reservations"
+  ],
+  "specialty-retail": [
+    "specialty retail",
+    "specialty stores"
+  ],
+  "apparel-retail": [
+    "apparel retail",
+    "fashion retail",
+    "clothing stores"
+  ],
+  "residential-construction": [
+    "homebuilding",
+    "homebuilder",
+    "residential construction",
+    "housing construction"
+  ],
+  "footwear-accessories": [
+    "footwear",
+    "shoes",
+    "sneakers",
+    "accessories"
+  ],
+  "packaging-containers": [
+    "packaging",
+    "containers",
+    "containerboard"
+  ],
+  "lodging": [
+    "hotels",
+    "hotel",
+    "lodging",
+    "hospitality"
+  ],
+  "auto-parts": [
+    "auto parts",
+    "automotive parts",
+    "vehicle components",
+    "aftermarket parts"
+  ],
+  "auto-truck-dealerships": [
+    "dealerships",
+    "auto dealerships",
+    "truck dealerships",
+    "vehicle retail"
+  ],
+  "gambling": [
+    "gaming machines",
+    "sports betting",
+    "wagering",
+    "lottery"
+  ],
+  "resorts-casinos": [
+    "casino",
+    "casinos",
+    "resorts",
+    "integrated resorts"
+  ],
+  "leisure": [
+    "leisure",
+    "recreation",
+    "fitness",
+    "attractions"
+  ],
+  "apparel-manufacturing": [
+    "apparel",
+    "clothing",
+    "garments",
+    "textiles"
+  ],
+  "textile-manufacturing": [
+    "textile manufacturing",
+    "textiles",
+    "fabrics",
+    "fabric production"
+  ],
+  "personal-services": [
+    "personal services",
+    "consumer services",
+    "beauty services"
+  ],
+  "furnishings-fixtures-appliances": [
+    "furniture",
+    "home furnishings",
+    "fixtures",
+    "appliances"
+  ],
+  "recreational-vehicles": [
+    "recreational vehicles",
+    "rv",
+    "rvs",
+    "motorhomes"
+  ],
+  "luxury-goods": [
+    "luxury",
+    "jewelry",
+    "watches",
+    "premium goods"
+  ],
+  "department-stores": [
+    "department stores",
+    "mass retail"
+  ],
+  "discount-stores": [
+    "discount retail",
+    "discount stores",
+    "value retail"
+  ],
+  "beverages-non-alcoholic": [
+    "soft drinks",
+    "non alcoholic beverages",
+    "bottled water",
+    "energy drinks"
+  ],
+  "packaged-foods": [
+    "packaged foods",
+    "food products",
+    "snacks",
+    "nutrition"
+  ],
+  "tobacco": [
+    "tobacco",
+    "cigarettes",
+    "nicotine",
+    "smokeless tobacco"
+  ],
+  "confectioners": [
+    "confectionery",
+    "candy",
+    "chocolate",
+    "sweets"
+  ],
+  "farm-products": [
+    "farm products",
+    "produce",
+    "crops",
+    "grain"
+  ],
+  "food-distribution": [
+    "food distribution",
+    "foodservice distribution",
+    "food wholesalers"
+  ],
+  "grocery-stores": [
+    "grocery",
+    "supermarkets",
+    "food retail",
+    "grocery stores"
+  ],
+  "beverages-brewers": [
+    "beer",
+    "brewers",
+    "breweries",
+    "malt beverages"
+  ],
+  "education-training-services": [
+    "education",
+    "training",
+    "learning services",
+    "schools"
+  ],
+  "beverages-wineries-distilleries": [
+    "wine",
+    "spirits",
+    "distilleries",
+    "wineries"
+  ],
+  "oil-gas-integrated": [
+    "integrated oil",
+    "integrated gas",
+    "upstream and downstream"
+  ],
+  "oil-gas-midstream": [
+    "midstream",
+    "pipelines",
+    "pipeline",
+    "pipeline transportation",
+    "storage and transportation"
+  ],
+  "oil-gas-e-p": [
+    "exploration and production",
+    "oil production",
+    "gas production",
+    "upstream"
+  ],
+  "oil-gas-equipment-services": [
+    "oilfield services",
+    "oilfield equipment",
+    "well services"
+  ],
+  "oil-gas-refining-marketing": [
+    "refining",
+    "marketing",
+    "fuel retail",
+    "refinery",
+    "fuel",
+    "fuels",
+    "refined fuels",
+    "refined products",
+    "petroleum products",
+    "gasoline",
+    "diesel",
+    "aromatics"
+  ],
+  "uranium": [
+    "uranium",
+    "nuclear fuel"
+  ],
+  "oil-gas-drilling": [
+    "drilling",
+    "contract drilling",
+    "rigs"
+  ],
+  "thermal-coal": [
+    "thermal coal",
+    "coal mining"
+  ],
+  "banks-diversified": [
+    "consumer banking",
+    "commercial banking",
+    "banking",
+    "lending",
+    "deposits"
+  ],
+  "credit-services": [
+    "credit",
+    "payments",
+    "cards",
+    "consumer finance",
+    "installment loans"
+  ],
+  "asset-management": [
+    "asset management",
+    "wealth management",
+    "investment management",
+    "fund management"
+  ],
+  "insurance-diversified": [
+    "insurance",
+    "multi line insurance",
+    "general insurance"
+  ],
+  "banks-regional": [
+    "regional banking",
+    "community banking",
+    "regional banks"
+  ],
+  "capital-markets": [
+    "investment banking",
+    "brokerage",
+    "trading",
+    "capital markets"
+  ],
+  "financial-data-stock-exchanges": [
+    "financial data",
+    "stock exchange",
+    "market data",
+    "exchange services"
+  ],
+  "insurance-property-casualty": [
+    "property casualty",
+    "p&c",
+    "underwriting",
+    "auto insurance",
+    "home insurance"
+  ],
+  "insurance-brokers": [
+    "insurance brokerage",
+    "insurance brokers",
+    "benefits brokerage"
+  ],
+  "insurance-life": [
+    "life insurance",
+    "annuities",
+    "retirement insurance"
+  ],
+  "insurance-specialty": [
+    "specialty insurance",
+    "excess and surplus",
+    "specialty underwriting"
+  ],
+  "mortgage-finance": [
+    "mortgage",
+    "mortgage finance",
+    "mortgage lending"
+  ],
+  "insurance-reinsurance": [
+    "reinsurance",
+    "reinsurer"
+  ],
+  "financial-conglomerates": [
+    "financial conglomerate",
+    "diversified financials"
   ],
   "software-infrastructure": [
     "software",
@@ -24,17 +487,78 @@
     "developer tools",
     "database"
   ],
-  "internet-content-information": [
-    "internet content",
-    "content",
-    "information services",
-    "digital media"
+  "semiconductors": [
+    "semiconductor",
+    "semiconductors",
+    "chips",
+    "chip",
+    "processors",
+    "integrated circuits"
   ],
-  "advertising-agencies": [
-    "advertising",
-    "advertisements",
-    "ads",
-    "marketing services"
+  "consumer-electronics": [
+    "devices",
+    "consumer electronics",
+    "electronics",
+    "hardware",
+    "smartphones",
+    "wearables"
+  ],
+  "software-application": [
+    "application software",
+    "apps",
+    "saas",
+    "enterprise software",
+    "productivity software"
+  ],
+  "information-technology-services": [
+    "consulting services",
+    "technology services",
+    "it services",
+    "managed services",
+    "systems integration"
+  ],
+  "semiconductor-equipment-materials": [
+    "semiconductor equipment",
+    "wafer equipment",
+    "chip equipment",
+    "semiconductor materials"
+  ],
+  "communication-equipment": [
+    "communications equipment",
+    "network equipment",
+    "routers",
+    "switches",
+    "radio equipment"
+  ],
+  "computer-hardware": [
+    "computer hardware",
+    "servers",
+    "pcs",
+    "peripherals",
+    "storage hardware"
+  ],
+  "electronic-components": [
+    "electronic components",
+    "sensors",
+    "connectors",
+    "circuit components"
+  ],
+  "scientific-technical-instruments": [
+    "instruments",
+    "measurement",
+    "test equipment",
+    "scientific instruments"
+  ],
+  "solar": [
+    "solar",
+    "solar panels",
+    "photovoltaic",
+    "pv modules"
+  ],
+  "electronics-computer-distribution": [
+    "electronics distribution",
+    "technology distribution",
+    "component distribution"
   ],
   "drug-manufacturers-general": [
     "pharmaceutical",
@@ -43,6 +567,19 @@
     "drugs",
     "medicine",
     "therapeutics"
+  ],
+  "healthcare-plans": [
+    "health insurance",
+    "managed care",
+    "health plans",
+    "medical benefits"
+  ],
+  "biotechnology": [
+    "biotech",
+    "biotechnology",
+    "biologics",
+    "gene therapy",
+    "cell therapy"
   ],
   "household-personal-products": [
     "consumer health",
@@ -56,23 +593,252 @@
     "healthcare products",
     "devices"
   ],
-  "consumer-electronics": [
-    "devices",
-    "consumer electronics",
-    "electronics",
-    "hardware"
+  "diagnostics-research": [
+    "diagnostics",
+    "diagnostic testing",
+    "clinical research",
+    "life sciences tools"
   ],
-  "information-technology-services": [
-    "consulting services",
-    "technology services",
-    "it services",
-    "managed services"
+  "medical-instruments-supplies": [
+    "medical instruments",
+    "medical supplies",
+    "surgical instruments"
   ],
-  "banks-diversified": [
-    "consumer banking",
-    "commercial banking",
-    "banking",
-    "lending",
-    "deposits"
+  "medical-care-facilities": [
+    "hospitals",
+    "clinics",
+    "healthcare facilities",
+    "care facilities"
+  ],
+  "drug-manufacturers-specialty-generic": [
+    "generic drugs",
+    "specialty pharma",
+    "specialty drugs",
+    "generics"
+  ],
+  "health-information-services": [
+    "health information",
+    "healthcare it",
+    "electronic health records",
+    "ehr"
+  ],
+  "medical-distribution": [
+    "medical distribution",
+    "pharmaceutical distribution",
+    "healthcare distribution"
+  ],
+  "pharmaceutical-retailers": [
+    "pharmacy retail",
+    "pharmacies",
+    "drugstores"
+  ],
+  "specialty-industrial-machinery": [
+    "machinery",
+    "industrial machinery",
+    "factory equipment"
+  ],
+  "railroads": [
+    "rail",
+    "rail freight",
+    "freight rail",
+    "rail transportation"
+  ],
+  "building-products-equipment": [
+    "building products",
+    "construction equipment",
+    "construction supplies"
+  ],
+  "farm-heavy-construction-machinery": [
+    "farm equipment",
+    "heavy equipment",
+    "construction machinery",
+    "tractors"
+  ],
+  "specialty-business-services": [
+    "business services",
+    "outsourcing",
+    "professional services"
+  ],
+  "integrated-freight-logistics": [
+    "logistics",
+    "freight",
+    "parcel",
+    "shipping services"
+  ],
+  "waste-management": [
+    "waste",
+    "waste management",
+    "recycling",
+    "solid waste"
+  ],
+  "conglomerates": [
+    "conglomerate",
+    "diversified industrial"
+  ],
+  "industrial-distribution": [
+    "industrial distribution",
+    "industrial supplies",
+    "maintenance supplies"
+  ],
+  "engineering-construction": [
+    "engineering",
+    "construction",
+    "infrastructure construction",
+    "epc"
+  ],
+  "rental-leasing-services": [
+    "rental",
+    "leasing",
+    "equipment rental"
+  ],
+  "consulting-services": [
+    "consulting",
+    "advisory",
+    "management consulting"
+  ],
+  "trucking": [
+    "trucking",
+    "truckload",
+    "less than truckload",
+    "ltl"
+  ],
+  "electrical-equipment-parts": [
+    "electrical equipment",
+    "electrical parts",
+    "power equipment"
+  ],
+  "airlines": [
+    "airlines",
+    "air transport",
+    "passenger air"
+  ],
+  "tools-accessories": [
+    "tools",
+    "power tools",
+    "accessories"
+  ],
+  "pollution-treatment-controls": [
+    "pollution control",
+    "water treatment",
+    "emissions control"
+  ],
+  "security-protection-services": [
+    "security",
+    "protection services",
+    "alarm monitoring"
+  ],
+  "marine-shipping": [
+    "marine shipping",
+    "shipping",
+    "vessels",
+    "ocean freight"
+  ],
+  "metal-fabrication": [
+    "metal fabrication",
+    "fabricated metal"
+  ],
+  "infrastructure-operations": [
+    "infrastructure operations",
+    "infrastructure services"
+  ],
+  "staffing-employment-services": [
+    "staffing",
+    "employment services",
+    "recruiting"
+  ],
+  "airports-air-services": [
+    "airports",
+    "airport services",
+    "air services"
+  ],
+  "business-equipment-supplies": [
+    "office equipment",
+    "business supplies",
+    "office supplies"
+  ],
+  "reit-specialty": [
+    "specialty reit",
+    "specialty real estate"
+  ],
+  "reit-industrial": [
+    "industrial reit",
+    "logistics real estate",
+    "warehouse real estate"
+  ],
+  "reit-retail": [
+    "retail reit",
+    "shopping centers",
+    "malls"
+  ],
+  "reit-residential": [
+    "residential reit",
+    "apartments",
+    "multifamily"
+  ],
+  "reit-healthcare-facilities": [
+    "healthcare reit",
+    "senior housing",
+    "medical office"
+  ],
+  "real-estate-services": [
+    "real estate services",
+    "brokerage services",
+    "property services"
+  ],
+  "reit-office": [
+    "office reit",
+    "office properties"
+  ],
+  "reit-diversified": [
+    "diversified reit",
+    "diversified real estate"
+  ],
+  "reit-mortgage": [
+    "mortgage reit",
+    "mreit",
+    "real estate finance"
+  ],
+  "reit-hotel-motel": [
+    "hotel reit",
+    "lodging reit"
+  ],
+  "real-estate-development": [
+    "real estate development",
+    "property development"
+  ],
+  "real-estate-diversified": [
+    "real estate",
+    "diversified real estate"
+  ],
+  "utilities-regulated-electric": [
+    "electric utility",
+    "regulated electric",
+    "electric transmission",
+    "electric distribution"
+  ],
+  "utilities-renewable": [
+    "renewable utility",
+    "renewable power",
+    "wind power",
+    "solar power"
+  ],
+  "utilities-diversified": [
+    "diversified utility",
+    "multi utility"
+  ],
+  "utilities-regulated-gas": [
+    "gas utility",
+    "regulated gas",
+    "natural gas distribution"
+  ],
+  "utilities-independent-power-producers": [
+    "independent power",
+    "power generation",
+    "merchant power"
+  ],
+  "utilities-regulated-water": [
+    "water utility",
+    "regulated water",
+    "water distribution"
   ]
 }

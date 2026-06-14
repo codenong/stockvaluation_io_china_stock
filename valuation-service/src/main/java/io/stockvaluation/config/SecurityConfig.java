@@ -20,6 +20,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/automated-dcf-analysis/*/valuation").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/prospectus/extract").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/prospectus/valuation").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/segments/propose-mappings").permitAll()
                         .requestMatchers("/api-s/**").permitAll() // internal service-to-service
                         .anyRequest().authenticated()
                 );

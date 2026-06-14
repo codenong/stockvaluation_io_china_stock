@@ -197,16 +197,56 @@ def _fmt(value, suffix: str = "", decimals: int = 2) -> str:
     return f"{formatted}{suffix}" if suffix else formatted
 
 
+def _currency(data: dict) -> str:
+    return _text(data.get("currency")) or _text(_valuation_output(data).get("currency")) or "USD"
+
+
+def _currency_symbol(currency: str) -> str:
+    return "$" if _text(currency).upper() == "USD" else ""
+
+
+def _with_currency_symbol(number_text: str, currency: str) -> str:
+    symbol = _currency_symbol(currency)
+    if symbol:
+        if number_text.startswith("-"):
+            return f"-{symbol}{number_text[1:]}"
+        return f"{symbol}{number_text}"
+    return f"{number_text} {currency}".strip()
+
+
+def _trimmed(number: float, decimals: int) -> str:
+    return f"{number:,.{decimals}f}".rstrip("0").rstrip(".")
+
+
 def _fmt_compact(value, suffix: str = "") -> str:
     number = _number(value)
     if number is None:
         return ""
     sign = "-" if number < 0 else ""
     absolute = abs(number)
-    for threshold, label in ((1_000_000_000_000, "T"), (1_000_000_000, "B"), (1_000_000, "M")):
+    for threshold, label, decimals in (
+        (1_000_000_000_000, "T", 2),
+        (1_000_000_000, "B", 1),
+        (1_000_000, "M", 1),
+    ):
         if absolute >= threshold:
-            return f"{sign}{absolute / threshold:,.2f}{label}{suffix}"
+            return f"{sign}{_trimmed(absolute / threshold, decimals)}{label}{suffix}"
     return f"{number:,.2f}{suffix}"
+
+
+def _fmt_money(value, currency: str = "USD", compact: bool = True) -> str:
+    number = _number(value)
+    if number is None:
+        return ""
+    formatted = _fmt_compact(number) if compact else f"{number:,.2f}"
+    return _with_currency_symbol(formatted, currency)
+
+
+def _fmt_per_share(value, currency: str = "USD") -> str:
+    number = _number(value)
+    if number is None:
+        return ""
+    return _with_currency_symbol(f"{number:,.2f}", currency)
 
 
 def _valuation_output(data: dict) -> dict:
@@ -278,20 +318,20 @@ def _metric(label: str, value: str, note: str = "", tone: str = "") -> str:
 
 
 def _valuation_text(data: dict) -> str:
-    currency = _text(data.get("currency")) or _text(_valuation_output(data).get("currency")) or "USD"
+    currency = _currency(data)
     valuation = _dict(data.get("valuation"))
     point = _dict(valuation.get("point"))
     value_range = _dict(valuation.get("range"))
     point_value = _number(point.get("value_per_share"))
     if point_value is not None:
-        return f"{point_value:,.2f} {currency}"
+        return _fmt_per_share(point_value, currency)
     low = _number(value_range.get("low"))
     high = _number(value_range.get("high"))
     if low is not None and high is not None:
-        return f"{min(low, high):,.2f}-{max(low, high):,.2f} {currency}"
+        return f"{_fmt_per_share(min(low, high), currency)}-{_fmt_per_share(max(low, high), currency)}"
     company = _dict(_valuation_output(data).get("companyDTO"))
     fallback = _number(company.get("estimatedValuePerShare"))
-    return f"{fallback:,.2f} {currency}" if fallback is not None else ""
+    return _fmt_per_share(fallback, currency) if fallback is not None else ""
 
 
 def _status_chips(data: dict) -> str:
@@ -315,6 +355,7 @@ def _report_summary_html(markdown: str, data: dict, company: str | None, ticker:
     company_dto = _dict(valuation.get("companyDTO"))
     priced_in = _dict(_dict(_dict(valuation.get("assumptionTransparency")).get("pricedInExpectations")))
     base_case = _dict(priced_in.get("baseCase"))
+    currency = _currency(data)
     company_name = _text(data.get("company")) or _text(company) or _text(valuation.get("companyName")) or "Valuation"
     ticker_text = _text(data.get("ticker")) or _text(ticker)
     report_label = "StockValuation.io report" + (f" / {ticker_text}" if ticker_text else "")
@@ -332,14 +373,16 @@ def _report_summary_html(markdown: str, data: dict, company: str | None, ticker:
         item
         for item in (
             _metric("Value view", value_per_share, "per share or unresolved range", "primary"),
-            _metric("Market price", _fmt(market_price), "latest returned price"),
+            _metric("Market price", _fmt_per_share(market_price, currency), "latest returned price"),
             _metric("Price gap", gap_text, gap_note, "negative" if gap_pct and gap_pct > 0 else "positive"),
-            _metric("Equity value", _fmt_compact(company_dto.get("valueOfEquity")), "model output"),
+            _metric("Equity value", _fmt_money(company_dto.get("valueOfEquity"), currency), "model output"),
         )
         if item
     )
     chips = _status_chips(data)
-    thesis = _shorten(bottom_line, 330) if bottom_line else "The report connects business story, assumptions, valuation math, and data limits in one local artifact."
+    top_thesis = _section_text(markdown, "Investment Thesis")
+    thesis_source = top_thesis or bottom_line
+    thesis = _shorten(thesis_source, 330) if thesis_source else "The report connects business story, assumptions, valuation math, and data limits in one local artifact."
     return f"""
 <section class="report-brief" aria-label="Report summary">
   <div class="brief-copy">
@@ -362,14 +405,15 @@ def _market_expectations_html(data: dict) -> str:
     frontier = _list(priced_in.get("frontier"))
     if not priced_in and not data.get("market_implied_diagnostics"):
         return ""
-    model_value = _fmt(base_case.get("intrinsicValue") or priced_in.get("modelIntrinsicValue"))
-    market_price = _fmt(priced_in.get("marketPrice"))
-    gap = _fmt(base_case.get("gapToMarketPct"), "%")
+    currency = _currency(data)
+    model_value = _fmt_per_share(base_case.get("intrinsicValue") or priced_in.get("modelIntrinsicValue"), currency)
+    market_price = _fmt_per_share(priced_in.get("marketPrice"), currency)
+    gap = _fmt(base_case.get("gapToMarketPct"), "%", decimals=1)
     solved = [row for row in frontier if isinstance(row, dict) and row.get("solved") is True]
     frontier_rows = []
     for row in solved[:3]:
-        margin = _fmt(row.get("operatingMargin"), "%")
-        growth = _fmt(row.get("impliedRevenueGrowth"), "%")
+        margin = _fmt(row.get("operatingMargin"), "%", decimals=1)
+        growth = _fmt(row.get("impliedRevenueGrowth"), "%", decimals=1)
         if margin and growth:
             frontier_rows.append(f"<li><strong>{html.escape(margin)}</strong> margin needs about <strong>{html.escape(growth)}</strong> growth.</li>")
     frontier_html = "<ul>" + "".join(frontier_rows) + "</ul>" if frontier_rows else ""
@@ -420,7 +464,7 @@ def _driver_cards_html(markdown: str, data: dict) -> str:
     return '<section class="driver-grid" aria-label="Valuation drivers">' + "\n".join(cards) + "</section>"
 
 
-def _svg_line_chart(title: str, values: list[float], color: str, suffix: str = "") -> str:
+def _svg_line_chart(title: str, values: list[float], color: str, suffix: str = "", prefix: str = "") -> str:
     if len(values) < 2:
         return ""
     values = values[:10]
@@ -436,8 +480,8 @@ def _svg_line_chart(title: str, values: list[float], color: str, suffix: str = "
         x = pad + index * step
         y = height - pad - ((value - low) / spread * (height - pad * 2))
         points.append(f"{x:.1f},{y:.1f}")
-    low_label = _fmt_compact(low, suffix)
-    high_label = _fmt_compact(high, suffix)
+    low_label = prefix + _fmt_compact(low, suffix)
+    high_label = prefix + _fmt_compact(high, suffix)
     return f"""
 <figure class="mini-chart">
   <figcaption>{html.escape(title)}</figcaption>
@@ -454,6 +498,7 @@ def _svg_line_chart(title: str, values: list[float], color: str, suffix: str = "
 
 def _bridge_html(data: dict) -> str:
     company = _dict(_valuation_output(data).get("companyDTO"))
+    currency = _currency(data)
     rows = [
         ("PV explicit cash flows", _number(company.get("pvCFOverNext10Years")), "positive"),
         ("PV terminal value", _number(company.get("pvTerminalValue")), "positive"),
@@ -470,7 +515,7 @@ def _bridge_html(data: dict) -> str:
         rendered.append(
             f'<div class="bridge-row"><span>{html.escape(label)}</span>'
             f'<div class="bridge-track"><i class="{tone}" style="width:{width:.1f}%"></i></div>'
-            f'<strong>{html.escape(_fmt_compact(value))}</strong></div>'
+            f'<strong>{html.escape(_fmt_money(value, currency))}</strong></div>'
         )
     return '<figure class="bridge-chart"><figcaption>Valuation bridge</figcaption>' + "\n".join(rendered) + "</figure>"
 
@@ -478,10 +523,11 @@ def _bridge_html(data: dict) -> str:
 def _visuals_html(data: dict) -> str:
     valuation = _valuation_output(data)
     financial = _dict(valuation.get("financialDTO"))
+    money_prefix = _currency_symbol(_currency(data))
     charts = [
-        _svg_line_chart("Revenue path", _series(financial, "revenues"), "#0f766e"),
+        _svg_line_chart("Revenue path", _series(financial, "revenues"), "#0f766e", prefix=money_prefix),
         _svg_line_chart("Operating margin", _series(financial, "ebitOperatingMargin"), "#a16207", "%"),
-        _svg_line_chart("Free cash flow", _series(financial, "fcff"), "#2563eb"),
+        _svg_line_chart("Free cash flow", _series(financial, "fcff"), "#2563eb", prefix=money_prefix),
         _bridge_html(data),
     ]
     charts = [chart for chart in charts if chart]

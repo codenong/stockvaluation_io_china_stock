@@ -26,11 +26,19 @@ def _report_data(**overrides):
         "currency": "USD",
         "valuation": {"point": {"value_per_share": 4.07}},
         "prose": {
+            "investment_thesis": "The sample thesis is that launch demand can fund the satellite network without losing capital discipline.",
+            "framing_questions": [
+                "Can the launch business keep utilization high as satellite investment rises?",
+                "Will recurring connectivity revenue improve mature margins?",
+                "Does reinvestment efficiency improve enough to support the valuation?",
+            ],
+            "valuation_thesis": "The valuation thesis connects launch cadence, recurring connectivity revenue, reinvestment needs, and execution risk into one driver-led story.",
             "business_story": "The company sells launch services and satellite connectivity, with launch revenue funding the satellite build-out.",
-            "growth": "Filing history shows revenue rising from 10.4B to 18.7B over two years; the base case assumes that pace fades by half.",
+            "growth": "Filing history shows revenue rising during the sample period; the base case assumes that pace fades as the company scales.",
             "profitability": "Only one filing year was operationally profitable; the target margin stays near that best reported year.",
             "reinvestment": "Capital spending exceeded revenue gains in the latest year, so each dollar of growth remains expensive.",
             "risk": "Launch cadence and satellite capacity pricing are the dominant company-specific risks.",
+            "sensitivity_takeaway": "The grid should show whether value is driven more by growth, margins, or capital efficiency.",
             "bottom_line": "The value rides on whether reinvestment efficiency improves; the margin driver remains the weakest evidence.",
         },
         "key_assumptions": [
@@ -149,12 +157,12 @@ def test_report_builder_audit_block_carries_gates_and_assumption_sources():
     assert "| Service version | 1.4.2 |" in markdown
 
     assert "## Key Assumptions" in markdown
-    assert "| revenue growth | 34.08 percent | anchor:base |" in markdown
-    assert "| sales to capital | 0.22 ratio | user_input |" in markdown
-    assert "| terminal growth | 2.5 percent | service |" in markdown
+    assert "| revenue growth | 34.1% | anchor:base |" in markdown
+    assert "| sales to capital | 0.22x | user_input |" in markdown
+    assert "| terminal growth | 2.5% | service |" in markdown
 
 
-def test_report_builder_renders_dcf_walk_bridge_terminal_and_scenarios():
+def test_report_builder_renders_dcf_walk_bridge_and_terminal_without_scenario_cases():
     build_report = _load("build_report")
     markdown = build_report.build_report_markdown(
         _report_data(
@@ -204,15 +212,14 @@ def test_report_builder_renders_dcf_walk_bridge_terminal_and_scenarios():
     )
 
     assert "## Projection Walk" in markdown
-    assert "| Year 3 | 1,331.00 | 10.00% | 25.00% | 332.75 | 220.00 | 175.00 |" in markdown
+    assert "| Year 3 | $1,331.00 | 10.0% | 25.0% | $332.75 | $220.00 | $175.00 |" in markdown
     assert "## Valuation Bridge" in markdown
-    assert "| PV terminal value | 2,800.00 |" in markdown
-    assert "| Estimated value per share | 37.00 |" in markdown
+    assert "| PV terminal value | $2,800.00 |" in markdown
+    assert "| Estimated value per share | $37.00 |" in markdown
     assert "## Terminal Value" in markdown
-    assert "| Terminal return on capital | 12.00% |" in markdown
-    assert "| PV terminal share of operating assets | 70.00% |" in markdown
-    assert "## Scenario Cases" in markdown
-    assert "| Base case | user_refined_scenario | 37.00 | completed | guided_user_judgment |" in markdown
+    assert "| Terminal return on capital | 12.0% |" in markdown
+    assert "| PV terminal share of operating assets | 70.0% |" in markdown
+    assert "## Scenario Cases" not in markdown
     assert "Unavailable" not in markdown
 
 
@@ -260,11 +267,34 @@ def test_report_builder_renders_service_driver_and_priced_in_expectation_tables(
                     },
                     "pricedInExpectations": {
                         "marketPrice": 358.16,
+                        "method": "Deterministic market expectations grid.",
                         "baseCase": {
                             "intrinsicValue": 304.85,
                             "gapToMarket": -53.31,
                             "gapToMarketPct": -14.88,
                         },
+                        "grid": [
+                            {
+                                "revenueGrowth": 12.33,
+                                "operatingMargin": 30.43,
+                                "intrinsicValue": 250.0,
+                            },
+                            {
+                                "revenueGrowth": 17.33,
+                                "operatingMargin": 30.43,
+                                "intrinsicValue": 304.85,
+                            },
+                            {
+                                "revenueGrowth": 12.33,
+                                "operatingMargin": 35.43,
+                                "intrinsicValue": 310.0,
+                            },
+                            {
+                                "revenueGrowth": 17.33,
+                                "operatingMargin": 35.43,
+                                "intrinsicValue": 358.16,
+                            },
+                        ],
                         "frontier": [
                             {
                                 "operatingMargin": 35.43,
@@ -281,12 +311,16 @@ def test_report_builder_renders_service_driver_and_priced_in_expectation_tables(
     )
 
     assert "## Model Driver Snapshot" in markdown
-    assert "| Target operating margin | 30.43% | Single-industry mechanical fallback | Anchored to normalized company margin. |" in markdown
+    assert "| Target operating margin | 30.4% | Single-industry mechanical fallback | Anchored to normalized company margin. |" in markdown
     assert "## What The Price Would Need" in markdown
-    assert "| Operating Margin | 30.43% | 36.37% | 5.94% | Solved to current market price. |" in markdown
+    assert "| Operating Margin | 30.4% | 36.4% | 5.9% | Solved to current market price. |" in markdown
     assert "## Priced-In Expectations" in markdown
-    assert "Base case value is 304.85 versus market price 358.16. Gap to market is -53.31 (-14.88%)." in markdown
-    assert "| 35.43% | 17.38% | 358.16 | Solved | Interpolated. |" in markdown
+    assert "Base case value is $304.85 versus market price $358.16. Gap to market is -$53.31 (-14.9%)." in markdown
+    assert "| 35.4% | 17.4% | $358.16 | Solved | Interpolated. |" in markdown
+    assert "## Sensitivity Analysis" in markdown
+    assert "| Operating margin \\ Revenue growth | 12.3% | 17.3% |" in markdown
+    assert "| 30.4% | $250.00 | $304.85 |" in markdown
+    assert "| 35.4% | $310.00 | $358.16 |" in markdown
     assert "Unavailable" not in markdown
 
 
@@ -339,8 +373,8 @@ def test_html_renderer_builds_report_packet_from_structured_data():
     assert 'class="market-panel"' in html_text
     assert 'class="driver-grid"' in html_text
     assert 'class="visual-grid"' in html_text
-    assert "37.00 USD" in html_text
-    assert "25.00%" in html_text
+    assert "$37.00" in html_text
+    assert "25.0%" in html_text
     assert "margin needs about" in html_text
     assert "Valuation bridge" in html_text
 
@@ -397,11 +431,14 @@ def test_report_builder_emits_single_no_advice_line_and_range_view():
     markdown = build_report.build_report_markdown(data)
 
     assert markdown.lower().count("not financial advice") == 1
-    assert "4.08-12.74 USD" in markdown
+    assert "$4.08-$12.74" in markdown
     assert "sales to capital" in markdown
     headings = [line for line in markdown.splitlines() if line.startswith("## ")]
     assert headings == [
         "## Valuation View",
+        "## Investment Thesis",
+        "## Framing Questions",
+        "## Valuation Thesis",
         "## Business Story",
         "## Growth",
         "## Profitability",
@@ -430,6 +467,25 @@ def test_report_builder_refuses_to_render_on_prose_lint_errors(tmp_path):
     output = json.loads(result.stdout)
     assert output["ok"] is False
     assert output["reason"] == "prose_lint_errors"
+    assert not (tmp_path / "out" / "index.html").exists()
+    assert not (tmp_path / "out" / "report.md").exists()
+
+
+def test_report_builder_refuses_model_prose_numbers_not_in_structured_data(tmp_path):
+    data = _report_data()
+    data["prose"]["investment_thesis"] = "The thesis requires 99.9% growth, which is not in the structured data."
+    result = subprocess.run(
+        [sys.executable, str(SCRIPTS_DIR / "build_report.py"), "--out-dir", str(tmp_path / "out")],
+        input=json.dumps(data),
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    output = json.loads(result.stdout)
+    assert output["ok"] is False
+    assert output["reason"] == "prose_number_errors"
+    assert output["findings"] == [{"field": "prose.investment_thesis", "number": "99.9%"}]
     assert not (tmp_path / "out" / "index.html").exists()
     assert not (tmp_path / "out" / "report.md").exists()
 
@@ -470,14 +526,14 @@ def test_report_builder_writes_markdown_and_faithful_html(tmp_path):
     html_text = (out_dir / "index.html").read_text(encoding="utf-8")
     assert output["browser_link"].startswith("file://")
     assert output["browser_opened"] is False
-    for heading in ("Valuation View", "Business Story", "Guided Judgment", "Bottom Line", "Audit"):
+    for heading in ("Valuation View", "Investment Thesis", "Framing Questions", "Business Story", "Guided Judgment", "Bottom Line", "Audit"):
         assert f"## {heading}" in markdown or heading in markdown
         assert heading in html_text
     assert 'class="report-brief"' in html_text
     assert 'class="driver-grid"' in html_text
     assert "anchor:base" in html_text
     assert "<table>" in html_text
-    assert "4.07" in html_text
+    assert "$4.07" in html_text
 
 
 def test_report_builder_opens_html_report_by_default(monkeypatch, tmp_path, capsys):
