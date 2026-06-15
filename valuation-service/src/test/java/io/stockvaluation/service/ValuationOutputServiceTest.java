@@ -213,7 +213,7 @@ class ValuationOutputServiceTest {
     @Test
     void getValuationOutput_skipsIndustryComparisonWhenProspectusIndustryIsUnmapped() {
         BasicInfoDataDTO basic = new BasicInfoDataDTO();
-        basic.setCompanyName("Space Exploration Technologies Corp.");
+        basic.setCompanyName("Amazon.com, Inc.");
         basic.setTicker("SPCX");
         basic.setIndustryUs("unmapped-prospectus");
         basic.setCountryOfIncorporation("United States");
@@ -256,6 +256,7 @@ class ValuationOutputServiceTest {
 
         var result = valuationOutputService.getValuationOutput("SPCX", financialDataInput, null);
 
+        assertEquals("Amazon.com, Inc.", result.getCompanyName());
         assertEquals(0.0, result.getBaseYearComparison().getRevenueGrowthIndustry());
         assertEquals(0.0, result.getBaseYearComparison().getOperatingMarginIndustry());
         verifyNoInteractions(industryAvgGloRepository);

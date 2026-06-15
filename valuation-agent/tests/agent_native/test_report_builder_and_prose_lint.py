@@ -490,6 +490,47 @@ def test_report_builder_refuses_model_prose_numbers_not_in_structured_data(tmp_p
     assert not (tmp_path / "out" / "report.md").exists()
 
 
+def test_report_builder_refuses_segment_economics_prose_when_segment_basis_is_insufficient(tmp_path):
+    data = _report_data(
+        valuation_output={
+            "assumptionTransparency": {
+                "baselineUseStatus": "segment_evidence_insufficient",
+                "segmentAware": False,
+                "segmentCount": 0,
+                "unsupportedBaselineDrivers": [
+                    {
+                        "field": "segments",
+                        "status": "segment_evidence_insufficient",
+                        "reason": "Researched baseline mode did not receive a validated segment package.",
+                    }
+                ],
+            }
+        },
+    )
+    data["prose"]["profitability"] = "AWS economics can carry the consolidated profit story."
+
+    result = subprocess.run(
+        [sys.executable, str(SCRIPTS_DIR / "build_report.py"), "--out-dir", str(tmp_path / "out")],
+        input=json.dumps(data),
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    output = json.loads(result.stdout)
+    assert output["ok"] is False
+    assert output["reason"] == "prose_basis_errors"
+    assert output["findings"] == [
+        {
+            "field": "prose.profitability",
+            "claim": "amazon_business_line",
+            "basis": "segment_evidence_insufficient",
+        }
+    ]
+    assert not (tmp_path / "out" / "index.html").exists()
+    assert not (tmp_path / "out" / "report.md").exists()
+
+
 def test_report_builder_refuses_to_render_advice_like_language(tmp_path):
     data = _report_data()
     data["prose"]["bottom_line"] = "The discount to price makes this look like a buy."
@@ -549,6 +590,212 @@ def test_report_builder_opens_html_report_by_default(monkeypatch, tmp_path, caps
     assert output["ok"] is True
     assert output["browser_opened"] is True
     assert opened_urls == [output["browser_link"]]
+
+
+def test_swatma_report_spine_has_case_status_weak_basis_and_monitor_list():
+    build_report = _load("build_report")
+    data = _report_data(
+        case_status="evidence_constrained_base",
+        valuation={"point": {"value_per_share": 304.85}},
+        market_price=358.16,
+        prose={
+            **_report_data()["prose"],
+            "investment_thesis": "The thesis works only if cloud mix lifts margin while retail reinvestment remains disciplined.",
+            "framing_questions": [
+                {
+                    "question": "Can cloud growth lift consolidated margin without hiding retail capital intensity?",
+                    "driver": "margin",
+                    "context": "This maps the story directly to the target margin and sales-to-capital assumptions.",
+                },
+                {
+                    "question": "Can advertising and marketplace fees grow without requiring the same asset base as first-party retail?",
+                    "driver": "growth",
+                    "context": "This frames the revenue path against business mix.",
+                },
+                {
+                    "question": "Does cash conversion improve enough to fund growth after lease and fulfillment spending?",
+                    "driver": "reinvestment",
+                    "context": "This maps the thesis to capital efficiency.",
+                },
+            ],
+            "valuation_thesis": "The valuation thesis connects business mix, price pressure, growth, margin, reinvestment, risk, and terminal value into one owner-style memo.",
+            "terminal_value": "Terminal value depends on mature reinvestment discipline and a stable spread between return on capital and cost of capital.",
+            "what_would_change_the_view": [
+                "Cloud revenue growth slowing while consolidated margin stops improving.",
+                "Fulfillment capital spending rising faster than revenue for several reporting periods.",
+                "A higher cost of capital that compresses terminal value despite better operating margins.",
+            ],
+        },
+        weak_basis_warnings=[
+            "Segment mapping is directional, so the value should be read as an evidence-constrained base case."
+        ],
+        valuation_output={
+            "companyDTO": {
+                "price": 358.16,
+                "estimatedValuePerShare": 304.85,
+                "priceAsPercentageOfValue": 117.49,
+            },
+            "assumptionTransparency": {
+                "pricedInExpectations": {
+                    "marketPrice": 358.16,
+                    "method": "Deterministic market expectations grid.",
+                    "baseCase": {
+                        "intrinsicValue": 304.85,
+                        "gapToMarket": -53.31,
+                        "gapToMarketPct": -14.88,
+                    },
+                    "grid": [
+                        {"revenueGrowth": 12.33, "operatingMargin": 30.43, "intrinsicValue": 250.0},
+                        {"revenueGrowth": 17.33, "operatingMargin": 30.43, "intrinsicValue": 304.85},
+                    ],
+                }
+            },
+        },
+    )
+
+    markdown = build_report.build_report_markdown(data)
+
+    for heading in (
+        "## Valuation View",
+        "## Investment Thesis",
+        "## Framing Questions",
+        "## Valuation Thesis",
+        "## Terminal Value",
+        "## What The Price Would Need",
+        "## Priced-In Expectations",
+        "## Sensitivity Analysis",
+        "## Basis Warnings",
+        "## Data Limits",
+        "## What Would Change The View",
+        "## Sources",
+        "## Audit",
+    ):
+        assert heading in markdown
+    assert "Case status: **Evidence constrained base**." in markdown
+    assert "Market price: **$358.16**." in markdown
+    assert "Can cloud growth lift consolidated margin" in markdown
+    assert "(margin)" in markdown
+    assert "Segment mapping is directional" in markdown
+    assert markdown.index("## Basis Warnings") < markdown.index("## Audit")
+    assert "## Peer Comparison" not in markdown
+    assert "## Scenario Cases" not in markdown
+    assert "target price" not in markdown.lower()
+
+
+def test_swatma_number_formatting_and_report_data_artifact(tmp_path):
+    build_report = _load("build_report")
+    out_dir = tmp_path / "out"
+    data = _report_data(
+        valuation={"point": {"value_per_share": 12.345}},
+        market_price=9.1,
+        key_assumptions=[
+            {"driver": "large_money", "value": 1_920_000_000_000, "unit": "money", "source": "service"},
+            {"driver": "negative_money", "value": -422_500_000_000, "unit": "money", "source": "service"},
+            {"driver": "target_margin", "value": 30.43, "unit": "percent", "source": "anchor:base"},
+            {"driver": "sales_to_capital", "value": 3.55, "unit": "multiple", "source": "anchor:base"},
+        ],
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(SCRIPTS_DIR / "build_report.py"), "--out-dir", str(out_dir), "--no-open"],
+        input=json.dumps(data),
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    output = json.loads(result.stdout)
+    markdown = (out_dir / "report.md").read_text(encoding="utf-8")
+    assert output["report_data"] == str(out_dir / "report_data.json")
+    assert (out_dir / "report_data.json").stat().st_size > 0
+    assert "$12.35" in markdown
+    assert "$9.10" in markdown
+    assert "$1.92T" in markdown
+    assert "-$422.5B" in markdown
+    assert "30.4%" in markdown
+    assert "3.55x" in markdown
+
+
+def test_html_renderer_swatma_structure_chart_labels_and_heatmap():
+    build_report = _load("build_report")
+    renderer = _load("render_report_html")
+    data = _report_data(
+        case_status="user_refined_scenario",
+        valuation={"point": {"value_per_share": 37.0}},
+        valuation_output={
+            "projectionYears": 3,
+            "companyDTO": {
+                "price": 30.0,
+                "priceAsPercentageOfValue": -18.92,
+                "valueOfEquity": 3700.0,
+                "pvCFOverNext10Years": 1200.0,
+                "pvTerminalValue": 2800.0,
+                "valueOfOperatingAssets": 4000.0,
+                "cash": 500.0,
+                "debt": 800.0,
+                "estimatedValuePerShare": 37.0,
+            },
+            "financialDTO": {
+                "revenues": [1000.0, 1100.0, 1210.0, 1331.0],
+                "revenueGrowthRate": [None, 10.0, 10.0, 10.0],
+                "ebitOperatingMargin": [20.0, 22.0, 24.0, 25.0],
+                "fcff": [None, 150.0, 180.0, 220.0],
+            },
+            "assumptionTransparency": {
+                "pricedInExpectations": {
+                    "marketPrice": 30.0,
+                    "method": "Deterministic market expectations grid.",
+                    "baseCase": {"intrinsicValue": 37.0, "gapToMarketPct": -18.92},
+                    "grid": [
+                        {"revenueGrowth": 8.0, "operatingMargin": 20.0, "intrinsicValue": 24.0},
+                        {"revenueGrowth": 10.0, "operatingMargin": 20.0, "intrinsicValue": 29.0},
+                        {"revenueGrowth": 8.0, "operatingMargin": 25.0, "intrinsicValue": 32.0},
+                        {"revenueGrowth": 10.0, "operatingMargin": 25.0, "intrinsicValue": 37.0},
+                    ],
+                    "frontier": [
+                        {
+                            "operatingMargin": 25.0,
+                            "impliedRevenueGrowth": 9.0,
+                            "intrinsicValue": 30.0,
+                            "solved": True,
+                        }
+                    ],
+                }
+            },
+        },
+    )
+    markdown = build_report.build_report_markdown(data)
+    html_text = renderer.build_html(
+        markdown,
+        "Space Exploration Technologies Valuation Report",
+        "Space Exploration Technologies",
+        "SPCX",
+        "2026-06-13 12:00 UTC",
+        report_data=data,
+    )
+
+    for expected in (
+        'class="value-card',
+        'class="framing-question-grid"',
+        'class="legacy-metric-grid"',
+        'class="chart-card"',
+        'class="chart-title">Revenue path',
+        'class="chart-unit">USD millions',
+        'class="chart-title">Operating margin',
+        'class="chart-unit">Percent',
+        'class="chart-takeaway"',
+        'class="sensitivity-heatmap"',
+        "Year 1",
+        "Operating margin",
+        "Revenue growth",
+        "#20DF7F",
+        "font-family: Nunito",
+        "Educational analysis only",
+    ):
+        assert expected in html_text
+    assert 'class="num"' in html_text
+    assert "Peer Comparison" not in html_text
+    assert "Scenario Cases" not in html_text
 
 
 def test_no_stop_slop_reference_remains_in_skill_bundle():

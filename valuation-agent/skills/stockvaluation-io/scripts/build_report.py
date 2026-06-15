@@ -13,7 +13,8 @@ Input: one JSON file (or stdin) with:
              {range: {low, high, unresolved_drivers: [...]}}
   prose: {investment_thesis, framing_questions, valuation_thesis,
           business_story, growth, profitability, reinvestment, risk,
-          sensitivity_takeaway, bottom_line}
+          terminal_value, sensitivity_takeaway, what_would_change_the_view,
+          bottom_line}
   market_implied_diagnostics?: {rows: [{assumption, required_value, note?}]}
   key_assumptions?: [{driver, value, unit?, source}]  # source: anchor:<label>|user_input|service|segments:anchor:<label>|segments:user_input
   guided_judgment?: [{question, driver, answer, source?}]
@@ -211,34 +212,25 @@ def _collect_structured_numbers(value, numbers: list[float], *, in_model_prose: 
 def _model_prose_items(data: dict) -> list[tuple[str, str]]:
     prose = _dict(data.get("prose"))
     items: list[tuple[str, str]] = []
-    for key, value in prose.items():
+
+    def append_text(prefix: str, value) -> None:
         if isinstance(value, str):
-            items.append((f"prose.{key}", value))
-        elif key == "framing_questions" and isinstance(value, list):
-            for index, item in enumerate(value):
-                if isinstance(item, dict):
-                    for nested_key in ("question", "context", "why_it_matters", "why"):
-                        text = _text(item.get(nested_key))
-                        if text:
-                            items.append((f"prose.framing_questions[{index}].{nested_key}", text))
-                else:
-                    text = _text(str(item))
-                    if text:
-                        items.append((f"prose.framing_questions[{index}]", text))
+            text = _text(value)
+            if text:
+                items.append((prefix, text))
+            return
+        if isinstance(value, dict):
+            for key, child in value.items():
+                append_text(f"{prefix}.{key}", child)
+            return
+        if isinstance(value, list):
+            for index, child in enumerate(value):
+                append_text(f"{prefix}[{index}]", child)
+
+    for key, value in prose.items():
+        append_text(f"prose.{key}", value)
     questions = data.get("framing_questions")
-    if isinstance(questions, str):
-        items.append(("framing_questions", questions))
-    elif isinstance(questions, list):
-        for index, item in enumerate(questions):
-            if isinstance(item, dict):
-                for nested_key in ("question", "context", "why_it_matters", "why"):
-                    text = _text(item.get(nested_key))
-                    if text:
-                        items.append((f"framing_questions[{index}].{nested_key}", text))
-            else:
-                text = _text(str(item))
-                if text:
-                    items.append((f"framing_questions[{index}]", text))
+    append_text("framing_questions", questions)
     return items
 
 
@@ -310,6 +302,91 @@ def validate_model_prose_numbers(data: dict) -> list[dict[str, str]]:
     return errors
 
 
+SEGMENT_ECONOMIC_CLAIM_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("segment_mix", r"\b(segment mix|business mix|mix shift|mix-shift|higher-margin|lower-margin|margin profile)\b"),
+    ("amazon_business_line", r"\b(aws|seller services|marketplace|subscription growth|international retail|cloud economics)\b"),
+    ("microsoft_business_line", r"\b(azure|linkedin|office|windows|xbox|intelligent cloud)\b"),
+    ("alphabet_business_line", r"\b(google cloud|youtube|search advertising|search ads|other bets)\b"),
+    ("meta_business_line", r"\b(reality labs|family of apps|facebook|instagram|whatsapp)\b"),
+    ("disney_business_line", r"\b(parks and experiences|direct-to-consumer|linear networks|studio entertainment|espn)\b"),
+)
+
+
+def _unsupported_driver_entries(data: dict) -> list[dict]:
+    valuation = _valuation_output(data)
+    transparency = _assumption_transparency(data)
+    audit = _dict(data.get("audit"))
+    entries: list[dict] = []
+    for source in (data, valuation, transparency, audit):
+        value = _list(_dict(source).get("unsupportedBaselineDrivers") or _dict(source).get("unsupported_baseline_drivers"))
+        entries.extend([_dict(item) for item in value])
+    return entries
+
+
+def _segment_basis_insufficient(data: dict) -> bool:
+    valuation = _valuation_output(data)
+    transparency = _assumption_transparency(data)
+    audit = _dict(data.get("audit"))
+    for value in (
+        data.get("baselineUseStatus"),
+        data.get("baseline_use_status"),
+        valuation.get("baselineUseStatus"),
+        valuation.get("baseline_use_status"),
+        transparency.get("baselineUseStatus"),
+        transparency.get("baseline_use_status"),
+        audit.get("baselineUseStatus"),
+        audit.get("baseline_use_status"),
+    ):
+        if _text(value).lower() == "segment_evidence_insufficient":
+            return True
+    for entry in _unsupported_driver_entries(data):
+        field = _text(entry.get("field")).lower()
+        status = _text(entry.get("status") or entry.get("reason")).lower()
+        if field == "segments" and "segment_evidence_insufficient" in status:
+            return True
+    segment_aware = _first_present(
+        data.get("segmentAware"),
+        data.get("segment_aware"),
+        valuation.get("segmentAware"),
+        valuation.get("segment_aware"),
+        transparency.get("segmentAware"),
+        transparency.get("segment_aware"),
+        audit.get("segmentAware"),
+        audit.get("segment_aware"),
+    )
+    segment_count = _first_present(
+        data.get("segmentCount"),
+        data.get("segment_count"),
+        valuation.get("segmentCount"),
+        valuation.get("segment_count"),
+        transparency.get("segmentCount"),
+        transparency.get("segment_count"),
+        audit.get("segmentCount"),
+        audit.get("segment_count"),
+    )
+    if segment_aware is False and _number(segment_count) == 0:
+        return True
+    return False
+
+
+def validate_model_prose_basis(data: dict) -> list[dict[str, str]]:
+    if not _segment_basis_insufficient(data):
+        return []
+    errors: list[dict[str, str]] = []
+    for field, text in _model_prose_items(data):
+        for label, pattern in SEGMENT_ECONOMIC_CLAIM_PATTERNS:
+            if re.search(pattern, text, flags=re.IGNORECASE):
+                errors.append(
+                    {
+                        "field": field,
+                        "claim": label,
+                        "basis": "segment_evidence_insufficient",
+                    }
+                )
+                break
+    return errors
+
+
 def _table(headers: list[str], rows: list[list[str]]) -> list[str]:
     lines = ["| " + " | ".join(headers) + " |", "| " + " | ".join("---" for _ in headers) + " |"]
     for row in rows:
@@ -333,12 +410,88 @@ def _series(container: dict, key: str) -> list:
     return value if isinstance(value, list) else []
 
 
+def _human_label(value: str) -> str:
+    clean = " ".join(_text(value).replace("-", " ").replace("_", " ").split())
+    return clean[:1].upper() + clean[1:] if clean else ""
+
+
+def _assumption_transparency(data: dict) -> dict:
+    return _dict(_valuation_output(data).get("assumptionTransparency"))
+
+
+def _priced_in_expectations(data: dict) -> dict:
+    return _dict(_assumption_transparency(data).get("pricedInExpectations"))
+
+
+def _case_status_label(data: dict) -> str:
+    valuation = _dict(data.get("valuation"))
+    valuation_output = _valuation_output(data)
+    transparency = _assumption_transparency(data)
+    audit = _dict(data.get("audit"))
+    workflow = _dict(audit.get("workflow_state"))
+    for value in (
+        data.get("case_status"),
+        data.get("caseStatus"),
+        data.get("valuation_case_status"),
+        data.get("valuationCaseStatus"),
+        valuation.get("case_status"),
+        valuation.get("caseStatus"),
+        valuation_output.get("caseStatus"),
+        valuation_output.get("valuationCaseStatus"),
+        transparency.get("valuationCaseStatus"),
+        audit.get("case_status"),
+        audit.get("caseStatus"),
+        audit.get("final_case_type"),
+        workflow.get("case_status"),
+        workflow.get("caseStatus"),
+    ):
+        label = _human_label(str(value)) if value not in (None, "") else ""
+        if label:
+            return label
+    if isinstance(valuation.get("range"), dict):
+        return "Unresolved range"
+    gates = _dict(workflow.get("gates"))
+    guided = _dict(gates.get("guided_refinement"))
+    guided_status = " ".join(
+        _text(guided.get(key)).lower()
+        for key in ("status", "outcome")
+        if _text(guided.get(key))
+    )
+    if any(token in guided_status for token in ("applied", "complete", "cleared")):
+        return "User refined scenario"
+    evidence = _dict(gates.get("evidence_review"))
+    evidence_status = " ".join(
+        _text(evidence.get(key)).lower()
+        for key in ("status", "outcome")
+        if _text(evidence.get(key))
+    )
+    if any(token in evidence_status for token in ("approved", "accepted", "cleared", "bypassed")):
+        return "Evidence constrained base"
+    return "Diagnostic baseline"
+
+
+def _market_price_value(data: dict) -> float | None:
+    valuation = _valuation_output(data)
+    company = _dict(valuation.get("companyDTO"))
+    priced_in = _priced_in_expectations(data)
+    for value in (
+        data.get("market_price"),
+        data.get("marketPrice"),
+        company.get("price"),
+        priced_in.get("marketPrice"),
+    ):
+        number = _number(value)
+        if number is not None:
+            return number
+    return None
+
+
 def _valuation_view(data: dict) -> list[str]:
     valuation = data.get("valuation") or {}
     currency = _currency(data)
     point = valuation.get("point") if isinstance(valuation, dict) else None
     value_range = valuation.get("range") if isinstance(valuation, dict) else None
-    lines: list[str] = []
+    lines: list[str] = [f"Case status: **{_case_status_label(data)}**."]
     if isinstance(point, dict) and isinstance(point.get("value_per_share"), (int, float)):
         label = _text(point.get("label")) or "Estimated value per share"
         lines.append(f"{label}: **{_fmt_per_share(point['value_per_share'], currency)}**.")
@@ -357,6 +510,9 @@ def _valuation_view(data: dict) -> list[str]:
                     + ", ".join(driver.replace("_", " ") for driver in drivers)
                     + ". A single point estimate appears only when every material driver is pinned."
                 )
+    market_price = _market_price_value(data)
+    if market_price is not None:
+        lines.append(f"Market price: **{_fmt_per_share(market_price, currency)}**.")
     return lines
 
 
@@ -409,12 +565,13 @@ def _market_implied_section(data: dict) -> list[str]:
             continue
         table_rows.append([assumption, required, _text(row.get("note"))])
     if not table_rows:
-        return _service_market_implied_section(data)
+        service_section = _service_market_implied_section(data)
+        return service_section if service_section else _priced_in_pressure_section(data)
     return ["## What The Price Would Need", ""] + _table(["Assumption", "Required value", "Note"], table_rows)
 
 
 def _service_market_implied_section(data: dict) -> list[str]:
-    transparency = _dict(_valuation_output(data).get("assumptionTransparency"))
+    transparency = _assumption_transparency(data)
     diagnostics = _dict(transparency.get("marketImpliedExpectations"))
     currency = _currency(data)
     rows = []
@@ -440,6 +597,40 @@ def _service_market_implied_section(data: dict) -> list[str]:
         ["Driver", "Model", "Market-implied", "Gap", "Note"],
         rows,
     )
+
+
+def _priced_in_pressure_section(data: dict) -> list[str]:
+    priced_in = _priced_in_expectations(data)
+    if not priced_in:
+        return []
+    currency = _currency(data)
+    base_case = _dict(priced_in.get("baseCase"))
+    base_value = _fmt_per_share(base_case.get("intrinsicValue"), currency)
+    market_price = _fmt_per_share(priced_in.get("marketPrice"), currency)
+    if not base_value and not market_price:
+        return []
+    lines = ["## What The Price Would Need", ""]
+    if base_value and market_price:
+        detail = f"The base case value is {base_value} versus market price {market_price}."
+        gap = _fmt_per_share(base_case.get("gapToMarket"), currency)
+        gap_pct = _fmt_percent(base_case.get("gapToMarketPct"))
+        if gap and gap_pct:
+            detail += f" The returned price gap is {gap} ({gap_pct})."
+        lines.extend([detail, ""])
+    rows = []
+    for row in _list(priced_in.get("frontier")):
+        if not isinstance(row, dict):
+            continue
+        margin = _fmt_percent(row.get("operatingMargin"))
+        growth = _fmt_percent(row.get("impliedRevenueGrowth"))
+        value = _fmt_per_share(row.get("intrinsicValue"), currency)
+        if not margin or not growth:
+            continue
+        status = "Solved" if row.get("solved") is True else "Nearest sampled point"
+        rows.append([margin, growth, value, status, _text(row.get("note"))])
+    if rows:
+        lines.extend(_table(["Operating margin", "Implied growth", "Value/share", "Status", "Note"], rows))
+    return lines
 
 
 def _service_key_drivers_section(data: dict) -> list[str]:
@@ -518,8 +709,7 @@ def _service_key_drivers_section(data: dict) -> list[str]:
 
 
 def _priced_in_expectations_section(data: dict) -> list[str]:
-    transparency = _dict(_valuation_output(data).get("assumptionTransparency"))
-    priced_in = _dict(transparency.get("pricedInExpectations"))
+    priced_in = _priced_in_expectations(data)
     base_case = _dict(priced_in.get("baseCase"))
     frontier = _list(priced_in.get("frontier"))
     currency = _currency(data)
@@ -552,8 +742,7 @@ def _priced_in_expectations_section(data: dict) -> list[str]:
 
 
 def _sensitivity_grid_section(data: dict) -> list[str]:
-    transparency = _dict(_valuation_output(data).get("assumptionTransparency"))
-    priced_in = _dict(transparency.get("pricedInExpectations"))
+    priced_in = _priced_in_expectations(data)
     grid = [row for row in _list(priced_in.get("grid")) if isinstance(row, dict)]
     if not grid:
         return []
@@ -809,6 +998,92 @@ def _data_limits_section(data: dict) -> list[str]:
     return ["## Data Limits", ""] + [f"- {item}" for item in limits]
 
 
+def _string_list(value) -> list[str]:
+    if isinstance(value, list):
+        return [_text(str(item)) for item in value if _text(str(item))]
+    text = _text(str(value)) if value not in (None, "") else ""
+    return [text] if text else []
+
+
+def _basis_warning_items(data: dict) -> list[str]:
+    warnings: list[str] = []
+
+    def extend(value) -> None:
+        warnings.extend(_string_list(value))
+
+    valuation = _valuation_output(data)
+    transparency = _assumption_transparency(data)
+    audit = _dict(data.get("audit"))
+    source_gate = _dict(data.get("sourceQualityGate") or data.get("source_quality_gate"))
+    if not source_gate:
+        source_gate = _dict(valuation.get("sourceQualityGate") or transparency.get("sourceQualityGate"))
+
+    for key in (
+        "weak_basis_warnings",
+        "weakBasisWarnings",
+        "valuation_basis_warnings",
+        "valuationBasisWarnings",
+        "basis_warnings",
+        "warnings",
+    ):
+        extend(data.get(key))
+        extend(valuation.get(key))
+        extend(audit.get(key))
+    extend(transparency.get("baselineWarnings"))
+    extend(valuation.get("baselineWarnings"))
+    extend(source_gate.get("warnings"))
+    extend(source_gate.get("dataQualityWarnings") or source_gate.get("data_quality_warnings"))
+    gate_status = _text(source_gate.get("status") or source_gate.get("sourceQualityGateStatus"))
+    gate_reason = _text(source_gate.get("reason") or source_gate.get("message"))
+    if gate_status and gate_status.lower() not in {"pass", "passed", "ok", "clear", "cleared"} and gate_reason:
+        warnings.append(gate_reason)
+
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for warning in warnings:
+        clean = " ".join(warning.split())
+        key = clean.lower()
+        if clean and key not in seen:
+            deduped.append(clean)
+            seen.add(key)
+    return deduped
+
+
+def _basis_warnings_section(data: dict) -> list[str]:
+    warnings = _basis_warning_items(data)
+    if not warnings:
+        return []
+    return ["## Basis Warnings", ""] + [f"- {item}" for item in warnings]
+
+
+def _what_would_change_section(data: dict, prose: dict) -> list[str]:
+    value = prose.get("what_would_change_the_view")
+    if value in (None, ""):
+        value = prose.get("metrics_to_monitor")
+    if value in (None, ""):
+        value = data.get("metrics_to_monitor") or data.get("what_would_change_the_view")
+    if isinstance(value, str):
+        body = _text(value)
+        return ["## What Would Change The View", "", body] if body else []
+    rows: list[str] = []
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                metric = _text(item.get("metric") or item.get("event") or item.get("item") or item.get("question"))
+                detail = _text(item.get("why") or item.get("detail") or item.get("rationale"))
+                if metric and detail:
+                    rows.append(f"- {metric}: {detail}")
+                elif metric:
+                    rows.append(f"- {metric}")
+            else:
+                text = _text(str(item))
+                if text:
+                    rows.append(f"- {text}")
+    if not rows:
+        return []
+    return ["## What Would Change The View", ""] + rows
+
+
 def _sources_section(data: dict) -> list[str]:
     entries = []
     for item in data.get("sources") or []:
@@ -894,6 +1169,12 @@ def build_report_markdown(data: dict) -> str:
         if section:
             sections.append(section)
 
+    terminal_table = _terminal_value_section(data)
+    if not terminal_table:
+        section = _prose_text_section(prose, "terminal_value", "Terminal Value")
+        if section:
+            sections.append(section)
+
     for builder in (
         _service_key_drivers_section,
         _market_implied_section,
@@ -901,13 +1182,22 @@ def build_report_markdown(data: dict) -> str:
         _sensitivity_grid_section,
         _projection_walk_section,
         _valuation_bridge_section,
-        _terminal_value_section,
         _key_assumptions_section,
         _guided_judgment_section,
     ):
         section = builder(data)
         if section:
             sections.append(section)
+    if terminal_table:
+        sections.append(terminal_table)
+
+    section = _what_would_change_section(data, prose)
+    if section:
+        sections.append(section)
+
+    section = _basis_warnings_section(data)
+    if section:
+        sections.append(section)
 
     section = _data_limits_section(data)
     if section:
@@ -967,6 +1257,10 @@ def main() -> int:
     if prose_number_errors:
         print(json.dumps({"ok": False, "reason": "prose_number_errors", "findings": prose_number_errors}, indent=2))
         return 1
+    prose_basis_errors = validate_model_prose_basis(data)
+    if prose_basis_errors:
+        print(json.dumps({"ok": False, "reason": "prose_basis_errors", "findings": prose_basis_errors}, indent=2))
+        return 1
     markdown = build_report_markdown(data)
 
     prose_lint = _load_module("prose_lint")
@@ -979,8 +1273,10 @@ def main() -> int:
     out_dir = args.out_dir.expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     markdown_path = out_dir / "report.md"
+    report_data_path = out_dir / "report_data.json"
     markdown_path.write_text(markdown, encoding="utf-8")
-    outputs = {"ok": True, "markdown": str(markdown_path), "findings": findings}
+    report_data_path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    outputs = {"ok": True, "report_data": str(report_data_path), "markdown": str(markdown_path), "findings": findings}
 
     if not args.skip_html:
         renderer = _load_module("render_report_html")

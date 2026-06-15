@@ -50,6 +50,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
         private final ValuationTemplateService valuationTemplateService;
         private final ValuationAssumptionProperties valuationAssumptionProperties;
         private final GrowthAnchorService growthAnchorService;
+        private final TickerSegmentDiscoveryService tickerSegmentDiscoveryService;
 
         @Override
         public ValuationOutputDTO getValuation(String ticker, FinancialDataInput financialDataInputOverrides) {
@@ -120,6 +121,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 if (overrides != null) {
                         adjustedParameters = applyUserOverrides(financialDataInput, overrides);
                 }
+                applyResearchedSegmentDiscovery(ticker, financialDataInput, companyDataDTO, adjustedParameters);
 
                 // VAL-3: Strict Growth Policy Guard (Optional)
                 if (valuationAssumptionProperties.isStrictGrowthPolicy()) {
@@ -175,6 +177,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         if (overrides != null) {
                                 adjustedParameters = applyUserOverrides(financialDataInput, overrides);
                         }
+                        applyResearchedSegmentDiscovery(ticker, financialDataInput, companyDataDTO, adjustedParameters);
                         adjustSalesToCapitalRatio(financialDataInput, adjustedParameters);
                         valuationOutputDTOCheck = valuationOutputService.getValuationOutput(
                                         ticker, financialDataInput, template);
@@ -202,6 +205,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         if (overrides != null) {
                                 adjustedParameters = applyUserOverrides(financialDataInput, overrides);
                         }
+                        applyResearchedSegmentDiscovery(ticker, financialDataInput, companyDataDTO, adjustedParameters);
                         adjustSalesToCapitalRatio(financialDataInput, adjustedParameters);
                         valuationOutputDTOCheck = valuationOutputService.getValuationOutput(
                                         ticker, financialDataInput, template);
@@ -896,7 +900,7 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 dto.setBaselineQuality("segment_weighted_baseline");
                 dto.setSegmentAware(true);
                 dto.setSegmentCount(segmentParams.getSegmentCount());
-                dto.setSegmentCoveragePct(segmentCoveragePct(segmentParams));
+                dto.setSegmentCoveragePct(segmentParams.getSegmentCoveragePct());
                 dto.setMappedIndustries(mappedIndustries(segmentParams));
 
                 Map<String, Object> weighted = new LinkedHashMap<>();
@@ -1021,6 +1025,38 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                                 && Boolean.TRUE.equals(overrides.getIsExpensesCapitalize()));
         }
 
+        private void applyResearchedSegmentDiscovery(
+                        String ticker,
+                        FinancialDataInput financialDataInput,
+                        CompanyDataDTO companyDataDTO,
+                        List<String> adjustedParameters) {
+                if (!isAutonomousResearchedPolicy(financialDataInput)
+                                || financialDataInput == null
+                                || hasSegmentPackage(financialDataInput)
+                                || tickerSegmentDiscoveryService == null) {
+                        return;
+                }
+                Optional<SegmentResponseDTO> discovered =
+                                tickerSegmentDiscoveryService.discoverSegments(ticker, companyDataDTO);
+                if (discovered.isEmpty()
+                                || discovered.get().getSegments() == null
+                                || discovered.get().getSegments().size() <= 1) {
+                        return;
+                }
+                financialDataInput.setSegments(discovered.get());
+                adjustedParameters.add("segments");
+                log.info("Attached discovered segment package for {} with {} segment row(s)",
+                                ticker,
+                                discovered.get().getSegments().size());
+        }
+
+        private boolean hasSegmentPackage(FinancialDataInput financialDataInput) {
+                return financialDataInput != null
+                                && financialDataInput.getSegments() != null
+                                && financialDataInput.getSegments().getSegments() != null
+                                && !financialDataInput.getSegments().getSegments().isEmpty();
+        }
+
         private void applyBaselineUseTransparency(
                         AssumptionTransparencyDTO dto,
                         FinancialDataInput financialDataInput,
@@ -1064,6 +1100,12 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 String baselineQuality = dto.getBaselineQuality();
                 if (segmentWeighted) {
                         dto.setBaselineUseStatus("validated_segment_weighted");
+                } else if (baselineQuality != null && baselineQuality.startsWith("segment_")) {
+                        dto.setBaselineUseStatus("challenged_baseline");
+                        unsupportedBaselineDrivers.add(baselineIssue(
+                                        "segments",
+                                        baselineQuality,
+                                        "Segment package was present but did not pass baseline-use validation."));
                 } else if (researchedBaselineMode) {
                         dto.setBaselineUseStatus("segment_evidence_insufficient");
                         warnings.add("researched baseline mode requires validated segment weighting or governed driver evidence; no valid segment package was used, so the baseline remains mechanical and challenged.");
@@ -1071,12 +1113,6 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                         "segments",
                                         "segment_evidence_insufficient",
                                         "Researched baseline mode did not receive a validated segment package."));
-                } else if (baselineQuality != null && baselineQuality.startsWith("segment_")) {
-                        dto.setBaselineUseStatus("challenged_baseline");
-                        unsupportedBaselineDrivers.add(baselineIssue(
-                                        "segments",
-                                        baselineQuality,
-                                        "Segment package was present but did not pass baseline-use validation."));
                 } else {
                         dto.setBaselineUseStatus("mechanical_only");
                 }
@@ -1145,22 +1181,6 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         }
                 }
                 return new ArrayList<>(byField.values());
-        }
-
-        private Double segmentCoveragePct(SegmentWeightedParameters segmentParams) {
-                if (segmentParams == null || !segmentParams.hasSectorParameters()) {
-                        return 0.0;
-                }
-                double coverage = segmentParams.getSectorParameters().values().stream()
-                                .filter(Objects::nonNull)
-                                .map(SegmentWeightedParameters.SectorParameters::getRevenueShare)
-                                .filter(Objects::nonNull)
-                                .mapToDouble(Double::doubleValue)
-                                .sum();
-                if (coverage <= 1.5) {
-                        coverage *= 100.0;
-                }
-                return round2(coverage);
         }
 
         private List<String> mappedIndustries(SegmentWeightedParameters segmentParams) {

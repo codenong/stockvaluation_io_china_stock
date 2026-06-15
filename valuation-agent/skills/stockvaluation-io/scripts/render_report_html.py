@@ -54,6 +54,25 @@ def _is_table_separator(line: str) -> bool:
     return bool(cells) and all(re.fullmatch(r":?-{3,}:?", cell or "") for cell in cells)
 
 
+def _looks_numeric_cell(value: str) -> bool:
+    clean = re.sub(r"<[^>]+>", "", value).strip()
+    if not clean:
+        return False
+    return bool(
+        re.fullmatch(
+            r"-?\$?\d[\d,]*(?:\.\d+)?(?:\s?%|x|T|B|M|K| trillion| billion| million)?",
+            clean,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _cell_attrs(tag: str, value: str) -> str:
+    if _looks_numeric_cell(value):
+        return f'{tag} class="num"'
+    return tag
+
+
 def _heading_id(text: str, used: set[str]) -> str:
     base = _slug(re.sub(r"<[^>]+>", "", text))
     candidate = base
@@ -136,11 +155,19 @@ def render_markdown(markdown: str) -> tuple[str, list[tuple[int, str, str]]]:
                 rows.append(_split_table_row(lines[i]))
                 i += 1
             output.append('<div class="table-wrap"><table>')
-            output.append("<thead><tr>" + "".join(f"<th>{_inline(cell)}</th>" for cell in headers) + "</tr></thead>")
+            output.append(
+                "<thead><tr>"
+                + "".join(f"<{_cell_attrs('th', cell)}>{_inline(cell)}</th>" for cell in headers)
+                + "</tr></thead>"
+            )
             output.append("<tbody>")
             for row in rows:
                 cells = row + [""] * max(0, len(headers) - len(row))
-                output.append("<tr>" + "".join(f"<td>{_inline(cell)}</td>" for cell in cells[: len(headers)]) + "</tr>")
+                output.append(
+                    "<tr>"
+                    + "".join(f"<{_cell_attrs('td', cell)}>{_inline(cell)}</td>" for cell in cells[: len(headers)])
+                    + "</tr>"
+                )
             output.append("</tbody></table></div>")
             continue
 
@@ -249,6 +276,13 @@ def _fmt_per_share(value, currency: str = "USD") -> str:
     return _with_currency_symbol(f"{number:,.2f}", currency)
 
 
+def _fmt_percent(value, decimals: int = 1) -> str:
+    number = _number(value)
+    if number is None:
+        return ""
+    return f"{number:,.{decimals}f}%"
+
+
 def _valuation_output(data: dict) -> dict:
     for key in ("valuation_output", "valuationOutput", "raw_valuation", "rawValuation", "valuation_json", "valuationJson"):
         value = data.get(key)
@@ -267,6 +301,109 @@ def _series(container: dict, key: str) -> list[float]:
         if number is not None:
             values.append(number)
     return values
+
+
+def _series_points(container: dict, key: str, limit: int = 11) -> list[tuple[str, float]]:
+    points: list[tuple[str, float]] = []
+    for index, value in enumerate(_list(container.get(key))[:limit]):
+        number = _number(value)
+        if number is None:
+            continue
+        label = "Base" if index == 0 else f"Year {index}"
+        points.append((label, number))
+    return points
+
+
+def _human_label(value: str) -> str:
+    clean = " ".join(_text(value).replace("-", " ").replace("_", " ").split())
+    return clean[:1].upper() + clean[1:] if clean else ""
+
+
+def _assumption_transparency(data: dict) -> dict:
+    return _dict(_valuation_output(data).get("assumptionTransparency"))
+
+
+def _priced_in_expectations(data: dict) -> dict:
+    return _dict(_assumption_transparency(data).get("pricedInExpectations"))
+
+
+def _case_status_label(data: dict) -> str:
+    valuation = _dict(data.get("valuation"))
+    valuation_output = _valuation_output(data)
+    transparency = _assumption_transparency(data)
+    audit = _dict(data.get("audit"))
+    workflow = _dict(audit.get("workflow_state"))
+    for value in (
+        data.get("case_status"),
+        data.get("caseStatus"),
+        data.get("valuation_case_status"),
+        data.get("valuationCaseStatus"),
+        valuation.get("case_status"),
+        valuation.get("caseStatus"),
+        valuation_output.get("caseStatus"),
+        valuation_output.get("valuationCaseStatus"),
+        transparency.get("valuationCaseStatus"),
+        audit.get("case_status"),
+        audit.get("caseStatus"),
+        audit.get("final_case_type"),
+        workflow.get("case_status"),
+        workflow.get("caseStatus"),
+    ):
+        label = _human_label(str(value)) if value not in (None, "") else ""
+        if label:
+            return label
+    if isinstance(valuation.get("range"), dict):
+        return "Unresolved range"
+    gates = _dict(workflow.get("gates"))
+    guided = _dict(gates.get("guided_refinement"))
+    guided_status = " ".join(
+        _text(guided.get(key)).lower()
+        for key in ("status", "outcome")
+        if _text(guided.get(key))
+    )
+    if any(token in guided_status for token in ("applied", "complete", "cleared")):
+        return "User refined scenario"
+    evidence = _dict(gates.get("evidence_review"))
+    evidence_status = " ".join(
+        _text(evidence.get(key)).lower()
+        for key in ("status", "outcome")
+        if _text(evidence.get(key))
+    )
+    if any(token in evidence_status for token in ("approved", "accepted", "cleared", "bypassed")):
+        return "Evidence constrained base"
+    return "Diagnostic baseline"
+
+
+def _market_price_value(data: dict) -> float | None:
+    valuation = _valuation_output(data)
+    company = _dict(valuation.get("companyDTO"))
+    priced_in = _priced_in_expectations(data)
+    for value in (
+        data.get("market_price"),
+        data.get("marketPrice"),
+        company.get("price"),
+        priced_in.get("marketPrice"),
+    ):
+        number = _number(value)
+        if number is not None:
+            return number
+    return None
+
+
+def _money_chart_unit(values: list[float], currency: str) -> tuple[str, float, str]:
+    maximum = max((abs(value) for value in values), default=0.0)
+    label_prefix = _text(currency).upper() or "Currency"
+    if maximum >= 1_000_000_000_000:
+        return f"{label_prefix} trillions", 1_000_000_000_000.0, "T"
+    if maximum >= 1_000_000_000:
+        return f"{label_prefix} billions", 1_000_000_000.0, "B"
+    if maximum >= 1_000_000:
+        return f"{label_prefix} millions", 1_000_000.0, "M"
+    return f"{label_prefix} millions", 1.0, "M"
+
+
+def _format_scaled_money(value: float, currency: str, scale: float, suffix: str) -> str:
+    return _with_currency_symbol(f"{_trimmed(value / scale, 1)}{suffix}", currency)
 
 
 def _plain(markdown: str) -> str:
@@ -310,7 +447,7 @@ def _metric(label: str, value: str, note: str = "", tone: str = "") -> str:
     note_html = f'<span class="metric-note">{html.escape(note)}</span>' if note else ""
     tone_class = f" {tone}" if tone else ""
     return (
-        f'<div class="summary-metric{tone_class}">'
+        f'<div class="legacy-metric{tone_class}">'
         f'<span class="metric-label">{html.escape(label)}</span>'
         f'<strong>{html.escape(value)}</strong>'
         f"{note_html}</div>"
@@ -350,18 +487,121 @@ def _status_chips(data: dict) -> str:
     return "\n".join(chips)
 
 
+def _framing_questions_html(data: dict) -> str:
+    prose = _dict(data.get("prose"))
+    questions = prose.get("framing_questions")
+    if questions in (None, ""):
+        questions = data.get("framing_questions")
+    cards: list[str] = []
+    if isinstance(questions, str):
+        text = _text(questions)
+        if text:
+            cards.append(
+                '<article class="framing-question"><span>Driver question</span>'
+                f"<p>{html.escape(text)}</p></article>"
+            )
+    elif isinstance(questions, list):
+        for item in questions[:5]:
+            if isinstance(item, dict):
+                question = _text(item.get("question"))
+                if not question:
+                    continue
+                driver = _human_label(_text(item.get("driver"))) or "Valuation driver"
+                context = _text(item.get("context") or item.get("why_it_matters") or item.get("why"))
+                context_html = f"<small>{html.escape(context)}</small>" if context else ""
+                cards.append(
+                    '<article class="framing-question">'
+                    f"<span>{html.escape(driver)}</span><p>{html.escape(question)}</p>{context_html}</article>"
+                )
+            else:
+                text = _text(str(item))
+                if text:
+                    cards.append(
+                        '<article class="framing-question"><span>Driver question</span>'
+                        f"<p>{html.escape(text)}</p></article>"
+                    )
+    if not cards:
+        return ""
+    return (
+        '<div class="framing-block"><p class="eyebrow">Framing questions</p>'
+        '<div class="framing-question-grid">'
+        + "\n".join(cards)
+        + "</div></div>"
+    )
+
+
+def _string_list(value) -> list[str]:
+    if isinstance(value, list):
+        return [_text(str(item)) for item in value if _text(str(item))]
+    text = _text(str(value)) if value not in (None, "") else ""
+    return [text] if text else []
+
+
+def _basis_warning_items(data: dict) -> list[str]:
+    warnings: list[str] = []
+
+    def extend(value) -> None:
+        warnings.extend(_string_list(value))
+
+    valuation = _valuation_output(data)
+    transparency = _assumption_transparency(data)
+    audit = _dict(data.get("audit"))
+    source_gate = _dict(data.get("sourceQualityGate") or data.get("source_quality_gate"))
+    if not source_gate:
+        source_gate = _dict(valuation.get("sourceQualityGate") or transparency.get("sourceQualityGate"))
+    for key in (
+        "weak_basis_warnings",
+        "weakBasisWarnings",
+        "valuation_basis_warnings",
+        "valuationBasisWarnings",
+        "basis_warnings",
+        "warnings",
+    ):
+        extend(data.get(key))
+        extend(valuation.get(key))
+        extend(audit.get(key))
+    extend(transparency.get("baselineWarnings"))
+    extend(valuation.get("baselineWarnings"))
+    extend(source_gate.get("warnings"))
+    extend(source_gate.get("dataQualityWarnings") or source_gate.get("data_quality_warnings"))
+    gate_status = _text(source_gate.get("status") or source_gate.get("sourceQualityGateStatus"))
+    gate_reason = _text(source_gate.get("reason") or source_gate.get("message"))
+    if gate_status and gate_status.lower() not in {"pass", "passed", "ok", "clear", "cleared"} and gate_reason:
+        warnings.append(gate_reason)
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for warning in warnings:
+        clean = " ".join(warning.split())
+        key = clean.lower()
+        if clean and key not in seen:
+            deduped.append(clean)
+            seen.add(key)
+    return deduped
+
+
+def _basis_banner_html(data: dict) -> str:
+    warnings = _basis_warning_items(data)
+    if not warnings:
+        return ""
+    items = "".join(f"<li>{html.escape(item)}</li>" for item in warnings[:4])
+    return (
+        '<div class="basis-banner" aria-label="Basis warnings">'
+        '<strong>Basis warning</strong><ul>'
+        + items
+        + "</ul></div>"
+    )
+
+
 def _report_summary_html(markdown: str, data: dict, company: str | None, ticker: str | None, generated_at: str) -> str:
     valuation = _valuation_output(data)
     company_dto = _dict(valuation.get("companyDTO"))
-    priced_in = _dict(_dict(_dict(valuation.get("assumptionTransparency")).get("pricedInExpectations")))
+    priced_in = _priced_in_expectations(data)
     base_case = _dict(priced_in.get("baseCase"))
     currency = _currency(data)
     company_name = _text(data.get("company")) or _text(company) or _text(valuation.get("companyName")) or "Valuation"
     ticker_text = _text(data.get("ticker")) or _text(ticker)
     report_label = "StockValuation.io report" + (f" / {ticker_text}" if ticker_text else "")
-    market_price = _number(company_dto.get("price"))
-    if market_price is None:
-        market_price = _number(priced_in.get("marketPrice"))
+    market_price = _market_price_value(data)
     gap_pct = _number(company_dto.get("priceAsPercentageOfValue"))
     if gap_pct is None:
         gap_pct = _number(base_case.get("gapToMarketPct"))
@@ -372,10 +612,10 @@ def _report_summary_html(markdown: str, data: dict, company: str | None, ticker:
     metrics = "\n".join(
         item
         for item in (
-            _metric("Value view", value_per_share, "per share or unresolved range", "primary"),
-            _metric("Market price", _fmt_per_share(market_price, currency), "latest returned price"),
+            _metric("Value/share", value_per_share, "returned case", "primary"),
+            _metric("Market price", _fmt_per_share(market_price, currency), "returned price"),
             _metric("Price gap", gap_text, gap_note, "negative" if gap_pct and gap_pct > 0 else "positive"),
-            _metric("Equity value", _fmt_money(company_dto.get("valueOfEquity"), currency), "model output"),
+            _metric("Case status", _case_status_label(data), "valuation basis"),
         )
         if item
     )
@@ -383,15 +623,24 @@ def _report_summary_html(markdown: str, data: dict, company: str | None, ticker:
     top_thesis = _section_text(markdown, "Investment Thesis")
     thesis_source = top_thesis or bottom_line
     thesis = _shorten(thesis_source, 330) if thesis_source else "The report connects business story, assumptions, valuation math, and data limits in one local artifact."
+    framing_questions = _framing_questions_html(data)
+    basis_banner = _basis_banner_html(data)
     return f"""
 <section class="report-brief" aria-label="Report summary">
-  <div class="brief-copy">
+  <div class="brief-copy thesis-panel">
     <p class="eyebrow">{html.escape(report_label)}</p>
     <h2>{html.escape(company_name)}</h2>
     <p class="brief-thesis">{html.escape(thesis)}</p>
     <div class="status-row">{chips}</div>
   </div>
-  <div class="summary-grid">{metrics}</div>
+  <div class="value-card">
+    <span class="metric-label">Value/share</span>
+    <strong>{html.escape(value_per_share or "See report")}</strong>
+    <p>{html.escape(_case_status_label(data))}</p>
+  </div>
+  <div class="legacy-metric-grid">{metrics}</div>
+  {framing_questions}
+  {basis_banner}
   <p class="generated-line">Generated {html.escape(generated_at)}. Educational analysis only.</p>
 </section>
 """
@@ -464,34 +713,61 @@ def _driver_cards_html(markdown: str, data: dict) -> str:
     return '<section class="driver-grid" aria-label="Valuation drivers">' + "\n".join(cards) + "</section>"
 
 
-def _svg_line_chart(title: str, values: list[float], color: str, suffix: str = "", prefix: str = "") -> str:
-    if len(values) < 2:
+def _svg_line_chart(
+    title: str,
+    points: list[tuple[str, float]],
+    color: str,
+    unit_label: str,
+    takeaway: str,
+    formatter,
+) -> str:
+    if len(points) < 2:
         return ""
-    values = values[:10]
-    width = 560
-    height = 180
-    pad = 28
+    points = points[:11]
+    values = [value for _, value in points]
+    width = 680
+    height = 260
+    left_pad = 54
+    right_pad = 26
+    top_pad = 26
+    bottom_pad = 54
     low = min(values)
     high = max(values)
     spread = high - low or 1.0
-    step = (width - pad * 2) / (len(values) - 1)
-    points = []
-    for index, value in enumerate(values):
-        x = pad + index * step
-        y = height - pad - ((value - low) / spread * (height - pad * 2))
-        points.append(f"{x:.1f},{y:.1f}")
-    low_label = prefix + _fmt_compact(low, suffix)
-    high_label = prefix + _fmt_compact(high, suffix)
+    step = (width - left_pad - right_pad) / (len(points) - 1)
+    plotted: list[tuple[str, float, float, float]] = []
+    for index, (label, value) in enumerate(points):
+        x = left_pad + index * step
+        y = height - bottom_pad - ((value - low) / spread * (height - top_pad - bottom_pad))
+        plotted.append((label, value, x, y))
+    polyline = " ".join(f"{x:.1f},{y:.1f}" for _, _, x, y in plotted)
+    x_labels = "\n".join(
+        f'<text class="axis-label" x="{x:.1f}" y="{height - 18}" text-anchor="middle">{html.escape(label)}</text>'
+        for label, _, x, _ in plotted
+    )
+    y_labels = "\n".join(
+        (
+            f'<text class="axis-label" x="{left_pad - 10}" y="{top_pad + 4}" text-anchor="end">{html.escape(formatter(high))}</text>',
+            f'<text class="axis-label" x="{left_pad - 10}" y="{height - bottom_pad + 4}" text-anchor="end">{html.escape(formatter(low))}</text>',
+        )
+    )
+    end_label, end_value, end_x, end_y = plotted[-1]
     return f"""
-<figure class="mini-chart">
-  <figcaption>{html.escape(title)}</figcaption>
+<figure class="chart-card" data-chart-kind="line">
+  <div class="chart-header">
+    <figcaption class="chart-title">{html.escape(title)}</figcaption>
+    <span class="chart-unit">{html.escape(unit_label)}</span>
+  </div>
   <svg viewBox="0 0 {width} {height}" role="img" aria-label="{html.escape(title)}">
-    <line x1="{pad}" y1="{height - pad}" x2="{width - pad}" y2="{height - pad}" />
-    <polyline points="{' '.join(points)}" style="stroke:{color}" />
-    <circle cx="{points[-1].split(',')[0]}" cy="{points[-1].split(',')[1]}" r="4" style="fill:{color}" />
-    <text x="{pad}" y="18">{html.escape(low_label)}</text>
-    <text x="{width - pad}" y="18" text-anchor="end">{html.escape(high_label)}</text>
+    <line class="axis" x1="{left_pad}" y1="{height - bottom_pad}" x2="{width - right_pad}" y2="{height - bottom_pad}" />
+    <line class="axis" x1="{left_pad}" y1="{top_pad}" x2="{left_pad}" y2="{height - bottom_pad}" />
+    {y_labels}
+    {x_labels}
+    <polyline points="{polyline}" style="stroke:{color}" />
+    <circle cx="{end_x:.1f}" cy="{end_y:.1f}" r="4.5" style="fill:{color}" />
+    <text class="point-label" x="{min(width - right_pad, end_x + 8):.1f}" y="{max(18, end_y - 8):.1f}">{html.escape(formatter(end_value))}</text>
   </svg>
+  <p class="chart-takeaway">{html.escape(takeaway)}</p>
 </figure>
 """
 
@@ -502,8 +778,10 @@ def _bridge_html(data: dict) -> str:
     rows = [
         ("PV explicit cash flows", _number(company.get("pvCFOverNext10Years")), "positive"),
         ("PV terminal value", _number(company.get("pvTerminalValue")), "positive"),
+        ("Operating asset value", _number(company.get("valueOfOperatingAssets")), "positive"),
         ("Cash", _number(company.get("cash")), "positive"),
         ("Debt", _number(company.get("debt")), "negative"),
+        ("Equity value", _number(company.get("valueOfEquity")), "positive"),
     ]
     rows = [(label, value, tone) for label, value, tone in rows if value is not None]
     if len(rows) < 2:
@@ -517,18 +795,133 @@ def _bridge_html(data: dict) -> str:
             f'<div class="bridge-track"><i class="{tone}" style="width:{width:.1f}%"></i></div>'
             f'<strong>{html.escape(_fmt_money(value, currency))}</strong></div>'
         )
-    return '<figure class="bridge-chart"><figcaption>Valuation bridge</figcaption>' + "\n".join(rendered) + "</figure>"
+    return (
+        '<figure class="chart-card bridge-chart">'
+        '<div class="chart-header"><figcaption class="chart-title">Valuation bridge</figcaption>'
+        f'<span class="chart-unit">{html.escape(_text(currency).upper() or "Currency")}</span></div>'
+        + "\n".join(rendered)
+        + '<p class="chart-takeaway">The bridge shows how explicit cash flows, terminal value, cash, and debt reconcile toward returned equity value.</p>'
+        + "</figure>"
+    )
+
+
+def _sensitivity_heatmap_html(data: dict) -> str:
+    priced_in = _priced_in_expectations(data)
+    grid = [row for row in _list(priced_in.get("grid")) if isinstance(row, dict)]
+    if not grid:
+        return ""
+    margin_values = sorted(
+        {
+            _number(row.get("operatingMargin"))
+            for row in grid
+            if _number(row.get("operatingMargin")) is not None
+        }
+    )
+    growth_values = sorted(
+        {
+            _number(row.get("revenueGrowth"))
+            for row in grid
+            if _number(row.get("revenueGrowth")) is not None
+        }
+    )
+    values = [
+        _number(row.get("intrinsicValue"))
+        for row in grid
+        if _number(row.get("intrinsicValue")) is not None
+    ]
+    if not margin_values or not growth_values or not values:
+        return ""
+    currency = _currency(data)
+    minimum = min(values)
+    maximum = max(values)
+    spread = maximum - minimum or 1.0
+    value_by_axis: dict[tuple[float, float], float] = {}
+    for row in grid:
+        margin = _number(row.get("operatingMargin"))
+        growth = _number(row.get("revenueGrowth"))
+        intrinsic = _number(row.get("intrinsicValue"))
+        if margin is None or growth is None or intrinsic is None:
+            continue
+        value_by_axis[(round(margin, 4), round(growth, 4))] = intrinsic
+    column_labels = "".join(
+        f'<span class="heatmap-axis-label">{html.escape(_fmt_percent(growth))}</span>'
+        for growth in growth_values
+    )
+    rows_html: list[str] = []
+    for margin in reversed(margin_values):
+        cells = []
+        for growth in growth_values:
+            value = value_by_axis.get((round(margin, 4), round(growth, 4)))
+            if value is None:
+                cells.append('<span class="heatmap-cell empty"></span>')
+                continue
+            ratio = (value - minimum) / spread
+            hue = 2 + ratio * 140
+            cells.append(
+                '<span class="heatmap-cell" '
+                f'style="background:hsl({hue:.0f} 72% 36%);" '
+                f'title="Margin {_fmt_percent(margin)}, growth {_fmt_percent(growth)}">'
+                f"{html.escape(_fmt_per_share(value, currency))}</span>"
+            )
+        rows_html.append(
+            '<div class="heatmap-row">'
+            f'<span class="heatmap-axis-label y">{html.escape(_fmt_percent(margin))}</span>'
+            + "".join(cells)
+            + "</div>"
+        )
+    return f"""
+<figure class="sensitivity-heatmap" data-chart-kind="sensitivity">
+  <div class="chart-header">
+    <figcaption class="chart-title">Sensitivity heatmap</figcaption>
+    <span class="chart-unit">Value/share across deterministic grid</span>
+  </div>
+  <div class="heatmap-shell" style="--heatmap-cols: {len(growth_values)};">
+    <div class="heatmap-corner">Revenue growth</div>
+    <div class="heatmap-x">{column_labels}</div>
+    <div class="heatmap-y-title">Operating margin</div>
+    <div class="heatmap-body">{''.join(rows_html)}</div>
+  </div>
+  <div class="heatmap-legend"><span>Lower value</span><i></i><span>Higher value</span></div>
+  <p class="chart-takeaway">The grid is generated from returned deterministic sensitivity output; it is not a scenario story.</p>
+</figure>
+"""
 
 
 def _visuals_html(data: dict) -> str:
     valuation = _valuation_output(data)
     financial = _dict(valuation.get("financialDTO"))
-    money_prefix = _currency_symbol(_currency(data))
+    currency = _currency(data)
+    revenue_points = _series_points(financial, "revenues")
+    revenue_unit, revenue_scale, revenue_suffix = _money_chart_unit([value for _, value in revenue_points], currency)
+    fcff_points = _series_points(financial, "fcff")
+    fcff_unit, fcff_scale, fcff_suffix = _money_chart_unit([value for _, value in fcff_points], currency)
     charts = [
-        _svg_line_chart("Revenue path", _series(financial, "revenues"), "#0f766e", prefix=money_prefix),
-        _svg_line_chart("Operating margin", _series(financial, "ebitOperatingMargin"), "#a16207", "%"),
-        _svg_line_chart("Free cash flow", _series(financial, "fcff"), "#2563eb", prefix=money_prefix),
+        _svg_line_chart(
+            "Revenue path",
+            revenue_points,
+            "#20DF7F",
+            revenue_unit,
+            "The revenue path shows the base year and returned projection years used in the valuation.",
+            lambda value: _format_scaled_money(value, currency, revenue_scale, revenue_suffix),
+        ),
+        _svg_line_chart(
+            "Operating margin",
+            _series_points(financial, "ebitOperatingMargin"),
+            "#F59E0B",
+            "Percent",
+            "The margin path shows whether the thesis depends on step-change profitability or gradual convergence.",
+            lambda value: _fmt_percent(value),
+        ),
+        _svg_line_chart(
+            "Free cash flow path",
+            fcff_points,
+            "#3B82F6",
+            fcff_unit,
+            "The free-cash-flow path shows how operating assumptions translate into distributable cash flow.",
+            lambda value: _format_scaled_money(value, currency, fcff_scale, fcff_suffix),
+        ),
         _bridge_html(data),
+        _sensitivity_heatmap_html(data),
     ]
     charts = [chart for chart in charts if chart]
     if not charts:
@@ -574,211 +967,471 @@ def build_html(
   <title>{html.escape(title)}</title>
   <style>
     :root {{
-      --bg: #edf0ee;
-      --paper: #fffefa;
-      --ink: #171a17;
-      --muted: #68716c;
-      --line: #d9ded9;
-      --line-strong: #aeb9b2;
-      --accent: #0c6b5d;
-      --accent-2: #9a6a11;
-      --accent-3: #245f8f;
-      --header: #111412;
-      --soft: #edf5f2;
-      --warn-soft: #fbf4e4;
-      --blue-soft: #eaf2f8;
-      --shadow: none;
+      --bg: #050605;
+      --surface: #111312;
+      --surface-2: #181b1a;
+      --surface-3: #222624;
+      --ink: #FFFFFF;
+      --muted: #cfd6d2;
+      --faint: #8b9690;
+      --line: #2b302d;
+      --line-strong: #3a443e;
+      --accent: #20DF7F;
+      --accent-dark: #15B766;
+      --danger: #EF4444;
+      --warning: #F59E0B;
+      --info: #3B82F6;
+      --accent-soft: rgba(32, 223, 127, 0.12);
+      --warning-soft: rgba(245, 158, 11, 0.12);
+      --danger-soft: rgba(239, 68, 68, 0.13);
+      --shadow: 0 10px 26px rgba(0, 0, 0, 0.24);
     }}
     * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
       color: var(--ink);
       background: var(--bg);
-      font: 15px/1.58 "Avenir Next", Avenir, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: Nunito, "Avenir Next", Avenir, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 15px;
+      line-height: 1.55;
     }}
     header {{
-      max-width: 1360px;
+      max-width: 1320px;
       margin: 0 auto;
-      color: var(--header);
-      padding: 34px min(5vw, 56px) 22px;
-      border-bottom: 1px solid var(--line-strong);
+      padding: 22px 28px 16px;
+      border-bottom: 1px solid var(--line);
+    }}
+    .kicker,
+    .eyebrow,
+    .metric-label,
+    aside h2,
+    .chart-unit {{
+      color: var(--faint);
+      display: block;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
     }}
     .kicker {{
       color: var(--accent);
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin: 0 0 8px;
-      font-weight: 800;
+      margin: 0 0 6px;
     }}
     h1 {{
-      font-family: Charter, "Iowan Old Style", Georgia, serif;
-      font-size: clamp(34px, 4vw, 58px);
-      font-weight: 650;
-      line-height: 1;
-      margin: 0 0 12px;
+      font-size: 38px;
+      font-weight: 800;
+      line-height: 1.08;
+      margin: 0 0 8px;
       letter-spacing: 0;
       overflow-wrap: break-word;
-      text-wrap: balance;
     }}
     .subtitle {{
       margin: 0;
       color: var(--muted);
       max-width: 860px;
+      font-size: 14px;
     }}
     .layout {{
       display: grid;
-      grid-template-columns: minmax(170px, 230px) minmax(0, 1fr);
-      gap: 30px;
-      max-width: 1360px;
+      grid-template-columns: minmax(170px, 220px) minmax(0, 1fr);
+      gap: 22px;
+      max-width: 1320px;
       margin: 0 auto;
-      padding: 24px min(5vw, 52px) 56px;
+      padding: 20px 28px 52px;
       align-items: start;
     }}
     aside {{
       position: sticky;
       top: 16px;
-      background: transparent;
-      border-left: 2px solid var(--line-strong);
-      padding: 6px 0 6px 14px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--accent);
+      border-radius: 8px;
+      padding: 12px;
     }}
     aside h2 {{
-      font-size: 11px;
       margin: 0 0 10px;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
     }}
     .toc-link {{
       display: block;
-      color: #4e5752;
+      color: var(--muted);
       text-decoration: none;
       padding: 6px 0;
-      border-top: 1px solid rgba(174, 185, 178, 0.45);
-      font-size: 13px;
+      border-top: 1px solid var(--line);
+      font-size: 12px;
     }}
     .toc-link:hover {{ color: var(--accent); }}
-    main {{
-      min-width: 0;
+    main {{ min-width: 0; }}
+    .report-brief {{
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(250px, 0.48fr);
+      gap: 14px;
+      align-items: stretch;
+      margin-bottom: 16px;
     }}
-    .report-brief,
+    .thesis-panel,
+    .value-card,
+    .legacy-metric,
+    .framing-question,
+    .basis-banner,
+    .driver-card,
     .market-panel,
-    .visual-grid,
+    .chart-card,
     .report-body {{
-      background: var(--paper);
+      background: var(--surface);
       border: 1px solid var(--line);
       border-radius: 8px;
       box-shadow: var(--shadow);
     }}
-    .report-brief {{
-      display: grid;
-      grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
-      gap: 28px;
-      padding: clamp(24px, 4vw, 42px);
-      border-top: 6px solid var(--header);
+    .thesis-panel {{
+      padding: 22px;
+      border-left: 3px solid var(--accent);
     }}
     .brief-copy h2 {{
-      margin: 0 0 12px;
-      font-family: Charter, "Iowan Old Style", Georgia, serif;
-      font-size: clamp(30px, 3.2vw, 46px);
-      font-weight: 650;
-      line-height: 1;
+      margin: 3px 0 10px;
+      font-size: 27px;
+      font-weight: 800;
+      line-height: 1.14;
+      letter-spacing: 0;
       overflow-wrap: break-word;
-      text-wrap: balance;
     }}
     .brief-thesis {{
-      max-width: 68ch;
+      max-width: 74ch;
       color: var(--muted);
-      font-size: 16.5px;
+      font-size: 15px;
       margin: 0;
-    }}
-    .generated-line {{
-      grid-column: 1 / -1;
-      color: var(--muted);
-      font-size: 13px;
-      margin: 0;
-      padding-top: 16px;
-      border-top: 1px solid var(--line);
     }}
     .status-row {{
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 18px;
+      gap: 7px;
+      margin-top: 16px;
     }}
     .status-chip {{
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      padding: 4px 8px;
+      border: 1px solid var(--line-strong);
+      border-radius: 5px;
+      padding: 3px 7px;
       color: var(--muted);
-      background: #f8f9f6;
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-    }}
-    .status-chip.source {{ background: var(--blue-soft); color: #244e78; }}
-    .summary-grid {{
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 0;
-      align-content: start;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      overflow: hidden;
-    }}
-    .summary-metric {{
-      min-width: 0;
-      border-right: 1px solid var(--line);
-      border-bottom: 1px solid var(--line);
-      padding: 14px 15px;
-      background: #fffefa;
-    }}
-    .summary-metric:nth-child(2n) {{ border-right: 0; }}
-    .summary-metric:nth-last-child(-n + 2) {{ border-bottom: 0; }}
-    .summary-metric.primary {{
-      background: var(--soft);
-      border-color: var(--line);
-    }}
-    .summary-metric.negative {{ background: var(--warn-soft); border-color: #edd2a5; }}
-    .summary-metric.positive {{ background: #edf8ef; border-color: #c8e5ce; }}
-    .metric-label,
-    .eyebrow,
-    .fact-label {{
-      color: var(--muted);
-      display: block;
+      background: var(--surface-2);
       font-size: 10px;
       font-weight: 800;
-      letter-spacing: 0.08em;
       text-transform: uppercase;
     }}
-    .summary-metric strong {{
+    .status-chip.source {{
+      background: var(--accent-soft);
+      border-color: rgba(32, 223, 127, 0.28);
+      color: var(--accent);
+    }}
+    .value-card {{
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      border-left: 3px solid var(--accent);
+      min-height: 136px;
+    }}
+    .value-card strong {{
+      display: block;
+      color: var(--accent);
+      font-size: 34px;
+      line-height: 1;
+      margin: 7px 0 9px;
+      overflow-wrap: anywhere;
+    }}
+    .value-card p {{
+      color: var(--muted);
+      margin: 0;
+      font-weight: 800;
+    }}
+    .legacy-metric-grid {{
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }}
+    .legacy-metric {{
+      padding: 13px;
+      min-width: 0;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }}
+    .legacy-metric:hover {{
+      transform: translateY(-1px);
+      border-color: var(--line-strong);
+    }}
+    .legacy-metric.primary {{ border-left: 3px solid var(--accent); }}
+    .legacy-metric.negative {{ border-left: 3px solid var(--danger); }}
+    .legacy-metric.positive {{ border-left: 3px solid var(--accent); }}
+    .legacy-metric strong {{
       display: block;
       margin-top: 5px;
-      font-size: clamp(21px, 2.2vw, 32px);
-      line-height: 1;
+      font-size: 19px;
+      line-height: 1.15;
       overflow-wrap: anywhere;
     }}
     .metric-note {{
       display: block;
-      color: var(--muted);
+      color: var(--faint);
       font-size: 12px;
+      margin-top: 6px;
+    }}
+    .framing-block {{
+      grid-column: 1 / -1;
+    }}
+    .framing-question-grid {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
       margin-top: 7px;
+    }}
+    .framing-question {{
+      border-left: 3px solid var(--accent);
+      padding: 13px;
+      min-height: 118px;
+    }}
+    .framing-question span,
+    .driver-card span {{
+      color: var(--accent);
+      display: block;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }}
+    .framing-question p {{
+      color: var(--ink);
+      font-weight: 700;
+      margin: 7px 0 5px;
+      line-height: 1.35;
+    }}
+    .framing-question small {{
+      color: var(--muted);
+      display: block;
+      line-height: 1.45;
+    }}
+    .basis-banner {{
+      grid-column: 1 / -1;
+      border-left: 3px solid var(--warning);
+      padding: 12px 14px;
+      background: var(--surface-2);
+    }}
+    .basis-banner strong {{
+      color: var(--warning);
+      display: block;
+      margin-bottom: 6px;
+    }}
+    .basis-banner ul {{
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }}
+    .generated-line {{
+      grid-column: 1 / -1;
+      color: var(--faint);
+      font-size: 13px;
+      margin: 0;
+      padding-top: 6px;
+    }}
+    .driver-grid {{
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin: 16px 0 0;
+    }}
+    .driver-card {{
+      border-left: 3px solid var(--accent);
+      padding: 14px;
+      min-width: 0;
+    }}
+    .driver-card h3 {{
+      margin: 5px 0 7px;
+      font-size: 16px;
+      font-weight: 800;
+    }}
+    .driver-card p {{
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }}
+    .visual-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin: 16px 0 0;
+    }}
+    .chart-card,
+    .sensitivity-heatmap {{
+      margin: 0;
+      min-width: 0;
+      padding: 0;
+      overflow: hidden;
+    }}
+    .chart-header {{
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px 9px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface-2);
+    }}
+    .chart-title {{
+      color: var(--ink);
+      font-size: 14px;
+      font-weight: 800;
+      margin: 0;
+      text-transform: none;
+    }}
+    .chart-unit {{
+      color: var(--accent);
+      text-align: right;
+      white-space: nowrap;
+    }}
+    .chart-card svg {{
+      width: 100%;
+      min-height: 220px;
+      display: block;
+      padding: 8px 10px 0;
+    }}
+    .chart-card .axis {{
+      stroke: var(--line-strong);
+      stroke-width: 1;
+    }}
+    .chart-card polyline {{
+      fill: none;
+      stroke-width: 3.25;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }}
+    .chart-card text {{
+      fill: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+    }}
+    .chart-card .point-label {{
+      fill: var(--ink);
+    }}
+    .chart-takeaway {{
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      margin: 0;
+      padding: 10px 14px 12px;
+      font-size: 12px;
+    }}
+    .bridge-row {{
+      display: grid;
+      grid-template-columns: minmax(140px, 0.9fr) minmax(150px, 1.2fr) minmax(82px, 0.42fr);
+      gap: 10px;
+      align-items: center;
+      margin: 9px 14px;
+      font-size: 12px;
+    }}
+    .bridge-track {{
+      height: 10px;
+      background: var(--surface-3);
+      border-radius: 999px;
+      overflow: hidden;
+    }}
+    .bridge-track i {{ display: block; height: 100%; border-radius: inherit; }}
+    .bridge-track i.positive {{ background: var(--accent); }}
+    .bridge-track i.negative {{ background: var(--danger); }}
+    .bridge-row strong {{
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }}
+    .sensitivity-heatmap {{
+      grid-column: 1 / -1;
+    }}
+    .heatmap-shell {{
+      display: grid;
+      grid-template-columns: 108px minmax(400px, 1fr);
+      grid-template-rows: auto 1fr;
+      gap: 7px;
+      overflow-x: auto;
+      padding: 14px;
+    }}
+    .heatmap-corner,
+    .heatmap-y-title,
+    .heatmap-axis-label {{
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+    }}
+    .heatmap-corner {{ text-align: right; padding-right: 8px; }}
+    .heatmap-x {{
+      display: grid;
+      grid-template-columns: repeat(var(--heatmap-cols), minmax(78px, 1fr));
+      gap: 4px;
+      min-width: calc(var(--heatmap-cols) * 78px);
+    }}
+    .heatmap-x .heatmap-axis-label {{ text-align: center; }}
+    .heatmap-y-title {{
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+      align-self: center;
+      justify-self: center;
+      min-height: 120px;
+    }}
+    .heatmap-body {{
+      min-width: calc(var(--heatmap-cols) * 78px);
+    }}
+    .heatmap-row {{
+      display: grid;
+      grid-template-columns: 66px repeat(var(--heatmap-cols), minmax(78px, 1fr));
+      gap: 4px;
+      margin-bottom: 4px;
+      align-items: stretch;
+    }}
+    .heatmap-axis-label.y {{
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding-right: 8px;
+    }}
+    .heatmap-cell {{
+      min-height: 40px;
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #FFFFFF;
+      font-size: 11px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+      white-space: nowrap;
+    }}
+    .heatmap-cell.empty {{
+      background: var(--surface-3);
+    }}
+    .heatmap-legend {{
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: var(--faint);
+      font-size: 12px;
+      padding: 0 16px 12px;
+    }}
+    .heatmap-legend i {{
+      display: block;
+      width: 180px;
+      height: 10px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, hsl(2 72% 36%), hsl(70 72% 36%), hsl(142 72% 36%));
     }}
     .market-panel {{
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(260px, 0.62fr);
-      gap: 20px;
-      margin-top: 18px;
-      padding: 20px 22px;
-      background: #f8f7f2;
-      border-color: #e2ddcf;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 0.6fr);
+      gap: 16px;
+      margin-top: 16px;
+      padding: 16px;
+      border-left: 3px solid var(--accent);
     }}
     .market-panel h3 {{
-      margin: 4px 0 8px;
-      font-family: Charter, "Iowan Old Style", Georgia, serif;
-      font-size: 24px;
-      font-weight: 650;
-      line-height: 1.12;
+      margin: 3px 0 7px;
+      font-size: 20px;
+      font-weight: 800;
+      line-height: 1.18;
     }}
     .market-panel p {{ margin: 0; color: var(--muted); }}
     .market-facts {{
@@ -786,201 +1439,219 @@ def build_html(
       grid-template-columns: 1fr;
       gap: 0;
       margin: 0;
-      border: 1px solid #e2ddcf;
+      border: 1px solid var(--line);
       border-radius: 8px;
       overflow: hidden;
     }}
     .market-facts div {{
-      border: 0;
-      border-bottom: 1px solid #e2ddcf;
-      border-radius: 0;
-      padding: 11px 12px;
-      background: #fffefa;
+      border-bottom: 1px solid var(--line);
+      padding: 10px 11px;
+      background: var(--surface-2);
     }}
     .market-facts div:last-child {{ border-bottom: 0; }}
     .market-facts dt,
     .market-facts dd {{ margin: 0; }}
-    .market-facts dt {{ color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }}
-    .market-facts dd {{ margin-top: 5px; font-size: 18px; font-weight: 800; }}
-    .market-detail {{
-      grid-column: 1 / -1;
-      border-top: 1px solid #e2ddcf;
-      padding-top: 14px;
-    }}
-    .market-detail ul {{ margin-bottom: 0; columns: 2; column-gap: 24px; }}
-    .driver-grid {{
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 0;
-      margin: 18px 0 0;
-      background: var(--paper);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      overflow: hidden;
-    }}
-    .driver-card {{
-      background: var(--paper);
-      border: 0;
-      border-right: 1px solid var(--line);
-      border-radius: 0;
-      padding: 17px;
-      min-width: 0;
-    }}
-    .driver-card:last-child {{ border-right: 0; }}
-    .driver-card span {{
-      color: var(--accent);
+    .market-facts dt {{
+      color: var(--faint);
       font-size: 10px;
       font-weight: 800;
-      letter-spacing: 0.08em;
       text-transform: uppercase;
+      letter-spacing: 0.08em;
     }}
-    .driver-card h3 {{
-      margin: 5px 0 8px;
-      font-family: Charter, "Iowan Old Style", Georgia, serif;
-      font-size: 21px;
-      font-weight: 650;
-    }}
-    .driver-card p {{ margin: 0; color: var(--muted); font-size: 14px; }}
-    .visual-grid {{
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px;
-      padding: 0;
-      margin: 18px 0 0;
-      background: transparent;
-      border: 0;
-    }}
-    .mini-chart,
-    .bridge-chart {{
-      margin: 0;
-      min-width: 0;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--paper);
-      padding: 14px;
-    }}
-    .mini-chart figcaption,
-    .bridge-chart figcaption {{
-      color: var(--header);
-      font-size: 11px;
+    .market-facts dd {{
+      margin-top: 5px;
+      font-size: 16px;
       font-weight: 800;
-      letter-spacing: 0.08em;
-      margin-bottom: 8px;
-      text-transform: uppercase;
     }}
-    .mini-chart svg {{ width: 100%; height: auto; display: block; }}
-    .mini-chart line {{ stroke: #cfd8d4; stroke-width: 1; }}
-    .mini-chart polyline {{ fill: none; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }}
-    .mini-chart text {{ fill: var(--muted); font-size: 12px; font-weight: 700; }}
-    .bridge-row {{
-      display: grid;
-      grid-template-columns: minmax(130px, 0.9fr) minmax(130px, 1.2fr) minmax(70px, 0.4fr);
-      gap: 10px;
-      align-items: center;
-      margin: 9px 0;
-      font-size: 13px;
+    .market-detail {{
+      grid-column: 1 / -1;
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
     }}
-    .bridge-track {{
-      height: 10px;
-      background: #e6ece9;
-      border-radius: 999px;
-      overflow: hidden;
-    }}
-    .bridge-track i {{ display: block; height: 100%; border-radius: inherit; }}
-    .bridge-track i.positive {{ background: var(--accent); }}
-    .bridge-track i.negative {{ background: #b94747; }}
-    .bridge-row strong {{ text-align: right; }}
+    .market-detail ul {{ margin-bottom: 0; columns: 2; column-gap: 24px; }}
     .report-body {{
-      margin-top: 18px;
-      padding: clamp(20px, 4vw, 42px);
+      margin-top: 16px;
+      padding: 22px;
     }}
     .report-body h1 {{
-      color: var(--header);
-      font-family: Charter, "Iowan Old Style", Georgia, serif;
-      font-size: 36px;
-      font-weight: 650;
+      color: var(--ink);
+      font-size: 25px;
+      font-weight: 800;
       margin-top: 0;
     }}
     .report-body h2 {{
-      color: var(--header);
-      font-family: Charter, "Iowan Old Style", Georgia, serif;
-      font-size: 27px;
-      font-weight: 650;
-      margin: 34px 0 12px;
-      padding-top: 22px;
+      color: var(--ink);
+      font-size: 20px;
+      font-weight: 800;
+      margin: 28px 0 10px;
+      padding-top: 18px;
       border-top: 1px solid var(--line);
     }}
-    .report-body h3 {{ color: var(--accent); font-size: 18px; margin-top: 26px; }}
-    .report-body h4 {{ color: var(--accent-2); font-size: 16px; margin-top: 22px; }}
-    p {{ margin: 0 0 14px; }}
-    ul, ol {{ padding-left: 24px; margin: 0 0 16px; }}
-    li {{ margin: 5px 0; }}
+    .report-body h3 {{ color: var(--accent); font-size: 16px; margin-top: 22px; }}
+    .report-body h4 {{ color: var(--warning); font-size: 15px; margin-top: 20px; }}
+    p {{ margin: 0 0 12px; }}
+    ul, ol {{ padding-left: 22px; margin: 0 0 14px; }}
+    li {{ margin: 4px 0; }}
     code {{
-      background: #eef2f4;
-      border: 1px solid #dde5e9;
+      background: var(--surface-2);
+      border: 1px solid var(--line);
       border-radius: 4px;
       padding: 1px 4px;
       font-size: 0.92em;
     }}
     pre {{
       overflow: auto;
-      background: #111827;
-      color: #f8fafc;
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      color: var(--ink);
       border-radius: 8px;
-      padding: 16px;
+      padding: 14px;
     }}
     pre code {{ background: transparent; border: 0; color: inherit; padding: 0; }}
-    .table-wrap {{ overflow-x: auto; margin: 16px 0 22px; border: 1px solid var(--line); border-radius: 8px; }}
-    table {{ border-collapse: collapse; width: 100%; min-width: 680px; background: #fff; }}
-    th, td {{ padding: 10px 12px; border-bottom: 1px solid #e7ebf0; vertical-align: top; text-align: left; }}
-    th {{ background: #eef4f1; color: #123936; font-weight: 700; }}
+    .table-wrap {{
+      overflow-x: auto;
+      margin: 14px 0 20px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      -webkit-overflow-scrolling: touch;
+    }}
+    table {{
+      border-collapse: collapse;
+      width: 100%;
+      min-width: 680px;
+      background: var(--surface);
+    }}
+    th, td {{
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+    }}
+    th {{
+      background: var(--surface-2);
+      color: var(--ink);
+      font-size: 10px;
+      font-weight: 900;
+      position: sticky;
+      top: 0;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }}
+    td {{
+      color: var(--muted);
+    }}
+    td:first-child {{
+      color: var(--ink);
+      font-weight: 700;
+    }}
+    th.num,
+    td.num {{
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }}
     tr:last-child td {{ border-bottom: 0; }}
     a {{ color: var(--accent); }}
-    .muted {{ color: var(--muted); }}
+    .muted {{ color: var(--faint); }}
     footer {{
-      color: var(--muted);
-      font-size: 13px;
-      padding: 0 min(5vw, 52px) 30px;
+      color: var(--faint);
+      font-size: 12px;
+      padding: 0 32px 30px;
+      max-width: 1320px;
+      margin: 0 auto;
     }}
-    @media (max-width: 860px) {{
-      .layout {{ grid-template-columns: 1fr; padding: 16px 14px 48px; }}
-      header {{ padding: 24px 20px 20px; }}
-      h1 {{ font-size: 24px; line-height: 1.08; }}
-      aside {{ display: none; }}
-      .brief-copy h2 {{ font-size: 24px; line-height: 1.08; }}
-      .subtitle,
-      .brief-thesis {{ font-size: 14.5px; }}
-      header h1,
-      .subtitle,
-      .brief-copy h2,
-      .brief-thesis {{
-        max-width: 320px;
+    @media (max-width: 980px) {{
+      header {{ padding: 20px 16px 16px; }}
+      h1 {{ font-size: 28px; line-height: 1.08; }}
+      .layout {{
+        grid-template-columns: 1fr;
+        padding: 16px 14px 44px;
       }}
-      .report-brief {{ padding: 20px 16px; }}
-      .status-row {{ display: grid; grid-template-columns: 1fr; }}
-      .status-chip {{ justify-self: start; }}
-      .report-brief,
+      aside {{ display: none; }}
       .market-panel,
-      .visual-grid {{ grid-template-columns: 1fr; }}
-      .summary-grid,
-      .market-facts,
-      .driver-grid {{ grid-template-columns: 1fr; }}
-      .driver-card {{ border-right: 0; border-bottom: 1px solid var(--line); }}
-      .driver-card:last-child {{ border-bottom: 0; }}
+      .visual-grid {{
+        grid-template-columns: 1fr;
+      }}
+      .report-brief {{
+        display: flex;
+        flex-direction: column;
+      }}
+      .thesis-panel {{ order: 1; }}
+      .value-card {{ order: 2; }}
+      .framing-block {{ order: 3; }}
+      .legacy-metric-grid {{ order: 4; }}
+      .basis-banner {{ order: 5; }}
+      .generated-line {{ order: 6; }}
+      .thesis-panel,
+      .value-card,
+      .report-body {{
+        padding: 16px;
+      }}
+      .brief-copy h2 {{ font-size: 23px; line-height: 1.12; }}
+      .brief-thesis {{ font-size: 14.5px; }}
+      .value-card {{
+        min-height: auto;
+      }}
+      .value-card strong {{
+        font-size: 31px;
+      }}
+      .legacy-metric-grid,
+      .framing-question-grid,
+      .driver-grid {{
+        grid-template-columns: 1fr;
+      }}
       .market-detail ul {{ columns: 1; }}
-      .report-body {{ padding: 18px; }}
+      .chart-header {{
+        display: block;
+      }}
+      .chart-unit {{
+        text-align: left;
+        margin-top: 4px;
+      }}
+      .chart-card svg {{
+        min-height: 200px;
+      }}
       table {{ min-width: 560px; }}
-      .bridge-row {{ grid-template-columns: 1fr; }}
+      .bridge-row {{
+        grid-template-columns: 1fr;
+        align-items: start;
+      }}
       .bridge-row strong {{ text-align: left; }}
+      .heatmap-shell {{
+        grid-template-columns: 96px minmax(360px, 1fr);
+        padding: 12px;
+      }}
+      .heatmap-x,
+      .heatmap-body {{
+        min-width: calc(var(--heatmap-cols) * 76px);
+      }}
+      .heatmap-row {{
+        grid-template-columns: 62px repeat(var(--heatmap-cols), minmax(76px, 1fr));
+      }}
+      .heatmap-cell {{
+        min-height: 40px;
+        font-size: 11px;
+      }}
+      .heatmap-legend i {{
+        width: 150px;
+      }}
     }}
     @media print {{
-      body {{ background: #fff; }}
+      body {{ background: #fff; color: #000; }}
       header, aside, footer {{ display: none; }}
       .layout {{ display: block; padding: 0; }}
-      .report-brief,
-      .market-panel,
-      .visual-grid,
-      .report-body {{ box-shadow: none; border: 0; padding: 0; }}
+      .report-body,
+      .thesis-panel,
+      .value-card,
+      .legacy-metric,
+      .framing-question,
+      .driver-card,
+      .chart-card,
+      .sensitivity-heatmap,
+      .market-panel {{
+        box-shadow: none;
+        border-color: #999;
+      }}
       a {{ color: inherit; text-decoration: none; }}
     }}
   </style>

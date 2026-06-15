@@ -61,6 +61,8 @@ class ValuationWorkflowServiceImplTest {
         private ValuationTemplateService valuationTemplateService;
         @Mock
         private GrowthAnchorService growthAnchorService;
+        @Mock
+        private TickerSegmentDiscoveryService tickerSegmentDiscoveryService;
 
         @AfterEach
         void tearDown() {
@@ -116,6 +118,84 @@ class ValuationWorkflowServiceImplTest {
                 assertEquals(2, requests.size());
                 assertNotNull(requests.get(1).getSegments());
                 assertEquals(2, requests.get(1).getSegments().getSegments().size());
+        }
+
+        @Test
+        void getValuation_researchedBaselineAutoAttachesDiscoveredSegments() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                ValuationTemplate template = fcffTemplate();
+                ValuationOutputDTO initial = valuationOutput(100.0, 100.0);
+                ValuationOutputDTO refined = valuationOutput(100.0, 100.0);
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setResearchedBaselineMode(true);
+                overrides.setRequestPolicyMode("researched_baseline");
+                SegmentResponseDTO discovered = new SegmentResponseDTO(List.of(
+                                new SegmentResponseDTO.Segment("software", "Software", List.of("Cloud"), 1.0, 0.6, null),
+                                new SegmentResponseDTO.Segment("hardware", "Hardware", List.of("Devices"), 1.0, 0.4, null)));
+
+                stubHappyPath(companyData, template, initial, refined);
+                when(tickerSegmentDiscoveryService.discoverSegments("AAPL", companyData))
+                                .thenReturn(Optional.of(discovered));
+                doAnswer(invocation -> {
+                        SegmentParameterContext.setParameters(segmentParameters());
+                        return null;
+                }).when(commonService).applySegmentWeightedParameters(any(FinancialDataInput.class), eq(companyData),
+                                anyList());
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides);
+
+                assertEquals("segment_weighted_baseline", result.getAssumptionTransparency().getBaselineQuality());
+                assertEquals("validated_segment_weighted", result.getAssumptionTransparency().getBaselineUseStatus());
+                assertTrue(result.getAssumptionTransparency().isSegmentAware());
+                verify(tickerSegmentDiscoveryService).discoverSegments("AAPL", companyData);
+                verify(commonService, times(1)).applySegmentWeightedParameters(any(FinancialDataInput.class),
+                                eq(companyData), anyList());
+                ArgumentCaptor<FinancialDataInput> captor = ArgumentCaptor.forClass(FinancialDataInput.class);
+                verify(valuationOutputService, times(2))
+                                .getValuationOutput(eq("AAPL"), captor.capture(), eq(template));
+                assertNotNull(captor.getAllValues().get(1).getSegments());
+                assertEquals(2, captor.getAllValues().get(1).getSegments().getSegments().size());
+        }
+
+        @Test
+        void getValuation_researchedBaselineSurfacesDiscoveredSegmentsWhenMappingIsBlocked() {
+                ValuationWorkflowServiceImpl workflow = workflow();
+                CompanyDataDTO companyData = companyData();
+                ValuationTemplate template = fcffTemplate();
+                ValuationOutputDTO initial = valuationOutput(100.0, 100.0);
+                ValuationOutputDTO refined = valuationOutput(100.0, 100.0);
+                FinancialDataInput overrides = new FinancialDataInput();
+                overrides.setResearchedBaselineMode(true);
+                overrides.setRequestPolicyMode("researched_baseline");
+                SegmentResponseDTO discovered = new SegmentResponseDTO(List.of(
+                                new SegmentResponseDTO.Segment(null, null, List.of("Segment Alpha"), null, 0.6, null),
+                                new SegmentResponseDTO.Segment(null, null, List.of("Segment Beta"), null, 0.4, null)));
+
+                stubHappyPath(companyData, template, initial, refined);
+                when(tickerSegmentDiscoveryService.discoverSegments("AAPL", companyData))
+                                .thenReturn(Optional.of(discovered));
+                doAnswer(invocation -> {
+                        SegmentWeightedParameters blocked = new SegmentWeightedParameters();
+                        blocked.setSegmentWeighted(false);
+                        blocked.setSegmentCount(2);
+                        blocked.setBaselineQuality("segment_mapping_blocked");
+                        blocked.setSegmentCoveragePct(0.0);
+                        blocked.setSegmentWarnings(List.of("Segment mapped revenue coverage 0.00% is below the 80% threshold."));
+                        SegmentParameterContext.setParameters(blocked);
+                        return null;
+                }).when(commonService).applySegmentWeightedParameters(any(FinancialDataInput.class), eq(companyData),
+                                anyList());
+
+                ValuationOutputDTO result = workflow.getValuation("AAPL", overrides);
+
+                assertEquals("segment_mapping_blocked", result.getAssumptionTransparency().getBaselineQuality());
+                assertEquals("challenged_baseline", result.getAssumptionTransparency().getBaselineUseStatus());
+                assertEquals(2, result.getAssumptionTransparency().getSegmentCount());
+                assertFalse(result.getAssumptionTransparency().isSegmentAware());
+                assertTrue(result.getAssumptionTransparency().getBaselineWarnings().stream()
+                                .anyMatch(warning -> warning.contains("below the 80% threshold")));
+                verify(tickerSegmentDiscoveryService).discoverSegments("AAPL", companyData);
         }
 
         @Test
@@ -1462,7 +1542,8 @@ class ValuationWorkflowServiceImplTest {
                                 valuationOutputService,
                                 valuationTemplateService,
                                 props,
-                                growthAnchorService);
+                                growthAnchorService,
+                                tickerSegmentDiscoveryService);
         }
 
         private void stubHappyPath(
@@ -1568,6 +1649,7 @@ class ValuationWorkflowServiceImplTest {
                 params.setRiskFreeRate(4.0);
                 params.setSegmentWeighted(true);
                 params.setSegmentCount(2);
+                params.setSegmentCoveragePct(100.0);
 
                 SegmentWeightedParameters.SectorParameters software =
                                 new SegmentWeightedParameters.SectorParameters();

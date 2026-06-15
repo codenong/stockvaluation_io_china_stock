@@ -216,7 +216,7 @@ class CoverageSmokeTest {
 
     @Test
     void userRefinedScenarioKeepsNearTermAndTargetMarginsIndependent() throws Exception {
-        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null, null);
         Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
                 "applyUserOverrides",
                 FinancialDataInput.class,
@@ -248,7 +248,7 @@ class CoverageSmokeTest {
 
     @Test
     void userRefinedScenarioAcceptsTerminalRevenueButRejectsTerminalRoic() throws Exception {
-        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null, null);
         Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
                 "applyUserOverrides",
                 FinancialDataInput.class,
@@ -284,7 +284,7 @@ class CoverageSmokeTest {
 
     @Test
     void explicitScenarioAcceptsTerminalRoicOverride() throws Exception {
-        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null, null);
         Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
                 "applyUserOverrides",
                 FinancialDataInput.class,
@@ -309,7 +309,7 @@ class CoverageSmokeTest {
 
     @Test
     void terminalRoicOverrideWithoutExplicitScenarioIsRejected() throws Exception {
-        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null, null);
         Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
                 "applyUserOverrides",
                 FinancialDataInput.class,
@@ -331,7 +331,7 @@ class CoverageSmokeTest {
 
     @Test
     void explicitScenarioRejectsZeroTerminalRoicOverride() throws Exception {
-        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null, null);
         Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
                 "applyUserOverrides",
                 FinancialDataInput.class,
@@ -355,7 +355,7 @@ class CoverageSmokeTest {
 
     @Test
     void explicitScenarioRejectsNonFiniteTerminalRoicOverride() throws Exception {
-        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null, null);
         Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
                 "applyUserOverrides",
                 FinancialDataInput.class,
@@ -379,7 +379,7 @@ class CoverageSmokeTest {
 
     @Test
     void explicitScenarioRejectsInfiniteTerminalRoicOverride() throws Exception {
-        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null, null);
         Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
                 "applyUserOverrides",
                 FinancialDataInput.class,
@@ -404,7 +404,7 @@ class CoverageSmokeTest {
 
     @Test
     void explicitScenarioRejectsMissingTerminalRoicOverrideValue() throws Exception {
-        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null, null);
         Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
                 "applyUserOverrides",
                 FinancialDataInput.class,
@@ -428,7 +428,7 @@ class CoverageSmokeTest {
 
     @Test
     void invalidTerminalGrowthOverrideIsRejectedWithAgentReadableError() throws Exception {
-        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null, null);
         Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
                 "applyUserOverrides",
                 FinancialDataInput.class,
@@ -451,7 +451,7 @@ class CoverageSmokeTest {
 
     @Test
     void userRefinedScenarioRejectsExplicitScenarioOnlyServiceFields() throws Exception {
-        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null, null);
         Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
                 "applyUserOverrides",
                 FinancialDataInput.class,
@@ -479,7 +479,7 @@ class CoverageSmokeTest {
 
     @Test
     void userRefinedSalesToCapitalInputsBypassMechanicalGuard() throws Exception {
-        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null, null);
         Method adjustSalesToCapital = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
                 "adjustSalesToCapitalRatio",
                 FinancialDataInput.class,
@@ -500,7 +500,7 @@ class CoverageSmokeTest {
 
     @Test
     void userRefinedScenarioRejectsOutOfBoundsDirectInputs() throws Exception {
-        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null, null);
         Method applyUserOverrides = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
                 "applyUserOverrides",
                 FinancialDataInput.class,
@@ -535,7 +535,7 @@ class CoverageSmokeTest {
 
     @Test
     void userRefinedScenarioDoesNotForceThreeStageFromPriceValueGap() throws Exception {
-        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null);
+        ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, null, null, null, null, null);
         Method shouldForce = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
                 "shouldForceThreeStageTemplate",
                 ValuationTemplate.class,
@@ -561,7 +561,7 @@ class CoverageSmokeTest {
     void negativeValueCalibrationDoesNotOverwriteExplicitUserRefinedAssumptions() throws Exception {
         ValuationOutputService outputService = mock(ValuationOutputService.class);
         ValuationWorkflowServiceImpl workflow = new ValuationWorkflowServiceImpl(null, null, outputService, null, null,
-                null);
+                null, null);
         Method applyCalibration = ValuationWorkflowServiceImpl.class.getDeclaredMethod(
                 "applyCalibrationAndMLAdjustments",
                 String.class,

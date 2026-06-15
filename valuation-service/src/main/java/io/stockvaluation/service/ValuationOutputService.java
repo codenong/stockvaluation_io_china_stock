@@ -1388,7 +1388,7 @@ public class ValuationOutputService {
         valuationOutputDTO.setFinancialDTO(financialDTO);
         valuationOutputDTO.setTerminalValueDTO(terminalValueDTO);
         valuationOutputDTO.setBaseYearComparison(baseYearComparisonDTO);
-        valuationOutputDTO.setCompanyName(valuationInputDTO.getBasicInfoDataDTO().getCompanyName().replace(".", ""));
+        valuationOutputDTO.setCompanyName(valuationInputDTO.getBasicInfoDataDTO().getCompanyName());
 
         valuationOutputDTO.setCurrency(valuationInputDTO.getBasicInfoDataDTO().getCurrency());
         valuationOutputDTO.setStockCurrency(valuationInputDTO.getBasicInfoDataDTO().getStockCurrency());
