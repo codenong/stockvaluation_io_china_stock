@@ -189,9 +189,10 @@ def test_user_refined_scenario_mcp_rejects_explicit_only_fields():
 
     assert result["isError"] is True
     unsupported = result["structuredContent"]["assumptions"]["unsupported"]
-    assert set(unsupported) == {"wacc", "terminal_growth", "tax_rate", "growth_pattern_override"}
+    assert set(unsupported) == {"terminal_growth", "tax_rate", "growth_pattern_override"}
     assert all(
         item["reason"] == "explicit_scenario_only_in_user_refined_scenario_mode"
         for item in unsupported.values()
     )
+    assert result["structuredContent"]["assumptions"]["mapped"]["initialCostCapital"] == 8.5
     assert client.calls == []

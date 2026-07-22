@@ -8,6 +8,7 @@ exactly which fields diverge when they do not.
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 CONFORMANCE_SCHEMA_VERSION = "conformance_record.v1"
@@ -20,6 +21,19 @@ def build_conformance_record(
     value_range: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Summarize a run from persisted run state and its final output."""
+    guided_plan = run.get("guided_plan") if isinstance(run.get("guided_plan"), dict) else {}
+    framing_validation = guided_plan.get("framing_fork_validation") if isinstance(guided_plan, dict) else {}
+    accepted_framing_forks = [
+        {
+            "fork_id": fork.get("fork_id"),
+            "primary_driver": fork.get("primary_driver"),
+            "confidence": fork.get("confidence"),
+        }
+        for fork in (framing_validation or {}).get("accepted_forks", [])
+        if isinstance(fork, dict)
+    ]
+    coherence_review = run.get("coherence_review") if isinstance(run.get("coherence_review"), dict) else {}
+    revealed_thesis = run.get("revealed_thesis") if isinstance(run.get("revealed_thesis"), dict) else None
     gates_in_order = [
         {
             "gate": event.get("gate"),
@@ -69,9 +83,17 @@ def build_conformance_record(
         "gates_in_order": gates_in_order,
         "tool_calls": tool_calls,
         "question_count": question_count,
+        "accepted_framing_forks": accepted_framing_forks,
+        "coherence_status": coherence_review.get("status"),
+        "coherence_challenge_count": run.get("coherence_challenge_count", 0),
         "material_anchor_fields": sorted(run.get("material_anchor_fields") or []),
         "anchors": anchors,
         "drivers": drivers,
+        "revealed_thesis": copy.deepcopy(revealed_thesis),
+        "final_scenario_record": {
+            "case_type": final_case_type,
+            "value": copy.deepcopy(value),
+        },
         "final_case_type": final_case_type,
         "value": value,
     }
@@ -92,7 +114,11 @@ def diff_conformance_records(first: dict[str, Any], second: dict[str, Any]) -> d
             for index, (item_a, item_b) in enumerate(zip(a, b)):
                 walk(f"{path}[{index}]", item_a, item_b)
         elif a != b:
-            differences.append({"path": path, "first": a, "second": b})
+            differences.append({"path": _reported_path(path), "first": a, "second": b})
 
     walk("", first, second)
     return {"identical": not differences, "differences": differences}
+
+
+def _reported_path(path: str) -> str:
+    return path.replace(".selected_interpretation", ".interpretation")
