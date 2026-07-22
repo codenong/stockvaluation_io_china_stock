@@ -4,12 +4,12 @@ import copy
 import json
 from pathlib import Path
 
-from valuation_agent.driver_anchors import anchors_from_prospectus_packet
-from valuation_agent.guided_question_planner import build_guided_question_plan
+from valuation_agent.driver_anchors import anchors_from_prospectus_packet, anchors_from_valuation_baseline
+from valuation_agent.guided_question_planner import build_guided_question_plan, build_user_judgment_package
 from valuation_agent.mcp_tools import MCPToolRegistry
 from valuation_agent.workflow_run_state import GATE_EVIDENCE_REVIEW, WorkflowRunStore
 
-from test_mcp_contracts import _prospectus_valuation_payload
+from test_mcp_contracts import _prospectus_valuation_payload, _valuation_payload
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "spacex_prospectus_extraction.json"
 
@@ -158,6 +158,17 @@ def test_anchor_sets_from_recorded_fixture_are_byte_identical():
     assert proceeds["low"]["value"] == proceeds["base"]["value"] == proceeds["high"]["value"]
 
 
+def test_deterministic_wacc_anchors_from_baseline_discount_rate():
+    anchors = anchors_from_valuation_baseline(_valuation_payload())
+
+    wacc = anchors["wacc"]
+    assert wacc["unit"] == "percent"
+    assert wacc["anchors"]["low"]["value"] == 7.7
+    assert wacc["anchors"]["base"]["value"] == 8.5
+    assert wacc["anchors"]["high"]["value"] == 9.3
+    assert "risk-free rate" in wacc["anchors"]["base"]["provenance"]
+
+
 def test_material_numeric_questions_carry_anchor_choices_with_provenance(tmp_path):
     registry, _ = _registry(tmp_path)
     run_id, _ = _extract(registry)
@@ -181,6 +192,58 @@ def test_material_numeric_questions_carry_anchor_choices_with_provenance(tmp_pat
         assert choices["D"]["anchor_label"] == "user_input"
         assert question["hidden_model_mapping"]["candidate_source"] == "anchor:base"
     assert plan["scenario_range"]["status"] == "recommended"
+
+
+def test_missing_risk_input_behavior_keeps_wacc_candidate_required():
+    plan = build_guided_question_plan(
+        {
+            "company": "Microsoft Corporation",
+            "ticker": "MSFT",
+            "workflow_type": "ticker",
+            "evidence_items": [
+                {
+                    "driver": "risk_wacc",
+                    "evidence_summary": "Risk profile may differ from the mechanical baseline.",
+                    "source_url": "https://example.com/msft-risk",
+                    "source_date": "2026-06-30",
+                    "confidence": "high",
+                }
+            ],
+        }
+    )
+
+    question = plan["questions"][0]
+    assert question["driver"] == "risk_wacc"
+    assert question["status"] == "candidate-required"
+    assert question["requires_user_value"] is True
+    assert question["hidden_model_mapping"]["supported_override_field"] == "wacc"
+
+
+def test_guided_wacc_mapping_uses_recorded_anchor_choice():
+    anchors = anchors_from_valuation_baseline(_valuation_payload())
+    plan = build_guided_question_plan(
+        {
+            "company": "Microsoft Corporation",
+            "ticker": "MSFT",
+            "workflow_type": "ticker",
+            "evidence_items": [
+                {
+                    "driver": "risk_wacc",
+                    "evidence_summary": "Risk profile may differ from the mechanical baseline.",
+                    "source_url": "https://example.com/msft-risk",
+                    "source_date": "2026-06-30",
+                    "confidence": "high",
+                }
+            ],
+            "driver_anchors": anchors,
+        }
+    )
+
+    risk_question = next(question for question in plan["questions"] if question["driver"] == "risk_wacc")
+    assert risk_question["status"] == "supported"
+    assert risk_question["model_action"] == "user scenario override"
+    judgment = build_user_judgment_package(plan, {risk_question["id"]: "A"})
+    assert judgment["mapped_assumptions"]["wacc"] == 7.7
 
 
 def test_extract_prospectus_prefers_service_driver_anchors_and_keeps_offering_anchor(tmp_path):

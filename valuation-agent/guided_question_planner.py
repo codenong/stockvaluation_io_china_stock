@@ -28,6 +28,7 @@ SUPPORTED_USER_SCENARIO_FIELDS = {
     "sales_to_capital",
     "sales_to_capital_years_1_to_5",
     "sales_to_capital_years_6_to_10",
+    "wacc",
     "segments",
     "sector_overrides",
 }
@@ -58,6 +59,7 @@ DRIVER_TO_OVERRIDE_FIELD = {
     "margin_path": "operating_margin_next_year",
     "reinvestment_sales_to_capital": "sales_to_capital",
     "segment_sales_to_capital": "sector_overrides",
+    "risk_wacc": "wacc",
     "business_definition": "segments",
     "segment_mix": "sector_overrides",
 }
@@ -168,7 +170,6 @@ DRIVER_TO_FAMILY = {
 }
 
 REPORT_ONLY_DRIVERS = {
-    "risk_wacc",
     "terminal_value_mature_state",
     "accounting_adjustments",
     "market_implied_diagnostics",
@@ -486,6 +487,12 @@ def build_user_judgment_package(
             "model_action": model_action,
             "requested_override": requested_override,
             "anchor_label": choice.get("anchor_label"),
+            "scenario_key": choice.get("scenario_key") or choice.get("anchor_label"),
+            "theme_id": choice.get("theme_id") or question.get("theme_id"),
+            "factor_id": choice.get("factor_id") or question.get("factor_id"),
+            "non_overlap_reason": choice.get("non_overlap_reason") or question.get("non_overlap_reason"),
+            "supporting_evidence_refs": question.get("supporting_evidence_refs") or [],
+            "evidence_used": question.get("evidence_used") or [],
             "unsupported_or_report_only_reason": None,
             "confidence": choice.get("confidence") or question.get("confidence"),
         }

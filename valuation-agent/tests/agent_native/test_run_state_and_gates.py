@@ -19,6 +19,71 @@ USER_JUDGMENT = {
 }
 
 
+HIGH_SUPPORT = [
+    {
+        "claim": "High-confidence source backs this driver.",
+        "confidence": "high",
+        "source_url": "https://example.com/source",
+    }
+]
+
+
+def _coherence_choice(label, field, value, anchor_label, **extra):
+    choice = {
+        "label": label,
+        "story": f"{field} {anchor_label}",
+        "override_candidate": {"field": field, "value": value},
+        "anchor_label": anchor_label,
+        "scenario_key": anchor_label,
+        "model_action": "user scenario override",
+        "confidence": "medium",
+    }
+    choice.update(extra)
+    return choice
+
+
+def _coherence_question(qid, driver, field, *, evidence_used=None, **extra):
+    values = {
+        "revenue_growth": {"low": 6.0, "base": 8.0, "high": 12.0},
+        "target_operating_margin": {"low": 35.0, "base": 45.0, "high": 54.0},
+        "sales_to_capital": {"low": 1.6, "base": 2.4, "high": 2.88},
+        "wacc": {"low": 7.7, "base": 8.5, "high": 9.3},
+        "terminal_revenue": {"low": 900.0, "base": 1_000.0, "high": 1_100.0},
+    }
+    question = {
+        "id": qid,
+        "driver": driver,
+        "model_action": "user scenario override",
+        "default_answer": {"choice_label": "B"},
+        "hidden_model_mapping": {"supported_override_field": field},
+        "evidence_used": evidence_used or [],
+        "bounded_choices": [
+            _coherence_choice("A", field, values[field]["low"], "low", **extra),
+            _coherence_choice("B", field, values[field]["base"], "base", **extra),
+            _coherence_choice("C", field, values[field]["high"], "high", **extra),
+        ],
+    }
+    return question
+
+
+def _coherence_plan(*questions):
+    return {"plan_id": "coherence_contract", "questions": list(questions)}
+
+
+def _stock_plan(evidence_used=None):
+    return _coherence_plan(
+        _coherence_question("growth", "revenue_growth", "revenue_growth", evidence_used=evidence_used),
+        _coherence_question("margin", "operating_margin", "target_operating_margin", evidence_used=evidence_used),
+        _coherence_question("reinvestment", "reinvestment_sales_to_capital", "sales_to_capital", evidence_used=evidence_used),
+        _coherence_question("risk", "risk_wacc", "wacc", evidence_used=evidence_used),
+        _coherence_question("extra", "terminal_revenue", "terminal_revenue", evidence_used=evidence_used),
+    )
+
+
+def _start_ticker_run(registry):
+    return registry.call("stockvaluation.researched_baseline", {"ticker": "MSFT"})["structuredContent"]["run_id"]
+
+
 def _registry(tmp_path, client=None):
     return MCPToolRegistry(client or FakeClient(), run_store=WorkflowRunStore(root=tmp_path / "runs"))
 
@@ -178,6 +243,237 @@ def test_guided_flow_recalculate_refuses_unverified_user_input_even_after_answer
     assert result["isError"] is True
     assert result["structuredContent"]["error"]["code"] == "UNVERIFIED_USER_INPUT"
     assert result["structuredContent"]["failureCategory"] == "unverified_user_input"
+
+
+def test_clean_coherence_clears_guided_gate(tmp_path):
+    registry = _registry(tmp_path)
+    run_id = _start_ticker_run(registry)
+
+    applied = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {
+            "run_id": run_id,
+            "guided_question_plan": _stock_plan(evidence_used=HIGH_SUPPORT),
+            "answers": {"growth": "B", "margin": "B", "reinvestment": "B", "risk": "B"},
+        },
+    )["structuredContent"]
+
+    assert applied["coherenceReview"]["status"] == "clean"
+    assert applied["coherenceReview"]["issues"] == []
+    assert applied["workflow_state"]["gates"][GATE_GUIDED_REFINEMENT]["status"] == "cleared"
+
+
+def test_optimistic_stack_challenge_leaves_guided_gate_uncleared(tmp_path):
+    registry = _registry(tmp_path)
+    run_id = _start_ticker_run(registry)
+
+    applied = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {
+            "run_id": run_id,
+            "guided_question_plan": _stock_plan(),
+            "answers": {"growth": "C", "margin": "C", "reinvestment": "C", "risk": "A"},
+            "gate_records": [{"gate": GATE_EVIDENCE_REVIEW, "outcome": "approved"}],
+        },
+    )["structuredContent"]
+
+    assert applied["coherenceReview"]["status"] == "challenge_required"
+    assert applied["coherenceReview"]["issues"][0]["type"] == "optimistic_stack"
+    assert applied["challenge_count"] == 1
+    assert GATE_GUIDED_REFINEMENT in applied["workflow_state"]["gates_pending"]
+
+    refused = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "run_id": run_id,
+            "ticker": "MSFT",
+            "overrides": applied["tickerOverridesCandidate"]["overrides"],
+        },
+    )["structuredContent"]
+    assert refused["error"]["code"] == "GATE_NOT_CLEARED"
+    assert refused["gate"] == GATE_GUIDED_REFINEMENT
+
+
+def test_changed_answer_resolution_clears_after_one_challenge(tmp_path):
+    registry = _registry(tmp_path)
+    run_id = _start_ticker_run(registry)
+    plan = _stock_plan()
+    registry.call(
+        "stockvaluation.apply_guided_answers",
+        {
+            "run_id": run_id,
+            "guided_question_plan": plan,
+            "answers": {"growth": "C", "margin": "C", "reinvestment": "C", "risk": "A"},
+        },
+    )
+
+    resolved = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {
+            "run_id": run_id,
+            "guided_question_plan": plan,
+            "answers": {"growth": "B", "margin": "C", "reinvestment": "C", "risk": "A"},
+        },
+    )["structuredContent"]
+
+    assert resolved["coherenceReview"]["status"] == "resolved_by_changed_answers"
+    assert resolved["challenge_count"] == 1
+    assert resolved["workflow_state"]["gates_pending"] == [GATE_EVIDENCE_REVIEW]
+
+
+def test_explicit_caveat_acceptance_clears_after_one_challenge(tmp_path):
+    registry = _registry(tmp_path)
+    run_id = _start_ticker_run(registry)
+    plan = _stock_plan()
+    answers = {"growth": "C", "margin": "C", "reinvestment": "C", "risk": "A"}
+    registry.call(
+        "stockvaluation.apply_guided_answers",
+        {"run_id": run_id, "guided_question_plan": plan, "answers": answers},
+    )
+
+    caveated = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {
+            "run_id": run_id,
+            "guided_question_plan": plan,
+            "answers": answers,
+            "accept_coherence_caveat": True,
+            "coherence_caveat_reason": "User accepts the optimistic-stack caveat.",
+        },
+    )["structuredContent"]
+
+    assert caveated["coherenceReview"]["status"] == "caveat_accepted"
+    assert caveated["challenge_count"] == 1
+    assert caveated["workflow_state"]["gates"][GATE_GUIDED_REFINEMENT]["outcome"] == "caveated"
+
+
+def test_linked_theme_contradiction_requires_identical_scenario_keys(tmp_path):
+    registry = _registry(tmp_path)
+    run_id = _start_ticker_run(registry)
+    plan = _coherence_plan(
+        _coherence_question("growth", "revenue_growth", "revenue_growth", theme_id="same_market_story"),
+        _coherence_question("margin", "operating_margin", "target_operating_margin", theme_id="same_market_story"),
+    )
+
+    applied = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {"run_id": run_id, "guided_question_plan": plan, "answers": {"growth": "C", "margin": "A"}},
+    )["structuredContent"]
+
+    assert applied["coherenceReview"]["issues"][0]["type"] == "linked_theme_contradiction"
+    assert applied["coherenceReview"]["issues"][0]["scenario_keys"] == ["high", "low"]
+
+
+def test_risk_double_count_priority_and_non_overlap_waiver(tmp_path):
+    registry = _registry(tmp_path)
+    run_id = _start_ticker_run(registry)
+    plan = _coherence_plan(
+        _coherence_question("growth", "revenue_growth", "revenue_growth", factor_id="ai_cycle", theme_id="same_story"),
+        _coherence_question("risk", "risk_wacc", "wacc", factor_id="ai_cycle", theme_id="same_story"),
+    )
+
+    challenged = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {"run_id": run_id, "guided_question_plan": plan, "answers": {"growth": "C", "risk": "A"}},
+    )["structuredContent"]
+    assert challenged["coherenceReview"]["issues"][0]["type"] == "risk_double_count"
+
+    clean_run = _start_ticker_run(registry)
+    waived_plan = _coherence_plan(
+        _coherence_question(
+            "growth",
+            "revenue_growth",
+            "revenue_growth",
+            factor_id="ai_cycle",
+            non_overlap_reason="growth captures demand; WACC captures discount-rate uncertainty",
+        ),
+        _coherence_question(
+            "risk",
+            "risk_wacc",
+            "wacc",
+            factor_id="ai_cycle",
+            non_overlap_reason="growth captures demand; WACC captures discount-rate uncertainty",
+        ),
+    )
+    waived = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {"run_id": clean_run, "guided_question_plan": waived_plan, "answers": {"growth": "C", "risk": "A"}},
+    )["structuredContent"]
+    assert waived["coherenceReview"]["issues"] == []
+
+
+def test_growth_reinvestment_mismatch_priority_before_optimistic_stack(tmp_path):
+    registry = _registry(tmp_path)
+    run_id = _start_ticker_run(registry)
+
+    applied = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {
+            "run_id": run_id,
+            "guided_question_plan": _stock_plan(),
+            "answers": {"growth": "C", "reinvestment": "A"},
+        },
+    )["structuredContent"]
+
+    assert applied["coherenceReview"]["issues"][0]["type"] == "growth_reinvestment_mismatch"
+
+
+def test_inconsistent_replacement_awaits_caveat_and_hard_caps_one_challenge(tmp_path):
+    registry = _registry(tmp_path)
+    run_id = _start_ticker_run(registry)
+    plan = _stock_plan()
+
+    first = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {
+            "run_id": run_id,
+            "guided_question_plan": plan,
+            "answers": {"growth": "C", "margin": "C", "reinvestment": "C", "risk": "A", "extra": "B"},
+        },
+    )["structuredContent"]
+    assert first["coherenceReview"]["status"] == "challenge_required"
+    assert first["challenge_count"] == 1
+
+    replacement = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {
+            "run_id": run_id,
+            "guided_question_plan": plan,
+            "answers": {"growth": "C", "margin": "C", "reinvestment": "C", "risk": "A", "extra": "C"},
+        },
+    )["structuredContent"]
+
+    assert replacement["coherenceReview"]["status"] == "awaiting_caveat_acceptance"
+    assert replacement["challenge_count"] == 1
+    run = registry.run_store.get_run(run_id)
+    assert run["coherence_challenge_count"] == 1
+    assert run["coherence_review"]["issues"] == replacement["coherenceReview"]["issues"]
+    assert run["coherence_requires_caveat_decision"] is True
+    assert any(event["type"] == "coherence_changes_still_inconsistent" for event in run["events"])
+    assert run["gates"][GATE_GUIDED_REFINEMENT]["status"] == "pending"
+
+    rejected = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {
+            "run_id": run_id,
+            "guided_question_plan": plan,
+            "answers": {"growth": "C", "margin": "C", "reinvestment": "C", "risk": "A", "extra": "A"},
+        },
+    )["structuredContent"]
+    assert rejected["error"]["code"] == "COHERENCE_CAVEAT_DECISION_REQUIRED"
+
+    caveated = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {
+            "run_id": run_id,
+            "guided_question_plan": plan,
+            "answers": {"growth": "C", "margin": "C", "reinvestment": "C", "risk": "A", "extra": "C"},
+            "accept_coherence_caveat": True,
+        },
+    )["structuredContent"]
+    assert caveated["coherenceReview"]["status"] == "caveat_accepted"
+    assert caveated["challenge_count"] == 1
+    assert caveated["workflow_state"]["gates"][GATE_GUIDED_REFINEMENT]["status"] == "cleared"
 
 
 def test_explicit_bypass_unlocks_gates_and_appears_in_workflow_state(tmp_path):

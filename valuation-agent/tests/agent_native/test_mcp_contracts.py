@@ -1634,6 +1634,28 @@ def test_recalculate_maps_supported_overrides_and_separates_requested_from_effec
     assert client.calls[0][1]["salesToCapitalYears1To5"] == 2.3
 
 
+def test_autonomous_wacc_rejection_remains_in_force():
+    client = FakeClient()
+    registry = MCPToolRegistry(client)
+
+    result = registry.call(
+        "stockvaluation.recalculate",
+        {
+            "ticker": "MSFT",
+            "overrides": {
+                "request_policy": {"mode": "autonomous_researched"},
+                "wacc": 7.7,
+                "evidence_packet": _valid_evidence_packet(driver="risk_wacc"),
+            },
+        },
+    )
+
+    assert result["isError"] is True
+    assumptions = result["structuredContent"]["assumptions"]
+    assert assumptions["unsupported"]["wacc"]["status"] == "scenario_only_in_autonomous_researched_mode"
+    assert client.calls == []
+
+
 def test_terminal_roic_requires_explicit_scenario_policy():
     client = FakeClient()
     registry = MCPToolRegistry(client)
@@ -1833,8 +1855,8 @@ def test_user_refined_scenario_rejects_explicit_scenario_only_fields():
     assumptions = result["structuredContent"]["assumptions"]
     assert assumptions["mapped"]["requestPolicyMode"] == "user_refined_scenario"
     assert assumptions["mapped"]["compoundAnnualGrowth2_5"] == 8.0
+    assert assumptions["mapped"]["initialCostCapital"] == 8.5
     assert set(assumptions["unsupported"]) == {
-        "wacc",
         "terminal_growth",
         "terminal_roic",
         "tax_rate",

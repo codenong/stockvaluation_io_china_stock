@@ -148,6 +148,7 @@ USER_REFINED_SCENARIO_FIELDS = {
     "sales_to_capital",
     "sales_to_capital_years_1_to_5",
     "sales_to_capital_years_6_to_10",
+    "wacc",
     "segments",
     "sector_overrides",
 }
@@ -443,6 +444,14 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "use_defaults": {
                         "type": "boolean",
                         "description": "When true, accept default choices for unanswered questions.",
+                    },
+                    "accept_coherence_caveat": {
+                        "type": "boolean",
+                        "description": "On a tracked run with one unresolved coherence challenge, explicitly accept the caveat and clear guided refinement without changing answers.",
+                    },
+                    "coherence_caveat_reason": {
+                        "type": "string",
+                        "description": "Optional user-facing reason recorded when accept_coherence_caveat is true.",
                     },
                 },
                 [],
@@ -1131,6 +1140,11 @@ class MCPToolRegistry:
             )
         use_defaults = bool(args.get("use_defaults") or args.get("useDefaults"))
         judgment = build_user_judgment_package(plan, answers, use_defaults=use_defaults)
+        accept_caveat = bool(args.get("accept_coherence_caveat") or args.get("acceptCoherenceCaveat"))
+        caveat_reason = _string_or_none(args.get("coherence_caveat_reason") or args.get("coherenceCaveatReason"))
+        coherence_decision = self._coherence_decision(run, judgment, accept_caveat, caveat_reason, tool)
+        if coherence_decision.get("error") is not None:
+            return self._finish_tracked(coherence_decision["error"], run, tool)
         guided_answer_record: dict[str, Any] = {}
         if run is not None:
             run_anchors = run.get("anchors") or {}
@@ -1171,8 +1185,25 @@ class MCPToolRegistry:
                     guided_answer_record[field]["anchor_provenance"] = answer.get("anchor_provenance")
             self._record_segment_level_answers(guided_answer_record, segment_answers, plan)
             run["guided_answers"] = sanitize_for_agent(guided_answer_record)
+            if coherence_decision.get("persist"):
+                run["coherence_review"] = sanitize_for_agent(coherence_decision["review"])
+                run["coherence_answer_fingerprint"] = coherence_decision.get("fingerprint")
+                if coherence_decision.get("challenge_count") is not None:
+                    run["coherence_challenge_count"] = coherence_decision["challenge_count"]
+                run["coherence_requires_caveat_decision"] = bool(coherence_decision.get("requires_caveat_decision"))
+                if coherence_decision.get("event_type"):
+                    run.setdefault("events", []).append(
+                        {
+                            "type": coherence_decision["event_type"],
+                            "at": self.run_store._now(),
+                            "coherence_status": coherence_decision["review"].get("status"),
+                            "issues": coherence_decision["review"].get("issues", []),
+                        }
+                    )
             self.run_store.update_run(run)
-            self.run_store.record_gate(run["run_id"], GATE_GUIDED_REFINEMENT, "applied")
+            if coherence_decision.get("clear_gate", True):
+                outcome = "caveated" if coherence_decision.get("caveated") else "applied"
+                self.run_store.record_gate(run["run_id"], GATE_GUIDED_REFINEMENT, outcome, caveat_reason)
         payload = {
             "ok": True,
             "tool": tool,
@@ -1185,7 +1216,93 @@ class MCPToolRegistry:
         if run is not None:
             payload["guidedAnswerRecord"] = guided_answer_record
             payload["planSource"] = plan_source
+            if coherence_decision.get("review") is not None:
+                payload["coherenceReview"] = coherence_decision["review"]
+                payload["challenge_count"] = coherence_decision.get("challenge_count", run.get("coherence_challenge_count", 0))
         return self._finish_tracked(payload, run, tool)
+
+    def _coherence_decision(
+        self,
+        run: dict[str, Any] | None,
+        judgment: dict[str, Any],
+        accept_caveat: bool,
+        caveat_reason: str | None,
+        tool: str,
+    ) -> dict[str, Any]:
+        review = coherence_review(judgment)
+        if run is None:
+            return {"review": review}
+        challenge_count = int(run.get("coherence_challenge_count") or 0)
+        previous_review = _dict(run.get("coherence_review"))
+        previous_pending = previous_review.get("status") in {"challenge_required", "awaiting_caveat_acceptance"}
+        fingerprint = coherence_answer_fingerprint(judgment)
+        previous_fingerprint = _string_or_none(run.get("coherence_answer_fingerprint"))
+        requires_decision = bool(run.get("coherence_requires_caveat_decision"))
+
+        if accept_caveat:
+            accepted = dict(previous_review or review)
+            accepted["status"] = "caveat_accepted"
+            accepted["explicit_caveat"] = {
+                "accepted": True,
+                "reason": caveat_reason,
+            }
+            return {
+                "review": accepted,
+                "fingerprint": fingerprint,
+                "persist": True,
+                "clear_gate": True,
+                "caveated": True,
+                "challenge_count": challenge_count,
+                "event_type": "coherence_caveat_accepted",
+            }
+
+        if requires_decision:
+            return {
+                "error": error_payload(
+                    tool,
+                    "COHERENCE_CAVEAT_DECISION_REQUIRED",
+                    "The prior changed answer is still materially inconsistent. Accept the coherence caveat explicitly before changing answers again.",
+                    "coherence_caveat_decision_required",
+                    extra={
+                        "coherenceReview": previous_review,
+                        "challenge_count": challenge_count,
+                    },
+                )
+            }
+
+        if not review["issues"]:
+            review["status"] = "clean" if not previous_pending else "resolved_by_changed_answers"
+            return {
+                "review": review,
+                "fingerprint": fingerprint,
+                "persist": True,
+                "clear_gate": True,
+                "challenge_count": challenge_count,
+                "event_type": "coherence_resolved" if previous_pending else "coherence_clean",
+            }
+
+        if challenge_count < 1:
+            review["status"] = "challenge_required"
+            return {
+                "review": review,
+                "fingerprint": fingerprint,
+                "persist": True,
+                "clear_gate": False,
+                "challenge_count": 1,
+                "event_type": "coherence_challenge",
+            }
+
+        changed = previous_fingerprint is not None and fingerprint != previous_fingerprint
+        review["status"] = "awaiting_caveat_acceptance" if changed else "challenge_required"
+        return {
+            "review": review,
+            "fingerprint": fingerprint,
+            "persist": True,
+            "clear_gate": False,
+            "challenge_count": challenge_count,
+            "requires_caveat_decision": changed,
+            "event_type": "coherence_changes_still_inconsistent" if changed else None,
+        }
 
     @staticmethod
     def _record_segment_level_answers(
@@ -1483,6 +1600,212 @@ class MCPToolRegistry:
 
     def _explain_failure(self, args: dict[str, Any]) -> dict[str, Any]:
         return explain_failure(args.get("error"))
+
+
+COHERENCE_PRIORITY = {
+    "risk_double_count": 0,
+    "linked_theme_contradiction": 1,
+    "growth_reinvestment_mismatch": 2,
+    "optimistic_stack": 3,
+}
+
+
+def coherence_answer_fingerprint(judgment: dict[str, Any]) -> str:
+    answers = [
+        {
+            "question_id": answer.get("question_id"),
+            "selected_choice": answer.get("selected_choice"),
+            "requested_override": answer.get("requested_override"),
+        }
+        for answer in _coherence_list(judgment.get("answers"))
+        if isinstance(answer, dict)
+    ]
+    return hashlib.sha256(json.dumps(answers, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+
+
+def coherence_review(judgment: dict[str, Any]) -> dict[str, Any]:
+    answers = [
+        answer
+        for answer in _coherence_list(judgment.get("answers"))
+        if isinstance(answer, dict)
+        and answer.get("unsupported_or_report_only_reason") is None
+        and (answer.get("model_action") or "") == "user scenario override"
+    ]
+    issues = []
+    issues.extend(_coherence_risk_double_count_issues(answers))
+    issues.extend(_coherence_theme_issues(answers))
+    mismatch = _coherence_growth_reinvestment_issue(answers)
+    if mismatch:
+        issues.append(mismatch)
+    optimistic = _coherence_optimistic_stack_issue(answers)
+    if optimistic:
+        issues.append(optimistic)
+    issues = sorted(issues, key=lambda issue: (COHERENCE_PRIORITY.get(issue["type"], 99), issue["type"]))
+    return {
+        "status": "clean" if not issues else "challenge_required",
+        "issues": sanitize_for_agent(issues[:1]),
+        "issue_count": len(issues),
+        "rule": "one_material_challenge_max",
+        "favorability": _coherence_favorability_summary(answers),
+    }
+
+
+def _coherence_risk_double_count_issues(answers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_factor: dict[str, list[dict[str, Any]]] = {}
+    for answer in answers:
+        factor_id = _string_or_none(answer.get("factor_id"))
+        if factor_id:
+            by_factor.setdefault(factor_id, []).append(answer)
+    issues = []
+    for factor_id, group in by_factor.items():
+        if len(group) < 2:
+            continue
+        reasons = {_string_or_none(answer.get("non_overlap_reason")) for answer in group}
+        if len(reasons) == 1 and next(iter(reasons)) is not None:
+            continue
+        issues.append(
+            {
+                "type": "risk_double_count",
+                "factor_id": factor_id,
+                "drivers": sorted({_coherence_driver(answer) for answer in group}),
+                "message": "The same risk factor appears in multiple assumptions without the same non-empty non-overlap reason.",
+            }
+        )
+    return issues
+
+
+def _coherence_theme_issues(answers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_theme: dict[str, list[dict[str, Any]]] = {}
+    for answer in answers:
+        theme = _string_or_none(answer.get("theme_id"))
+        if theme:
+            by_theme.setdefault(theme, []).append(answer)
+    issues = []
+    for theme, group in by_theme.items():
+        keys = {_string_or_none(answer.get("scenario_key")) for answer in group}
+        keys.discard(None)
+        if len(keys) <= 1:
+            continue
+        issues.append(
+            {
+                "type": "linked_theme_contradiction",
+                "theme_id": theme,
+                "scenario_keys": sorted(keys),
+                "message": "Linked theme answers are compatible only when they select the same scenario key.",
+            }
+        )
+    return issues
+
+
+def _coherence_growth_reinvestment_issue(answers: list[dict[str, Any]]) -> dict[str, Any] | None:
+    by_field = _coherence_by_field(answers)
+    growth = by_field.get("revenue_growth") or by_field.get("terminal_revenue")
+    reinvestment = by_field.get("sales_to_capital")
+    if not growth or not reinvestment:
+        return None
+    if _coherence_anchor_label(growth) == "high" and _coherence_anchor_label(reinvestment) == "low":
+        return {
+            "type": "growth_reinvestment_mismatch",
+            "drivers": ["revenue_growth", "sales_to_capital"],
+            "message": "High growth paired with the low sales-to-capital anchor needs resolution because growth and reinvestment are linked.",
+        }
+    return None
+
+
+def _coherence_optimistic_stack_issue(answers: list[dict[str, Any]]) -> dict[str, Any] | None:
+    favorable = [
+        answer
+        for answer in answers
+        if _coherence_favorability(answer) == "favorable"
+    ]
+    covered = {_coherence_driver(answer) for answer in favorable}
+    required = {"revenue_growth", "target_operating_margin", "sales_to_capital", "wacc"}
+    if not required <= covered:
+        return None
+    weak = [
+        _coherence_driver(answer)
+        for answer in favorable
+        if _coherence_driver(answer) in required and not _coherence_high_support(answer)
+    ]
+    if not weak:
+        return None
+    return {
+        "type": "optimistic_stack",
+        "drivers": sorted(required),
+        "weak_support_drivers": sorted(set(weak)),
+        "message": "Growth, margin, capital efficiency and WACC are all favorable, but at least one selection lacks high support.",
+    }
+
+
+def _coherence_favorability_summary(answers: list[dict[str, Any]]) -> dict[str, str]:
+    return {
+        _coherence_driver(answer): _coherence_favorability(answer)
+        for answer in answers
+        if _coherence_favorability(answer) != "neutral"
+    }
+
+
+def _coherence_by_field(answers: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    by_field: dict[str, dict[str, Any]] = {}
+    for answer in answers:
+        by_field.setdefault(_coherence_driver(answer), answer)
+    return by_field
+
+
+def _coherence_driver(answer: dict[str, Any]) -> str:
+    override = _dict(answer.get("requested_override"))
+    field = _string_or_none(override.get("field"))
+    driver = driver_field_for_key(field or "") if field else None
+    mapped = _string_or_none(answer.get("mapped_driver"))
+    if driver:
+        return driver
+    if mapped in {"operating_margin", "margin_path"}:
+        return "target_operating_margin"
+    if mapped == "reinvestment_sales_to_capital":
+        return "sales_to_capital"
+    if mapped == "risk_wacc":
+        return "wacc"
+    return mapped or field or "unknown"
+
+
+def _coherence_anchor_label(answer: dict[str, Any]) -> str | None:
+    label = _string_or_none(answer.get("anchor_label"))
+    if label in {"low", "base", "high"}:
+        return label
+    return None
+
+
+def _coherence_favorability(answer: dict[str, Any]) -> str:
+    driver = _coherence_driver(answer)
+    label = _coherence_anchor_label(answer)
+    if label is None:
+        return "neutral"
+    if driver in {"revenue_growth", "target_operating_margin", "sales_to_capital"} and label == "high":
+        return "favorable"
+    if driver == "wacc" and label == "low":
+        return "favorable"
+    if driver in {"revenue_growth", "target_operating_margin", "sales_to_capital"} and label == "low":
+        return "unfavorable"
+    if driver == "wacc" and label == "high":
+        return "unfavorable"
+    return "neutral"
+
+
+def _coherence_high_support(answer: dict[str, Any]) -> bool:
+    refs: list[dict[str, Any]] = []
+    for item in _coherence_list(answer.get("evidence_used")):
+        if isinstance(item, dict):
+            refs.append(item)
+    for item in _coherence_list(answer.get("supporting_evidence_refs")):
+        if isinstance(item, dict):
+            refs.append(item)
+    if not refs:
+        return False
+    return all(str(ref.get("confidence") or "").strip().lower() == "high" for ref in refs)
+
+
+def _coherence_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
 
 
 def normalize_ticker(raw: Any) -> tuple[str, str | None]:

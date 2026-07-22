@@ -58,6 +58,7 @@ RECALCULATE_KEY_TO_DRIVER_FIELD = {
     "sales_to_capital": "sales_to_capital",
     "sales_to_capital_years_1_to_5": "sales_to_capital",
     "sales_to_capital_years_6_to_10": "sales_to_capital",
+    "wacc": "wacc",
     "terminal_roic": "terminal_roic",
     "terminal_return_on_capital": "terminal_roic",
     "terminal_return_on_invested_capital": "terminal_roic",
@@ -268,6 +269,30 @@ def anchors_from_valuation_baseline(valuation: dict[str, Any]) -> dict[str, dict
             _anchor(max(SALES_TO_CAPITAL_MIN, sales_to_capital * BASELINE_LOW_FACTOR), f"{source}; low rule: {BASELINE_LOW_FACTOR}x baseline"),
             _anchor(sales_to_capital, f"{source}; base rule: baseline as returned"),
             _anchor(min(SALES_TO_CAPITAL_MAX, sales_to_capital * BASELINE_HIGH_FACTOR), f"{source}; high rule: {BASELINE_HIGH_FACTOR}x baseline"),
+        )
+
+    transparency = valuation.get("assumptionTransparency") or {}
+    discount = transparency.get("discountRate") if isinstance(transparency, dict) else {}
+    if not isinstance(discount, dict):
+        discount = {}
+    risk_free_rate = discount.get("riskFreeRate")
+    initial_cost = discount.get("initialCostOfCapital")
+    if not isinstance(risk_free_rate, (int, float)) or not math.isfinite(float(risk_free_rate)):
+        risk_free_rate = None
+    if not isinstance(initial_cost, (int, float)) or not math.isfinite(float(initial_cost)):
+        initial_cost = _first_finite(financial.get("costOfCapital"), skip_first=False)
+    if initial_cost is not None:
+        initial_cost = float(initial_cost)
+        risk_free = float(risk_free_rate) if risk_free_rate is not None else initial_cost
+        spread = max(0.0, initial_cost - risk_free)
+        adjustment = spread * 0.2
+        source = "service_baseline: initial cost of capital and risk-free rate from the deterministic valuation-service baseline"
+        anchors["wacc"] = _anchor_set(
+            "wacc",
+            "percent",
+            _anchor(max(risk_free, initial_cost - adjustment), f"{source}; low rule: 20% lower risk spread"),
+            _anchor(initial_cost, f"{source}; base rule: baseline initial cost of capital"),
+            _anchor(initial_cost + adjustment, f"{source}; high rule: 20% higher risk spread"),
         )
 
     return anchors

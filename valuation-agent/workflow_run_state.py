@@ -24,7 +24,7 @@ GATE_GUIDED_REFINEMENT = "guided_refinement"
 GATES = (GATE_EVIDENCE_REVIEW, GATE_GUIDED_REFINEMENT)
 
 EVIDENCE_REVIEW_OUTCOMES = {"approved", "corrected", "caveated", "bypassed"}
-GUIDED_REFINEMENT_OUTCOMES = {"applied", "bypassed"}
+GUIDED_REFINEMENT_OUTCOMES = {"applied", "caveated", "bypassed"}
 BYPASS_REASONS = {"quick", "no_questions", "automation", "smoke_test"}
 
 
