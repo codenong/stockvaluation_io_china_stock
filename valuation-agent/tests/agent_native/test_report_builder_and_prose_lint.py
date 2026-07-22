@@ -81,6 +81,136 @@ def _report_data(**overrides):
     return data
 
 
+def _revealed_thesis():
+    return {
+        "schema_version": "revealed_thesis.v1",
+        "source_type": "guided_answer_trail",
+        "plan_id": "spcx_guided_refinement",
+        "status": "resolved",
+        "investment_thesis": (
+            "revenue growth: Recurring launch demand expands. "
+            "operating margin: Margins normalize with connectivity scale."
+        ),
+        "framing_questions": [
+            {
+                "question_id": "semantic_growth_durability",
+                "plan_order": 0,
+                "driver": "revenue_growth",
+                "question": "Is launch demand recurring or pulled forward?",
+            },
+            {
+                "question_id": "semantic_margin_path",
+                "plan_order": 1,
+                "driver": "operating_margin",
+                "question": "Do satellite margins normalize or stay capped?",
+            },
+        ],
+        "selected_interpretations": [
+            {
+                "question_id": "semantic_growth_durability",
+                "driver": "revenue_growth",
+                "selected_choice": "A",
+                "interpretation": "Recurring launch demand expands.",
+            },
+            {
+                "question_id": "semantic_margin_path",
+                "driver": "operating_margin",
+                "selected_choice": "B",
+                "interpretation": "Margins normalize with connectivity scale.",
+            },
+        ],
+        "driver_mappings": [
+            {
+                "question_id": "semantic_growth_durability",
+                "driver": "revenue_growth",
+                "model_action": "user scenario override",
+                "mapped_effect": {"status": "mapped", "field": "revenue_growth", "value": 34.08, "source": "low"},
+            },
+            {
+                "question_id": "semantic_margin_path",
+                "driver": "operating_margin",
+                "model_action": "user scenario override",
+                "mapped_effect": {"status": "mapped", "field": "operating_margin", "value": 3.33, "source": "base"},
+            },
+        ],
+        "evidence": [
+            {
+                "question_id": "semantic_growth_durability",
+                "supporting_evidence_refs": ["filing_launch_revenue"],
+                "opposing_evidence_refs": [],
+                "evidence_gaps": ["No renewal cohort table."],
+                "evidence_used": [],
+            },
+            {
+                "question_id": "semantic_margin_path",
+                "supporting_evidence_refs": ["filing_margin_bridge"],
+                "opposing_evidence_refs": [],
+                "evidence_gaps": [],
+                "evidence_used": [],
+            },
+        ],
+        "coherence_caveats": ["Growth and margin both depend on satellite execution."],
+        "falsifiers": [
+            {
+                "question_id": "semantic_growth_durability",
+                "driver": "revenue_growth",
+                "falsifier": "Renewals weaken.",
+            },
+            {
+                "question_id": "semantic_margin_path",
+                "driver": "operating_margin",
+                "falsifier": "Fixed costs rise again.",
+            },
+        ],
+        "decisions": [
+            {
+                "question_id": "semantic_growth_durability",
+                "plan_order": 0,
+                "driver": "revenue_growth",
+                "framing_question": "Is launch demand recurring or pulled forward?",
+                "selected_choice": "A",
+                "recommended_choice": "B",
+                "used_recommended_choice": False,
+                "selected_interpretation": "Recurring launch demand expands.",
+                "thesis_clause": "revenue growth: Recurring launch demand expands.",
+                "assumption_effect": "Lower or no company-specific departure.",
+                "model_action": "user scenario override",
+                "mapped_effect": {"status": "mapped", "field": "revenue_growth", "value": 34.08, "source": "low"},
+                "supporting_evidence_refs": ["filing_launch_revenue"],
+                "opposing_evidence_refs": [],
+                "evidence_gaps": ["No renewal cohort table."],
+                "evidence_used": [],
+                "falsifier": "Renewals weaken.",
+                "anchor_provenance": {"field": "revenue_growth"},
+                "anchor_explanation": "Canonical anchor provenance.",
+                "coherence_caveats": ["Growth and margin both depend on satellite execution."],
+            },
+            {
+                "question_id": "semantic_margin_path",
+                "plan_order": 1,
+                "driver": "operating_margin",
+                "framing_question": "Do satellite margins normalize or stay capped?",
+                "selected_choice": "B",
+                "recommended_choice": "B",
+                "used_recommended_choice": True,
+                "selected_interpretation": "Margins normalize with connectivity scale.",
+                "thesis_clause": "operating margin: Margins normalize with connectivity scale.",
+                "assumption_effect": "Use the recommended bounded company-specific judgment.",
+                "model_action": "user scenario override",
+                "mapped_effect": {"status": "mapped", "field": "operating_margin", "value": 3.33, "source": "base"},
+                "supporting_evidence_refs": ["filing_margin_bridge"],
+                "opposing_evidence_refs": [],
+                "evidence_gaps": [],
+                "evidence_used": [],
+                "falsifier": "Fixed costs rise again.",
+                "anchor_provenance": {"field": "operating_margin"},
+                "anchor_explanation": "Canonical anchor provenance.",
+                "coherence_caveats": ["Growth and margin both depend on satellite execution."],
+            },
+        ],
+    }
+
+
 def test_prose_lint_flags_seeded_fluffy_sample_and_passes_clean_sample():
     prose_lint = _load("prose_lint")
     fluffy = "\n".join(
@@ -680,6 +810,69 @@ def test_swatma_report_spine_has_case_status_weak_basis_and_monitor_list():
     assert "## Peer Comparison" not in markdown
     assert "## Scenario Cases" not in markdown
     assert "target price" not in markdown.lower()
+
+
+def test_report_builder_uses_revealed_thesis_over_conflicting_prose(tmp_path):
+    build_report = _load("build_report")
+    out_dir = tmp_path / "out"
+    revealed = _revealed_thesis()
+    data = _report_data(
+        revealedThesis=revealed,
+        prose={
+            **_report_data()["prose"],
+            "investment_thesis": "Fresh free-form thesis should not replace the recorded trail.",
+            "framing_questions": ["Fresh free-form question should not render."],
+            "what_would_change_the_view": "Fresh free-form falsifier should not render.",
+        },
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(SCRIPTS_DIR / "build_report.py"), "--out-dir", str(out_dir), "--no-open"],
+        input=json.dumps(data),
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    output = json.loads(result.stdout)
+    markdown = (out_dir / "report.md").read_text(encoding="utf-8")
+    report_data = json.loads((out_dir / "report_data.json").read_text(encoding="utf-8"))
+    assert report_data["revealedThesis"] == revealed
+    assert output["report_data"] == str(out_dir / "report_data.json")
+    assert "revenue growth: Recurring launch demand expands." in markdown
+    assert "Is launch demand recurring or pulled forward? (revenue growth)" in markdown
+    assert "Recurring launch demand expands." in markdown
+    assert "user scenario override; mapped; revenue_growth; 34.08; low" in markdown
+    assert "support: filing_launch_revenue" in markdown
+    assert "caveats: Growth and margin both depend on satellite execution." in markdown
+    assert "revenue growth: Renewals weaken." in markdown
+    assert "Fresh free-form" not in markdown
+
+
+def test_report_builder_renders_fixed_unresolved_revealed_thesis_statement():
+    build_report = _load("build_report")
+    data = _report_data(
+        revealedThesis={
+            "schema_version": "revealed_thesis.v1",
+            "source_type": "guided_answer_trail",
+            "plan_id": "spcx_guided_refinement",
+            "status": "unresolved",
+            "investment_thesis": "The revealed thesis is unresolved because no guided framing answers were recorded.",
+            "framing_questions": [],
+            "selected_interpretations": [],
+            "driver_mappings": [],
+            "evidence": [],
+            "coherence_caveats": [],
+            "falsifiers": [],
+            "decisions": [],
+        }
+    )
+
+    markdown = build_report.build_report_markdown(data)
+
+    assert "## Investment Thesis" in markdown
+    assert "The revealed thesis is unresolved because no guided framing answers were recorded." in markdown
+    assert "The sample thesis is" not in markdown
 
 
 def test_swatma_number_formatting_and_report_data_artifact(tmp_path):

@@ -182,6 +182,23 @@ def _first_present(*values):
     return None
 
 
+def _revealed_thesis(data: dict) -> dict:
+    thesis = data.get("revealedThesis")
+    if not isinstance(thesis, dict):
+        thesis = data.get("revealed_thesis")
+    if isinstance(thesis, dict) and thesis.get("schema_version") == "revealed_thesis.v1":
+        return thesis
+    return {}
+
+
+def _render_value(value) -> str:
+    if value in (None, ""):
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True)
+    return _text(str(value))
+
+
 def _collect_structured_numbers(value, numbers: list[float], *, in_model_prose: bool = False) -> None:
     if isinstance(value, bool):
         return
@@ -521,7 +538,28 @@ def _prose_text_section(prose: dict, key: str, heading: str) -> list[str]:
     return [f"## {heading}", "", body] if body else []
 
 
+def _revealed_investment_thesis_section(data: dict) -> list[str]:
+    thesis = _revealed_thesis(data)
+    body = _text(thesis.get("investment_thesis"))
+    return ["## Investment Thesis", "", body] if body else []
+
+
 def _framing_questions_section(data: dict, prose: dict) -> list[str]:
+    revealed = _revealed_thesis(data)
+    if revealed:
+        rows = []
+        for item in _list(revealed.get("framing_questions")):
+            if not isinstance(item, dict):
+                continue
+            question = _text(item.get("question"))
+            if not question:
+                continue
+            driver = _text(item.get("driver"))
+            detail = question
+            if driver:
+                detail = f"{detail} ({driver.replace('_', ' ')})"
+            rows.append(f"{len(rows) + 1}. {detail}")
+        return ["## Framing Questions", ""] + rows if rows else []
     questions = prose.get("framing_questions")
     if questions in (None, ""):
         questions = data.get("framing_questions")
@@ -550,6 +588,55 @@ def _framing_questions_section(data: dict, prose: dict) -> list[str]:
     if not rows:
         return []
     return ["## Framing Questions", ""] + rows
+
+
+def _revealed_thesis_trail_section(data: dict) -> list[str]:
+    revealed = _revealed_thesis(data)
+    if not revealed:
+        return []
+    rows = []
+    for decision in _list(revealed.get("decisions")):
+        if not isinstance(decision, dict):
+            continue
+        question = _text(decision.get("framing_question"))
+        interpretation = _text(decision.get("selected_interpretation"))
+        if not question or not interpretation:
+            continue
+        mapping = _dict(decision.get("mapped_effect"))
+        mapping_bits = [
+            _text(decision.get("model_action")),
+            _text(mapping.get("status")),
+            _text(mapping.get("field")),
+            _render_value(mapping.get("value")),
+            _text(mapping.get("source")),
+        ]
+        evidence_bits = []
+        refs = _string_list(decision.get("supporting_evidence_refs"))
+        if refs:
+            evidence_bits.append("support: " + ", ".join(refs))
+        opposing = _string_list(decision.get("opposing_evidence_refs"))
+        if opposing:
+            evidence_bits.append("opposes: " + ", ".join(opposing))
+        gaps = _string_list(decision.get("evidence_gaps"))
+        if gaps:
+            evidence_bits.append("gaps: " + "; ".join(gaps))
+        caveats = _string_list(decision.get("coherence_caveats"))
+        if caveats:
+            evidence_bits.append("caveats: " + "; ".join(caveats))
+        rows.append(
+            [
+                question,
+                interpretation,
+                "; ".join(bit for bit in mapping_bits if bit),
+                "; ".join(evidence_bits),
+            ]
+        )
+    if not rows:
+        return []
+    return ["## Revealed Thesis Trail", ""] + _table(
+        ["Question", "Selected interpretation", "Driver mapping", "Evidence and caveats"],
+        rows,
+    )
 
 
 def _market_implied_section(data: dict) -> list[str]:
@@ -1057,6 +1144,18 @@ def _basis_warnings_section(data: dict) -> list[str]:
 
 
 def _what_would_change_section(data: dict, prose: dict) -> list[str]:
+    revealed = _revealed_thesis(data)
+    if revealed:
+        rows = []
+        for item in _list(revealed.get("falsifiers")):
+            if not isinstance(item, dict):
+                continue
+            falsifier = _text(item.get("falsifier"))
+            if not falsifier:
+                continue
+            driver = _text(item.get("driver")).replace("_", " ")
+            rows.append(f"- {driver}: {falsifier}" if driver else f"- {falsifier}")
+        return ["## What Would Change The View", ""] + rows if rows else []
     value = prose.get("what_would_change_the_view")
     if value in (None, ""):
         value = prose.get("metrics_to_monitor")
@@ -1151,12 +1250,20 @@ def build_report_markdown(data: dict) -> str:
     if valuation_view:
         sections.append(["## Valuation View", ""] + valuation_view)
 
-    for key, heading in OPENING_PROSE_SECTIONS:
-        section = _prose_text_section(prose, key, heading)
-        if section:
-            sections.append(section)
+    revealed_section = _revealed_investment_thesis_section(data)
+    if revealed_section:
+        sections.append(revealed_section)
+    else:
+        for key, heading in OPENING_PROSE_SECTIONS:
+            section = _prose_text_section(prose, key, heading)
+            if section:
+                sections.append(section)
 
     section = _framing_questions_section(data, prose)
+    if section:
+        sections.append(section)
+
+    section = _revealed_thesis_trail_section(data)
     if section:
         sections.append(section)
 

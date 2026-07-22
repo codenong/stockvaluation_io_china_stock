@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from valuation_agent.investment_reasoning import CHOICE_D_INTERPRETATIONS
 from valuation_agent.mcp_tools import MCPToolRegistry, prospectus_segment_review
 from valuation_agent.mcp_server import MCPJSONRPCServer
 from valuation_agent.service_client import (
@@ -13,6 +14,7 @@ from valuation_agent.service_client import (
     ServiceUnavailable,
     ValuationServiceClient,
 )
+from valuation_agent.workflow_run_state import WorkflowRunStore
 
 
 def _valuation_payload():
@@ -579,6 +581,213 @@ def test_jsonrpc_plan_guided_questions_accepts_framing_forks_shape():
     assert "error" not in response
     plan = response["result"]["structuredContent"]["guidedQuestionPlan"]
     assert plan["framing_fork_validation"]["accepted_forks"][0]["fork_id"] == "growth_durability"
+
+
+def test_apply_guided_answers_exposes_closed_revealed_thesis_schema():
+    tools = {tool["name"]: tool for tool in MCPToolRegistry(FakeClient()).list_tools()}
+    schema = tools["stockvaluation.apply_guided_answers"]["outputSchema"]["properties"]["revealedThesis"]
+
+    assert schema["type"] == "object"
+    assert schema["additionalProperties"] is False
+    assert set(schema["required"]) == {
+        "schema_version",
+        "source_type",
+        "plan_id",
+        "status",
+        "investment_thesis",
+        "framing_questions",
+        "selected_interpretations",
+        "driver_mappings",
+        "evidence",
+        "coherence_caveats",
+        "falsifiers",
+        "decisions",
+    }
+    assert schema["properties"]["schema_version"]["const"] == "revealed_thesis.v1"
+    decision = schema["properties"]["decisions"]["items"]
+    assert decision["additionalProperties"] is False
+    assert decision["properties"]["plan_order"]["type"] == "integer"
+    assert decision["properties"]["used_recommended_choice"]["type"] == "boolean"
+    assert decision["properties"]["selected_choice"]["enum"] == ["A", "B", "C", "D"]
+    assert set(CHOICE_D_INTERPRETATIONS.values()) == {
+        "Custom numeric scenario input recorded as user input; it is not independent evidence.",
+        "Custom segment scenario package recorded as user input; service weighting remains authoritative.",
+        "Custom report-only judgment recorded without changing valuation math.",
+        "Custom unsupported judgment recorded as unresolved and excluded from valuation math.",
+    }
+
+
+def test_revealed_thesis_is_stored_authoritative_and_preserved_across_recalculate(tmp_path):
+    registry = MCPToolRegistry(FakeClient(), run_store=WorkflowRunStore(root=tmp_path / "runs"))
+    baseline = registry.call("stockvaluation.value_ticker", {"ticker": "MSFT"})["structuredContent"]
+    run_id = baseline["run_id"]
+    evidence_items = [
+        {
+            "evidence_id": "demand",
+            "driver": "revenue_growth",
+            "source_title": "Customer cohort memo",
+            "source_url": "https://example.com/demand",
+            "source_date": "2026-05-01",
+            "evidence_summary": "Renewal demand is recurring.",
+            "confidence": "high",
+        },
+        {
+            "evidence_id": "margin",
+            "driver": "operating_margin",
+            "source_title": "Margin bridge",
+            "source_url": "https://example.com/margin",
+            "source_date": "2026-05-02",
+            "evidence_summary": "Margins are normalizing.",
+            "confidence": "high",
+        },
+        {
+            "evidence_id": "capital",
+            "driver": "reinvestment_sales_to_capital",
+            "source_title": "Capital plan",
+            "source_url": "https://example.com/capital",
+            "source_date": "2026-05-03",
+            "evidence_summary": "Growth needs heavier reinvestment.",
+            "confidence": "high",
+        },
+        {
+            "evidence_id": "risk",
+            "driver": "risk_wacc",
+            "source_title": "Risk review",
+            "source_url": "https://example.com/risk",
+            "source_date": "2026-05-04",
+            "evidence_summary": "Execution risk is elevated.",
+            "confidence": "high",
+        },
+    ]
+    forks = [
+        _framing_fork(
+            "growth_durability",
+            "revenue_growth",
+            "Is demand recurring or pulled forward?",
+            ["demand"],
+            [
+                ("A", "Recurring demand expands.", "Renewals weaken."),
+                ("B", "Demand normalizes.", "Backlog stalls."),
+                ("C", "Demand was pulled forward.", "New workloads fail to replace churn."),
+            ],
+        ),
+        _framing_fork(
+            "margin_path",
+            "operating_margin",
+            "Are margins normalizing or structurally capped?",
+            ["margin"],
+            [
+                ("A", "Margins stay capped.", "Cost discipline appears."),
+                ("B", "Margins normalize.", "Fixed costs rise again."),
+                ("C", "Margins expand faster.", "Pricing pressure returns."),
+            ],
+        ),
+        _framing_fork(
+            "reinvestment_intensity",
+            "reinvestment_sales_to_capital",
+            "Does growth need heavier reinvestment?",
+            ["capital"],
+            [
+                ("A", "Capital efficiency improves.", "Capacity additions lag revenue."),
+                ("B", "Reinvestment stays near base.", "Working capital absorbs growth."),
+                ("C", "Growth needs heavier reinvestment.", "Asset turns improve."),
+            ],
+        ),
+        _framing_fork(
+            "risk_discount",
+            "risk_wacc",
+            "Is base risk enough for execution uncertainty?",
+            ["risk"],
+            [
+                ("A", "Base risk is enough.", "Launch failures increase."),
+                ("B", "Risk needs a modest premium.", "Execution volatility falls."),
+                ("C", "Risk needs a large premium.", "Delivery metrics stabilize."),
+            ],
+        ),
+    ]
+
+    plan_payload = registry.call(
+        "stockvaluation.plan_guided_questions",
+        {
+            "run_id": run_id,
+            "gate_records": [{"gate": "evidence_review", "outcome": "approved"}],
+            "company": "Microsoft Corporation",
+            "ticker": "MSFT",
+            "workflow_type": "ticker",
+            "evidence_items": evidence_items,
+            "framing_forks": forks,
+        },
+    )["structuredContent"]
+    plan = plan_payload["guidedQuestionPlan"]
+    assert plan["question_order"][:4] == [
+        "semantic_growth_durability",
+        "semantic_margin_path",
+        "semantic_reinvestment_intensity",
+        "semantic_risk_discount",
+    ]
+
+    apply_payload = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {
+            "run_id": run_id,
+            "answers": {
+                "semantic_growth_durability": "A",
+                "semantic_margin_path": "B",
+                "semantic_reinvestment_intensity": "C",
+                "semantic_risk_discount": {
+                    "choice": "D",
+                    "value": 9.2,
+                    "interpretation": "Caller supplied prose must not appear.",
+                },
+            },
+        },
+    )["structuredContent"]
+    revealed = json.loads(json.dumps(apply_payload["revealedThesis"], sort_keys=True))
+    run = registry.run_store.get_run(run_id)
+    assert json.loads(json.dumps(run["revealed_thesis"], sort_keys=True)) == revealed
+    assert [item["question_id"] for item in revealed["decisions"]] == plan["question_order"][:4]
+    assert [item["selected_choice"] for item in revealed["decisions"]] == ["A", "B", "C", "D"]
+    assert revealed["decisions"][0]["selected_interpretation"] == "Recurring demand expands."
+    assert revealed["decisions"][3]["selected_interpretation"] == CHOICE_D_INTERPRETATIONS["numeric_user_input"]
+    assert "Caller supplied prose" not in json.dumps(revealed)
+    assert revealed["decisions"][0]["mapped_effect"]["source"] == "low"
+    assert revealed["decisions"][1]["mapped_effect"]["source"] == "base"
+    assert revealed["decisions"][2]["mapped_effect"]["source"] == "high"
+    assert revealed["decisions"][3]["mapped_effect"] == {
+        "status": "mapped",
+        "field": "wacc",
+        "value": 9.2,
+        "source": "user_input",
+    }
+
+    overrides = copy.deepcopy(apply_payload["tickerOverridesCandidate"]["overrides"])
+    recalc_payload = registry.call(
+        "stockvaluation.recalculate",
+        {"run_id": run_id, "ticker": "MSFT", "overrides": overrides},
+    )["structuredContent"]
+
+    assert json.loads(json.dumps(recalc_payload["revealedThesis"], sort_keys=True)) == revealed
+    assert json.loads(json.dumps(recalc_payload["auditPacket"]["packet"]["revealed_thesis"], sort_keys=True)) == revealed
+    assert json.loads(json.dumps(recalc_payload["scenarioBook"]["book"]["revealed_thesis"], sort_keys=True)) == revealed
+
+
+def _framing_fork(fork_id, driver, question, refs, options):
+    return {
+        "schema_version": "framing_fork.v1",
+        "fork_id": fork_id,
+        "primary_driver": driver,
+        "causal_question": question,
+        "confidence": "high",
+        "material": True,
+        "supporting_evidence_refs": refs,
+        "opposing_evidence_refs": [],
+        "evidence_gaps": ["No direct falsifier data is disclosed."],
+        "options": [
+            {"label": label, "story": story, "falsifier": falsifier}
+            for label, story, falsifier in options
+        ],
+        "analysis_lean": "B",
+    }
 
 
 def test_prospectus_tools_are_read_only_and_schema_bounded():

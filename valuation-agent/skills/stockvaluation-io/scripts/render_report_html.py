@@ -489,7 +489,10 @@ def _status_chips(data: dict) -> str:
 
 def _framing_questions_html(data: dict) -> str:
     prose = _dict(data.get("prose"))
-    questions = prose.get("framing_questions")
+    revealed = _dict(data.get("revealedThesis") or data.get("revealed_thesis"))
+    questions = revealed.get("framing_questions") if revealed.get("schema_version") == "revealed_thesis.v1" else None
+    if questions in (None, ""):
+        questions = prose.get("framing_questions")
     if questions in (None, ""):
         questions = data.get("framing_questions")
     cards: list[str] = []

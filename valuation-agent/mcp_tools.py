@@ -30,7 +30,11 @@ from .guided_question_planner import (
     build_guided_question_plan,
     build_user_judgment_package,
 )
-from .investment_reasoning import framing_forks_input_schema
+from .investment_reasoning import (
+    build_revealed_thesis,
+    framing_forks_input_schema,
+    revealed_thesis_output_schema,
+)
 from .security import sanitize_for_agent
 from .segment_discovery import parse_revenue_weight, sanitize_segment_package
 from .segment_economics import validate_segment_economics
@@ -244,6 +248,7 @@ def _output_schema() -> dict[str, Any]:
             "ok": {"type": "boolean"},
             "tool": {"type": "string"},
             "error": {"type": "object"},
+            "revealedThesis": revealed_thesis_output_schema(),
         },
         "required": ["ok", "tool"],
         "additionalProperties": True,
@@ -1145,6 +1150,7 @@ class MCPToolRegistry:
         coherence_decision = self._coherence_decision(run, judgment, accept_caveat, caveat_reason, tool)
         if coherence_decision.get("error") is not None:
             return self._finish_tracked(coherence_decision["error"], run, tool)
+        revealed_thesis = build_revealed_thesis(plan, judgment, coherence_decision.get("review"))
         guided_answer_record: dict[str, Any] = {}
         if run is not None:
             run_anchors = run.get("anchors") or {}
@@ -1185,6 +1191,7 @@ class MCPToolRegistry:
                     guided_answer_record[field]["anchor_provenance"] = answer.get("anchor_provenance")
             self._record_segment_level_answers(guided_answer_record, segment_answers, plan)
             run["guided_answers"] = sanitize_for_agent(guided_answer_record)
+            run["revealed_thesis"] = copy.deepcopy(revealed_thesis)
             if coherence_decision.get("persist"):
                 run["coherence_review"] = sanitize_for_agent(coherence_decision["review"])
                 run["coherence_answer_fingerprint"] = coherence_decision.get("fingerprint")
@@ -1211,6 +1218,7 @@ class MCPToolRegistry:
             "tickerOverridesCandidate": guided_ticker_overrides_candidate(judgment),
             "prospectusScenarioCandidate": guided_prospectus_scenario_candidate(judgment),
             "scenarioRange": sanitize_for_agent(plan.get("scenario_range") or {}),
+            "revealedThesis": revealed_thesis,
             "policy": policy_metadata(),
         }
         if run is not None:
@@ -1410,6 +1418,7 @@ class MCPToolRegistry:
         }
         if metadata:
             assumption_meta["metadata"] = metadata
+        revealed_thesis = stored_revealed_thesis(run)
         if unsupported:
             blocked_baseline = blocked_baseline_contract(unsupported)
             payload = error_payload(
@@ -1419,6 +1428,8 @@ class MCPToolRegistry:
                 "unsupported_overrides",
                 extra={"ticker": ticker, "assumptions": assumption_meta, "baseline": blocked_baseline},
             )
+            if revealed_thesis:
+                payload["revealedThesis"] = copy.deepcopy(revealed_thesis)
             apply_request_policy_source_quality_gate(payload, assumption_meta)
             attach_valuation_audit_packet(
                 payload,
@@ -1445,6 +1456,8 @@ class MCPToolRegistry:
                     "requestPolicyMode": mapped.get("requestPolicyMode"),
                 },
             )
+            if revealed_thesis:
+                payload["revealedThesis"] = copy.deepcopy(revealed_thesis)
             payload["assumptions"] = assumption_meta
             apply_request_policy_source_quality_gate(payload, assumption_meta)
             attach_valuation_audit_packet(
@@ -1462,6 +1475,8 @@ class MCPToolRegistry:
             return self._finish_tracked(payload, run, tool)
         except ValuationServiceError as exc:
             payload = service_exception_payload(tool, exc, ticker=ticker)
+            if revealed_thesis:
+                payload["revealedThesis"] = copy.deepcopy(revealed_thesis)
             payload["assumptions"] = assumption_meta
             apply_request_policy_source_quality_gate(payload, assumption_meta)
             attach_valuation_audit_packet(
@@ -3310,6 +3325,13 @@ def extract_accounting_and_claims(valuation: dict[str, Any]) -> dict[str, Any]:
     return sanitize_for_agent(accounting)
 
 
+def stored_revealed_thesis(run: dict[str, Any] | None) -> dict[str, Any] | None:
+    thesis = _dict(_dict(run).get("revealed_thesis"))
+    if thesis.get("schema_version") != "revealed_thesis.v1":
+        return None
+    return copy.deepcopy(thesis)
+
+
 def attach_valuation_audit_packet(
     payload: dict[str, Any],
     *,
@@ -3377,6 +3399,9 @@ def attach_valuation_audit_packet(
         accounting_decisions=accounting_decisions_from_assumptions(assumption_meta, payload),
         internal_state=mechanical_baseline_internal_state(baseline),
     )
+    revealed_thesis = _dict(payload.get("revealedThesis"))
+    if revealed_thesis:
+        audit_validation["packet"]["revealed_thesis"] = copy.deepcopy(revealed_thesis)
     payload["auditPacket"] = valuation_audit_packet_metadata(audit_validation)
     if not audit_validation.get("ok"):
         payload["auditPacket"]["validation_warnings"] = audit_validation.get("validation_warnings", [])
@@ -3430,6 +3455,9 @@ def attach_scenario_book(
             "prohibited_recommendation_language": ["buy", "sell", "hold", "target price"],
         },
     }
+    revealed_thesis = _dict(payload.get("revealedThesis"))
+    if revealed_thesis:
+        book["revealed_thesis"] = copy.deepcopy(revealed_thesis)
     validation = validate_scenario_book(book)
     payload["scenarioBook"] = scenario_book_metadata(validation)
     if not validation.get("ok"):
