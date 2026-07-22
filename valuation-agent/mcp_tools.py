@@ -30,6 +30,7 @@ from .guided_question_planner import (
     build_guided_question_plan,
     build_user_judgment_package,
 )
+from .investment_reasoning import framing_forks_input_schema
 from .security import sanitize_for_agent
 from .segment_discovery import parse_revenue_weight, sanitize_segment_package
 from .segment_economics import validate_segment_economics
@@ -411,6 +412,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                         "description": "Compact driver-specific evidence. Each item should include driver, evidence_summary or fact, source_url/sourceUrl, source_date/sourceDate, and non-low confidence.",
                         "items": {"type": "object", "additionalProperties": True},
                     },
+                    "framing_forks": framing_forks_input_schema(),
                     "segments": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
                     "market_implied_diagnostics": {"type": "object", "additionalProperties": True},
                     "prospectus_recalculate_supported": {"type": "boolean"},

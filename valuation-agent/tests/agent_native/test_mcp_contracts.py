@@ -504,6 +504,83 @@ def test_mcp_tools_list_has_required_stockvaluation_contracts():
         assert tool["outputSchema"]["type"] == "object"
 
 
+def test_plan_guided_questions_tools_list_exposes_complete_framing_forks_schema():
+    tools = {tool["name"]: tool for tool in MCPToolRegistry(FakeClient()).list_tools()}
+    framing = tools["stockvaluation.plan_guided_questions"]["inputSchema"]["properties"]["framing_forks"]
+
+    assert framing["type"] == "array"
+    item = framing["items"]
+    assert item["additionalProperties"] is False
+    assert set(item["required"]) == {
+        "schema_version",
+        "fork_id",
+        "primary_driver",
+        "causal_question",
+        "confidence",
+        "material",
+        "supporting_evidence_refs",
+        "opposing_evidence_refs",
+        "evidence_gaps",
+        "options",
+    }
+    assert item["properties"]["schema_version"]["const"] == "framing_fork.v1"
+    assert set(item["properties"]["confidence"]["enum"]) == {"low", "medium", "high"}
+    option = item["properties"]["options"]
+    assert (option["minItems"], option["maxItems"]) == (3, 3)
+    assert option["items"]["additionalProperties"] is False
+
+
+def test_jsonrpc_plan_guided_questions_accepts_framing_forks_shape():
+    server = MCPJSONRPCServer(MCPToolRegistry(FakeClient()))
+    fork = {
+        "schema_version": "framing_fork.v1",
+        "fork_id": "growth_durability",
+        "primary_driver": "revenue_growth",
+        "causal_question": "Is demand durable or pulled forward?",
+        "confidence": "medium",
+        "material": True,
+        "supporting_evidence_refs": ["support"],
+        "opposing_evidence_refs": [],
+        "evidence_gaps": ["No renewal cohorts are disclosed."],
+        "options": [
+            {"label": "A", "story": "Demand is durable.", "falsifier": "Renewals weaken."},
+            {"label": "B", "story": "Demand normalizes.", "falsifier": "Backlog accelerates."},
+            {"label": "C", "story": "Demand was pulled forward.", "falsifier": "New workloads replace it."},
+        ],
+        "analysis_lean": "A",
+    }
+    response = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 41,
+            "method": "tools/call",
+            "params": {
+                "name": "stockvaluation.plan_guided_questions",
+                "arguments": {
+                    "company": "InfraCo",
+                    "workflow_type": "ticker",
+                    "evidence_items": [
+                        {
+                            "evidence_id": "support",
+                            "driver": "revenue_growth",
+                            "source_title": "Investor update",
+                            "source_url": "https://example.com/support",
+                            "source_date": "2026-05-01",
+                            "evidence_summary": "Infrastructure adoption expanded.",
+                            "confidence": "high",
+                        }
+                    ],
+                    "framing_forks": [fork],
+                },
+            },
+        }
+    )
+
+    assert "error" not in response
+    plan = response["result"]["structuredContent"]["guidedQuestionPlan"]
+    assert plan["framing_fork_validation"]["accepted_forks"][0]["fork_id"] == "growth_durability"
+
+
 def test_prospectus_tools_are_read_only_and_schema_bounded():
     tools = {tool["name"]: tool for tool in MCPToolRegistry(FakeClient()).list_tools()}
 

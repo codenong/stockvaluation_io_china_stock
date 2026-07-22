@@ -3,6 +3,7 @@ from valuation_agent.guided_question_planner import (
     build_user_judgment_package,
 )
 from valuation_agent.mcp_tools import MCPToolRegistry, map_recalculate_overrides
+from valuation_agent.investment_reasoning import FRAMING_FORK_SCHEMA_VERSION, validate_framing_forks
 
 
 def _evidence(driver, **overrides):
@@ -18,6 +19,35 @@ def _evidence(driver, **overrides):
     }
     item.update(overrides)
     return item
+
+
+def _framing_fork(driver="revenue_growth", **overrides):
+    fork = {
+        "schema_version": FRAMING_FORK_SCHEMA_VERSION,
+        "fork_id": f"{driver}_durability",
+        "primary_driver": driver,
+        "causal_question": "Is recurring infrastructure demand durable or merely pulled forward?",
+        "confidence": "medium",
+        "material": True,
+        "supporting_evidence_refs": ["supporting-fact"],
+        "opposing_evidence_refs": ["opposing-fact"],
+        "evidence_gaps": [],
+        "options": [
+            {"label": "A", "story": "Demand is durable infrastructure adoption.", "falsifier": "Renewal cohorts weaken."},
+            {"label": "B", "story": "Demand normalizes after a measured buildout.", "falsifier": "Backlog accelerates without added incentives."},
+            {"label": "C", "story": "Demand was pulled forward and decays.", "falsifier": "New workloads replace the initial buildout."},
+        ],
+        "analysis_lean": "A",
+    }
+    fork.update(overrides)
+    return fork
+
+
+def _framing_evidence():
+    return [
+        _evidence("revenue_growth", evidence_id="supporting-fact", source_url="https://example.com/support"),
+        _evidence("revenue_growth", evidence_id="opposing-fact", source_url="https://example.com/oppose"),
+    ]
 
 
 def test_guided_question_planner_does_not_invent_filler_questions():
@@ -1592,3 +1622,154 @@ def test_segment_level_default_uses_segment_base_anchor_and_merges_segment_rows(
     assert segments["Space"]["target_operating_margin"] == 6.68
     assert segments["Space"]["sales_to_capital_years_1_to_5"] == 2.4
     assert segments["Space"]["sales_to_capital_years_6_to_10"] == 2.4
+
+
+def test_semantic_fork_supersedes_same_driver_generic_card_and_preserves_stories():
+    evidence = _framing_evidence()
+    plan = build_guided_question_plan(
+        {
+            "company": "InfraCo",
+            "workflow_type": "ticker",
+            "evidence_items": evidence,
+            "framing_forks": [_framing_fork()],
+            "driver_anchors": {
+                "revenue_growth": {
+                    "field": "revenue_growth",
+                    "unit": "percent",
+                    "anchors": {
+                        "low": {"value": 7.0, "provenance": "canonical low"},
+                        "base": {"value": 10.0, "provenance": "canonical base"},
+                        "high": {"value": 14.0, "provenance": "canonical high"},
+                    },
+                }
+            },
+        }
+    )
+
+    growth_questions = [question for question in plan["questions"] if question["driver"] == "revenue_growth"]
+    assert len(growth_questions) == 1
+    question = growth_questions[0]
+    assert question["framingQuality"] == "semantic"
+    assert question["causal_question"] == _framing_fork()["causal_question"]
+    assert question["supporting_evidence_refs"] == ["supporting-fact"]
+    assert question["opposing_evidence_refs"] == ["opposing-fact"]
+    choices = {choice["label"]: choice for choice in question["bounded_choices"]}
+    assert [(choices[label]["story"], choices[label]["falsifier"]) for label in "ABC"] == [
+        (option["story"], option["falsifier"]) for option in _framing_fork()["options"]
+    ]
+    assert [choices[label]["override_candidate"]["value"] for label in "ABC"] == [7.0, 10.0, 14.0]
+    assert question["default_answer"]["choice_label"] == "B"
+    assert question["recommended_answer"]["choice_label"] == "B"
+    assert question["analysis_lean"] == "A"
+
+
+def test_framing_evidence_gap_is_preserved_without_fabricated_reference():
+    fork = _framing_fork(opposing_evidence_refs=[], evidence_gaps=["No renewal cohort disclosure was found."])
+    result = validate_framing_forks([fork], _framing_evidence())
+
+    assert result["rejected_forks"] == []
+    accepted = result["accepted_forks"][0]
+    assert accepted["opposing_evidence_refs"] == []
+    assert accepted["evidence_gaps"] == ["No renewal cohort disclosure was found."]
+
+
+def test_model_supplied_numeric_fork_is_rejected_and_uses_one_generic_anchored_card():
+    fork = _framing_fork()
+    fork["options"][0]["override_candidate"] = {"field": "revenue_growth", "value": 18.0}
+    plan = build_guided_question_plan(
+        {
+            "company": "InfraCo",
+            "workflow_type": "ticker",
+            "evidence_items": _framing_evidence(),
+            "framing_forks": [fork],
+            "driver_anchors": {
+                "revenue_growth": {
+                    "field": "revenue_growth",
+                    "unit": "percent",
+                    "anchors": {
+                        "low": {"value": 7.0},
+                        "base": {"value": 10.0},
+                        "high": {"value": 14.0},
+                    },
+                }
+            },
+        }
+    )
+
+    assert plan["framing_fork_validation"]["rejected_forks"][0]["code"] == "numeric_content_forbidden"
+    growth_questions = [question for question in plan["questions"] if question["driver"] == "revenue_growth"]
+    assert len(growth_questions) == 1
+    assert growth_questions[0]["framingQuality"] == "generic"
+    assert growth_questions[0]["confidence"] == "low"
+
+
+def test_invalid_material_fork_without_safe_mapping_is_recorded_and_omitted():
+    fork = _framing_fork(supporting_evidence_refs=["not-present"])
+    plan = build_guided_question_plan(
+        {
+            "company": "InfraCo",
+            "workflow_type": "ticker",
+            "evidence_items": _framing_evidence(),
+            "framing_forks": [fork],
+        }
+    )
+
+    assert not [question for question in plan["questions"] if question["driver"] == "revenue_growth"]
+    assert plan["unresolved_material_drivers"] == [{"driver": "revenue_growth", "reason": "missing_anchor"}]
+
+
+def test_invalid_non_material_fork_may_be_omitted_without_unresolved_marker():
+    fork = _framing_fork(material=False, supporting_evidence_refs=["not-present"])
+    plan = build_guided_question_plan(
+        {
+            "company": "InfraCo",
+            "workflow_type": "ticker",
+            "framing_forks": [fork],
+        }
+    )
+
+    assert plan["questions"] == []
+    assert plan["unresolved_material_drivers"] == []
+
+
+def test_absent_semantic_fork_uses_low_confidence_generic_only_with_canonical_anchor():
+    context = {
+        "company": "InfraCo",
+        "workflow_type": "ticker",
+        "evidence_items": _framing_evidence()[:1],
+        "framing_forks": [],
+    }
+    missing = build_guided_question_plan(context)
+
+    assert missing["questions"] == []
+    assert missing["unresolved_material_drivers"] == [{"driver": "revenue_growth", "reason": "missing_anchor"}]
+
+    context["driver_anchors"] = {
+        "revenue_growth": {
+            "field": "revenue_growth",
+            "anchors": {
+                "low": {"value": 7.0},
+                "base": {"value": 10.0},
+                "high": {"value": 14.0},
+            },
+        }
+    }
+    anchored = build_guided_question_plan(context)
+
+    assert len(anchored["questions"]) == 1
+    assert anchored["questions"][0]["framingQuality"] == "generic"
+    assert anchored["questions"][0]["confidence"] == "low"
+    assert anchored["unresolved_material_drivers"] == []
+
+
+def test_framing_contract_enforces_version_confidence_and_exact_evidence_references():
+    cases = [
+        (_framing_fork(schema_version="framing_fork.v0"), "unsupported_schema_version"),
+        (_framing_fork(confidence="certain"), "invalid_confidence"),
+        (_framing_fork(opposing_evidence_refs=["missing"]), "invalid_evidence_references"),
+    ]
+
+    for fork, expected_code in cases:
+        result = validate_framing_forks([fork], _framing_evidence())
+        assert result["accepted_forks"] == []
+        assert result["rejected_forks"][0]["code"] == expected_code

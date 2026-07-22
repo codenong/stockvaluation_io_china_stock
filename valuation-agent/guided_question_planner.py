@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from .investment_reasoning import SUPPORTED_FRAMING_DRIVERS, validate_framing_forks
 from .security import sanitize_for_agent
 
 MAX_VISIBLE_QUESTIONS = 15
@@ -187,6 +188,16 @@ def build_guided_question_plan(raw: dict[str, Any]) -> dict[str, Any]:
     prospectus_recalc_supported = bool(
         context.get("prospectus_recalculate_supported") or context.get("prospectusRecalculateSupported")
     )
+    framing_requested = "framing_forks" in context
+
+    framing_validation = validate_framing_forks(context.get("framing_forks"), _evidence_items(context))
+    semantic_forks = [fork for fork in framing_validation["accepted_forks"] if fork.get("material")]
+    semantic_drivers = {fork["primary_driver"] for fork in semantic_forks}
+    rejected_material_drivers = {
+        rejection["primary_driver"]
+        for rejection in framing_validation["rejected_forks"]
+        if rejection.get("material") and rejection.get("primary_driver") and rejection.get("primary_driver") not in semantic_drivers
+    }
 
     candidates: list[dict[str, Any]] = []
     candidates.extend(_questions_from_segments(context, company, workflow_type, prospectus_recalc_supported))
@@ -194,12 +205,64 @@ def build_guided_question_plan(raw: dict[str, Any]) -> dict[str, Any]:
     candidates.extend(_questions_from_evidence(context, company, workflow_type, prospectus_recalc_supported))
     candidates.extend(_questions_from_baseline_plausibility(context, company, workflow_type, prospectus_recalc_supported))
     candidates.extend(_questions_from_market_diagnostics(context, company, workflow_type, prospectus_recalc_supported))
+    replaced_drivers = semantic_drivers | rejected_material_drivers
+    if replaced_drivers:
+        candidates = [question for question in candidates if question.get("driver") not in replaced_drivers]
+    candidates.extend(
+        _questions_from_framing_forks(
+            semantic_forks,
+            company,
+            workflow_type,
+            prospectus_recalc_supported,
+        )
+    )
     evidence_input_quality = _evidence_input_quality(context)
 
     deduped = _dedupe_questions(candidates)
     driver_anchors = _dict(context.get("driver_anchors") or context.get("driverAnchors"))
+    unresolved_framing: list[dict[str, str]] = []
     for question in deduped:
         _attach_anchor_set(question, driver_anchors, workflow_type, prospectus_recalc_supported)
+        if question.get("framingQuality") == "semantic":
+            _restore_semantic_framing(question)
+    retained: list[dict[str, Any]] = []
+    for question in deduped:
+        if (
+            question.get("framingQuality") == "semantic"
+            and question.get("driver") not in REPORT_ONLY_DRIVERS
+            and not question.get("anchor_set")
+        ):
+            unresolved_framing.append({"driver": _string(question.get("driver")), "reason": "missing_anchor"})
+            continue
+        if (
+            framing_requested
+            and question.get("framingQuality") != "semantic"
+            and question.get("driver") in SUPPORTED_FRAMING_DRIVERS
+            and question.get("priority") in {"P0", "P1"}
+        ):
+            driver = _string(question.get("driver"))
+            if driver in REPORT_ONLY_DRIVERS:
+                unresolved_framing.append({"driver": driver, "reason": "report_only"})
+                continue
+            if not DRIVER_TO_OVERRIDE_FIELD.get(driver):
+                unresolved_framing.append({"driver": driver, "reason": "unsupported_mapping"})
+                continue
+            if not question.get("anchor_set"):
+                unresolved_framing.append({"driver": driver, "reason": "missing_anchor"})
+                continue
+            _mark_generic_framing(question)
+        retained.append(question)
+    deduped = retained
+    fallback_questions, fallback_unresolved = _framing_fallbacks(
+        framing_validation["rejected_forks"],
+        {question.get("driver") for question in deduped},
+        company,
+        workflow_type,
+        prospectus_recalc_supported,
+        driver_anchors,
+    )
+    unresolved_framing.extend(fallback_unresolved)
+    deduped.extend(fallback_questions)
     ranked = sorted(deduped, key=lambda item: (PRIORITY_ORDER.get(item["priority"], 99), -item["materiality_score"], item["id"]))
     visible = _visible_questions(ranked, deep_mode, max_visible)
     materiality_gate = _materiality_gate(context, ranked, visible, workflow_type)
@@ -222,8 +285,143 @@ def build_guided_question_plan(raw: dict[str, Any]) -> dict[str, Any]:
         "hidden_candidate_questions": ranked,
         "evidence_input_quality": evidence_input_quality,
         "planner_warnings": evidence_input_quality["planner_warnings"],
+        "framing_fork_validation": framing_validation,
+        "unresolved_material_drivers": unresolved_framing,
         "not_evidence_statement": "User answers define a scenario; they are not independent evidence.",
     }
+
+
+def _questions_from_framing_forks(
+    forks: list[dict[str, Any]],
+    company: str,
+    workflow_type: str,
+    prospectus_recalc_supported: bool,
+) -> list[dict[str, Any]]:
+    questions: list[dict[str, Any]] = []
+    for fork in forks:
+        driver = _string(fork.get("primary_driver"))
+        family = DRIVER_TO_FAMILY.get(driver)
+        if family is None:
+            continue
+        question = _question(
+            company=company,
+            workflow_type=workflow_type,
+            prospectus_recalc_supported=prospectus_recalc_supported,
+            family=family,
+            driver=driver,
+            priority="P1",
+            materiality_score=92,
+            rationale=_string(fork.get("causal_question")),
+            evidence_summary="Company-specific framing fork validated against exact evidence references.",
+            evidence_used=[],
+            baseline_assumption="The neutral base anchor remains the guided default.",
+            default_story=next(
+                (_string(option.get("story")) for option in fork.get("options") or [] if option.get("label") == "B"),
+                "Use the server-computed base anchor.",
+            ),
+            override_field=DRIVER_TO_OVERRIDE_FIELD.get(driver),
+            candidate_value=None,
+            confidence=_string(fork.get("confidence")),
+            priority_reason="A validated company-specific causal fork covers this material driver.",
+        )
+        question["id"] = _slug(f"semantic_{fork.get('fork_id')}")
+        question["causal_question"] = fork["causal_question"]
+        question["supporting_evidence_refs"] = list(fork["supporting_evidence_refs"])
+        question["opposing_evidence_refs"] = list(fork["opposing_evidence_refs"])
+        question["evidence_gaps"] = list(fork["evidence_gaps"])
+        question["analysis_lean"] = fork.get("analysis_lean")
+        question["framing_options"] = [dict(option) for option in fork["options"]]
+        question["framingQuality"] = "semantic"
+        question["framing_quality"] = "semantic"
+        questions.append(question)
+    return questions
+
+
+def _restore_semantic_framing(question: dict[str, Any]) -> None:
+    """Restore semantic stories after numeric anchors replace generic choices."""
+    semantic = {
+        option["label"]: option
+        for option in question.get("framing_options") or []
+        if isinstance(option, dict) and option.get("label") in {"A", "B", "C"}
+    }
+    for choice in question.get("bounded_choices") or []:
+        if not isinstance(choice, dict) or choice.get("label") not in semantic:
+            continue
+        option = semantic[choice["label"]]
+        choice["story"] = option["story"]
+        choice["falsifier"] = option["falsifier"]
+    # The analysis lean is commentary, not a default-selection instruction.
+    question["default_answer"]["choice_label"] = "B"
+    question["recommended_answer"]["choice_label"] = "B"
+
+
+def _mark_generic_framing(question: dict[str, Any]) -> None:
+    question["framingQuality"] = "generic"
+    question["framing_quality"] = "generic"
+    question["confidence"] = "low"
+    question["default_answer"]["confidence"] = "low"
+    question["recommended_answer"]["confidence"] = "low"
+
+
+def _framing_fallbacks(
+    rejections: list[dict[str, Any]],
+    existing_drivers: set[Any],
+    company: str,
+    workflow_type: str,
+    prospectus_recalc_supported: bool,
+    driver_anchors: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    questions: list[dict[str, Any]] = []
+    unresolved: list[dict[str, str]] = []
+    handled = {_string(driver) for driver in existing_drivers}
+    for rejection in rejections:
+        driver = _string(rejection.get("primary_driver"))
+        if not rejection.get("material") or not driver or driver in handled:
+            continue
+        field = DRIVER_TO_OVERRIDE_FIELD.get(driver)
+        if driver in REPORT_ONLY_DRIVERS:
+            unresolved.append({"driver": driver, "reason": "report_only"})
+            handled.add(driver)
+            continue
+        if not field:
+            unresolved.append({"driver": driver, "reason": "unsupported_mapping"})
+            handled.add(driver)
+            continue
+        anchor_set = _dict(driver_anchors.get(field) or driver_anchors.get(OVERRIDE_FIELD_TO_ANCHOR_FIELD.get(field)))
+        base_value = _dict(_dict(anchor_set.get("anchors")).get("base")).get("value")
+        if base_value is None:
+            unresolved.append({"driver": driver, "reason": "missing_anchor"})
+            handled.add(driver)
+            continue
+        family = DRIVER_TO_FAMILY.get(driver)
+        if not family:
+            unresolved.append({"driver": driver, "reason": "unsupported_mapping"})
+            handled.add(driver)
+            continue
+        question = _question(
+            company=company,
+            workflow_type=workflow_type,
+            prospectus_recalc_supported=prospectus_recalc_supported,
+            family=family,
+            driver=driver,
+            priority="P1",
+            materiality_score=70,
+            rationale=f"{company} has a material {driver.replace('_', ' ')} driver, but no valid semantic fork.",
+            evidence_summary="No accepted semantic framing; using canonical anchors only.",
+            evidence_used=[],
+            baseline_assumption=_default_story_for_driver(company, driver),
+            default_story="Use the server-computed base anchor.",
+            override_field=field,
+            candidate_value=None,
+            confidence="low",
+            priority_reason="Low-confidence generic fallback for a material anchored driver.",
+        )
+        question["id"] = _slug(f"generic_fallback_{driver}")
+        _attach_anchor_set(question, driver_anchors, workflow_type, prospectus_recalc_supported)
+        _mark_generic_framing(question)
+        questions.append(question)
+        handled.add(driver)
+    return questions, unresolved
 
 
 def build_user_judgment_package(
