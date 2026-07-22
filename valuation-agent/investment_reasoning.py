@@ -57,6 +57,16 @@ _NUMERIC_KEYS = frozenset(
     }
 )
 
+_NON_CONTENT_STRING_KEYS = frozenset(
+    {
+        "schema_version",
+        "fork_id",
+        "id",
+        "supporting_evidence_refs",
+        "opposing_evidence_refs",
+    }
+)
+
 
 def validate_framing_forks(raw_forks: Any, evidence_items: Any) -> dict[str, Any]:
     """Return accepted semantic forks and stable, non-throwing rejections."""
@@ -249,6 +259,8 @@ def _contains_model_number(raw: Any, key: str = "") -> bool:
         return False
     if isinstance(raw, (int, float)):
         return True
+    if isinstance(raw, str):
+        return key not in _NON_CONTENT_STRING_KEYS and any(character.isdigit() for character in raw)
     if isinstance(raw, dict):
         for child_key, value in raw.items():
             normalized_key = _text(child_key).lower()

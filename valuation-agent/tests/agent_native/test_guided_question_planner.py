@@ -1703,6 +1703,40 @@ def test_model_supplied_numeric_fork_is_rejected_and_uses_one_generic_anchored_c
     assert growth_questions[0]["confidence"] == "low"
 
 
+def test_model_supplied_numeric_story_text_is_rejected_before_scenario_mapping():
+    fork = _framing_fork()
+    for option, story in zip(
+        fork["options"],
+        ("Revenue grows 20 percent.", "Revenue grows 10 percent.", "Revenue grows 5 percent."),
+    ):
+        option["story"] = story
+    plan = build_guided_question_plan(
+        {
+            "company": "InfraCo",
+            "workflow_type": "ticker",
+            "evidence_items": _framing_evidence(),
+            "framing_forks": [fork],
+            "driver_anchors": {
+                "revenue_growth": {
+                    "field": "revenue_growth",
+                    "unit": "percent",
+                    "anchors": {
+                        "low": {"value": 7.0},
+                        "base": {"value": 10.0},
+                        "high": {"value": 14.0},
+                    },
+                }
+            },
+        }
+    )
+
+    assert plan["framing_fork_validation"]["accepted_forks"] == []
+    assert plan["framing_fork_validation"]["rejected_forks"][0]["code"] == "numeric_content_forbidden"
+    growth_questions = [question for question in plan["questions"] if question["driver"] == "revenue_growth"]
+    assert len(growth_questions) == 1
+    assert growth_questions[0]["framingQuality"] == "generic"
+
+
 def test_invalid_material_fork_without_safe_mapping_is_recorded_and_omitted():
     fork = _framing_fork(supporting_evidence_refs=["not-present"])
     plan = build_guided_question_plan(
