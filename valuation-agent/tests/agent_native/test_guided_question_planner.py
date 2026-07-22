@@ -1,3 +1,5 @@
+import pytest
+
 from valuation_agent.guided_question_planner import (
     build_guided_question_plan,
     build_user_judgment_package,
@@ -1735,6 +1737,84 @@ def test_model_supplied_numeric_story_text_is_rejected_before_scenario_mapping()
     growth_questions = [question for question in plan["questions"] if question["driver"] == "revenue_growth"]
     assert len(growth_questions) == 1
     assert growth_questions[0]["framingQuality"] == "generic"
+
+
+def test_model_supplied_spelled_numeric_story_text_is_rejected_before_semantic_framing():
+    fork = _framing_fork()
+    fork["options"][0]["story"] = "Revenue grows twenty percent."
+    plan = build_guided_question_plan(
+        {
+            "company": "InfraCo",
+            "workflow_type": "ticker",
+            "evidence_items": _framing_evidence(),
+            "framing_forks": [fork],
+            "driver_anchors": {
+                "revenue_growth": {
+                    "field": "revenue_growth",
+                    "unit": "percent",
+                    "anchors": {
+                        "low": {"value": 7.0},
+                        "base": {"value": 10.0},
+                        "high": {"value": 14.0},
+                    },
+                }
+            },
+        }
+    )
+
+    validation = plan["framing_fork_validation"]
+    assert validation["accepted_forks"] == []
+    assert validation["rejected_forks"][0]["code"] == "numeric_content_forbidden"
+    assert all(question["framingQuality"] != "semantic" for question in plan["questions"])
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    [
+        "schema_version",
+        "fork_id",
+        "primary_driver",
+        "causal_question",
+        "confidence",
+        "material",
+        "supporting_evidence_refs",
+        "opposing_evidence_refs",
+        "evidence_gaps",
+        "options",
+    ],
+)
+def test_framing_fork_rejects_each_missing_required_field_before_semantic_framing(missing_field):
+    fork = _framing_fork()
+    del fork[missing_field]
+    plan = build_guided_question_plan(
+        {
+            "company": "InfraCo",
+            "workflow_type": "ticker",
+            "evidence_items": _framing_evidence(),
+            "framing_forks": [fork],
+        }
+    )
+
+    validation = plan["framing_fork_validation"]
+    assert validation["accepted_forks"] == []
+    assert validation["rejected_forks"][0]["code"] == "missing_required_field"
+    assert all(question["framingQuality"] != "semantic" for question in plan["questions"])
+
+
+def test_framing_fork_accepts_explicit_false_and_empty_collection_values():
+    fork = _framing_fork(
+        material=False,
+        supporting_evidence_refs=[],
+        opposing_evidence_refs=[],
+        evidence_gaps=[],
+    )
+    result = validate_framing_forks([fork], _framing_evidence())
+
+    assert result["rejected_forks"] == []
+    assert result["accepted_forks"][0]["material"] is False
+    assert result["accepted_forks"][0]["supporting_evidence_refs"] == []
+    assert result["accepted_forks"][0]["opposing_evidence_refs"] == []
+    assert result["accepted_forks"][0]["evidence_gaps"] == []
 
 
 def test_invalid_material_fork_without_safe_mapping_is_recorded_and_omitted():

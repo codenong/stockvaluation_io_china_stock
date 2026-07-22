@@ -7,6 +7,7 @@ to server-owned driver anchors after validation.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .security import sanitize_for_agent
@@ -14,9 +15,22 @@ from .security import sanitize_for_agent
 FRAMING_FORK_SCHEMA_VERSION = "framing_fork.v1"
 FRAMING_CONFIDENCES = frozenset({"low", "medium", "high"})
 FRAMING_OPTION_LABELS = ("A", "B", "C")
+FRAMING_REQUIRED_FIELDS = (
+    "schema_version",
+    "fork_id",
+    "primary_driver",
+    "causal_question",
+    "confidence",
+    "material",
+    "supporting_evidence_refs",
+    "opposing_evidence_refs",
+    "evidence_gaps",
+    "options",
+)
 FRAMING_REJECTION_CODES = frozenset(
     {
         "invalid_fork",
+        "missing_required_field",
         "unsupported_schema_version",
         "missing_fork_id",
         "unsupported_driver",
@@ -65,6 +79,14 @@ _NON_CONTENT_STRING_KEYS = frozenset(
         "supporting_evidence_refs",
         "opposing_evidence_refs",
     }
+)
+
+_ENGLISH_NUMBER_WORD = re.compile(
+    r"\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+    r"thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|"
+    r"thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|"
+    r"billion|trillion)\b",
+    re.IGNORECASE,
 )
 
 
@@ -173,6 +195,9 @@ def framing_forks_input_schema() -> dict[str, Any]:
 
 
 def _validation_error(raw: dict[str, Any], evidence_refs: set[str]) -> tuple[str | None, str | None]:
+    missing_fields = [field for field in FRAMING_REQUIRED_FIELDS if field not in raw]
+    if missing_fields:
+        return "missing_required_field", f"Required framing fork field is missing: {missing_fields[0]}."
     if raw.get("schema_version") != FRAMING_FORK_SCHEMA_VERSION:
         return "unsupported_schema_version", f"schema_version must be {FRAMING_FORK_SCHEMA_VERSION}."
     if not _text(raw.get("fork_id") or raw.get("id")):
@@ -260,7 +285,9 @@ def _contains_model_number(raw: Any, key: str = "") -> bool:
     if isinstance(raw, (int, float)):
         return True
     if isinstance(raw, str):
-        return key not in _NON_CONTENT_STRING_KEYS and any(character.isdigit() for character in raw)
+        return key not in _NON_CONTENT_STRING_KEYS and (
+            any(character.isdigit() for character in raw) or _ENGLISH_NUMBER_WORD.search(raw) is not None
+        )
     if isinstance(raw, dict):
         for child_key, value in raw.items():
             normalized_key = _text(child_key).lower()
