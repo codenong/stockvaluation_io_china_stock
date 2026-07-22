@@ -1378,6 +1378,7 @@ class MCPToolRegistry:
         ticker, error = normalize_ticker(args.get("ticker"))
         if error:
             return error_payload(tool, "INVALID_TICKER", error, "invalid_ticker")
+        revealed_thesis = stored_revealed_thesis(run)
         requested = args.get("overrides")
         if run is not None and isinstance(requested, dict):
             scenario_bearing = any(key not in RECALCULATE_METADATA_FIELDS for key in requested)
@@ -1395,11 +1396,34 @@ class MCPToolRegistry:
             if scenario_bearing:
                 unresolved = self._unresolved_anchor_fields(run, requested)
                 if unresolved:
-                    return self._finish_tracked(
-                        self._recalculate_range_payload(tool, run, ticker, requested, unresolved),
-                        run,
-                        tool,
-                    )
+                    payload = self._recalculate_range_payload(tool, run, ticker, requested, unresolved)
+                    if revealed_thesis:
+                        payload["revealedThesis"] = copy.deepcopy(revealed_thesis)
+                    if _dict(payload.get("valuationRange")).get("status") == "unresolved_material_drivers":
+                        mapped, unsupported, metadata = map_recalculate_overrides(requested)
+                        assumption_meta = {
+                            "requested": sanitize_for_agent(requested),
+                            "mapped": mapped,
+                            "unsupported": unsupported,
+                            "effective": {},
+                        }
+                        if metadata:
+                            assumption_meta["metadata"] = metadata
+                        payload["assumptions"] = assumption_meta
+                        apply_request_policy_source_quality_gate(payload, assumption_meta)
+                        attach_valuation_audit_packet(
+                            payload,
+                            ticker=ticker,
+                            assumption_meta=assumption_meta,
+                            recalculate_status="blocked_pre_service",
+                        )
+                        attach_scenario_book(
+                            payload,
+                            ticker=ticker,
+                            assumption_meta=assumption_meta,
+                            recalculate_status="blocked_pre_service",
+                        )
+                    return self._finish_tracked(payload, run, tool)
         if not isinstance(requested, dict):
             return error_payload(
                 tool,
@@ -1418,7 +1442,6 @@ class MCPToolRegistry:
         }
         if metadata:
             assumption_meta["metadata"] = metadata
-        revealed_thesis = stored_revealed_thesis(run)
         if unsupported:
             blocked_baseline = blocked_baseline_contract(unsupported)
             payload = error_payload(

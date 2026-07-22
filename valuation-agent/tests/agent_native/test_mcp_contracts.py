@@ -770,6 +770,47 @@ def test_revealed_thesis_is_stored_authoritative_and_preserved_across_recalculat
     assert json.loads(json.dumps(recalc_payload["auditPacket"]["packet"]["revealed_thesis"], sort_keys=True)) == revealed
     assert json.loads(json.dumps(recalc_payload["scenarioBook"]["book"]["revealed_thesis"], sort_keys=True)) == revealed
 
+    range_registry = MCPToolRegistry(FakeClient(), run_store=WorkflowRunStore(root=tmp_path / "range-runs"))
+    range_baseline = range_registry.call("stockvaluation.value_ticker", {"ticker": "MSFT"})["structuredContent"]
+    range_run_id = range_baseline["run_id"]
+    range_registry.call(
+        "stockvaluation.plan_guided_questions",
+        {
+            "run_id": range_run_id,
+            "gate_records": [{"gate": "evidence_review", "outcome": "approved"}],
+            "company": "Microsoft Corporation",
+            "ticker": "MSFT",
+            "workflow_type": "ticker",
+            "evidence_items": evidence_items,
+            "framing_forks": forks,
+        },
+    )
+    range_apply_payload = range_registry.call(
+        "stockvaluation.apply_guided_answers",
+        {
+            "run_id": range_run_id,
+            "answers": {
+                "semantic_growth_durability": "A",
+                "semantic_margin_path": "B",
+                "semantic_reinvestment_intensity": "C",
+            },
+        },
+    )["structuredContent"]
+    range_revealed = json.loads(json.dumps(range_apply_payload["revealedThesis"], sort_keys=True))
+    range_recalc_payload = range_registry.call(
+        "stockvaluation.recalculate",
+        {
+            "run_id": range_run_id,
+            "ticker": "MSFT",
+            "overrides": copy.deepcopy(range_apply_payload["tickerOverridesCandidate"]["overrides"]),
+        },
+    )["structuredContent"]
+
+    assert range_recalc_payload["valuationRange"]["status"] == "unresolved_material_drivers"
+    assert json.loads(json.dumps(range_recalc_payload["revealedThesis"], sort_keys=True)) == range_revealed
+    assert json.loads(json.dumps(range_recalc_payload["auditPacket"]["packet"]["revealed_thesis"], sort_keys=True)) == range_revealed
+    assert json.loads(json.dumps(range_recalc_payload["scenarioBook"]["book"]["revealed_thesis"], sort_keys=True)) == range_revealed
+
 
 def _framing_fork(fork_id, driver, question, refs, options):
     return {
