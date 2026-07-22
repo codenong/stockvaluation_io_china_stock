@@ -27,6 +27,19 @@ HIGH_SUPPORT = [
     }
 ]
 
+FOUR_LEVER_DRIVERS = [
+    "revenue_growth",
+    "operating_margin",
+    "reinvestment_sales_to_capital",
+    "risk_wacc",
+]
+FOUR_LEVER_WEAK_SUPPORT_DRIVERS = [
+    "revenue_growth",
+    "sales_to_capital",
+    "target_operating_margin",
+    "wacc",
+]
+
 
 def _coherence_choice(label, field, value, anchor_label, **extra):
     choice = {
@@ -42,7 +55,7 @@ def _coherence_choice(label, field, value, anchor_label, **extra):
     return choice
 
 
-def _coherence_question(qid, driver, field, *, evidence_used=None, **extra):
+def _coherence_question(qid, driver, field, *, evidence_used=None, supporting_evidence_refs=None, **extra):
     values = {
         "revenue_growth": {"low": 6.0, "base": 8.0, "high": 12.0},
         "target_operating_margin": {"low": 35.0, "base": 45.0, "high": 54.0},
@@ -57,6 +70,7 @@ def _coherence_question(qid, driver, field, *, evidence_used=None, **extra):
         "default_answer": {"choice_label": "B"},
         "hidden_model_mapping": {"supported_override_field": field},
         "evidence_used": evidence_used or [],
+        "supporting_evidence_refs": supporting_evidence_refs or [],
         "bounded_choices": [
             _coherence_choice("A", field, values[field]["low"], "low", **extra),
             _coherence_choice("B", field, values[field]["base"], "base", **extra),
@@ -70,14 +84,100 @@ def _coherence_plan(*questions):
     return {"plan_id": "coherence_contract", "questions": list(questions)}
 
 
-def _stock_plan(evidence_used=None):
+def _stock_plan(evidence_used=None, supporting_evidence_refs=None):
     return _coherence_plan(
-        _coherence_question("growth", "revenue_growth", "revenue_growth", evidence_used=evidence_used),
-        _coherence_question("margin", "operating_margin", "target_operating_margin", evidence_used=evidence_used),
-        _coherence_question("reinvestment", "reinvestment_sales_to_capital", "sales_to_capital", evidence_used=evidence_used),
-        _coherence_question("risk", "risk_wacc", "wacc", evidence_used=evidence_used),
-        _coherence_question("extra", "terminal_revenue", "terminal_revenue", evidence_used=evidence_used),
+        _coherence_question(
+            "growth",
+            "revenue_growth",
+            "revenue_growth",
+            evidence_used=evidence_used,
+            supporting_evidence_refs=supporting_evidence_refs,
+        ),
+        _coherence_question(
+            "margin",
+            "operating_margin",
+            "target_operating_margin",
+            evidence_used=evidence_used,
+            supporting_evidence_refs=supporting_evidence_refs,
+        ),
+        _coherence_question(
+            "reinvestment",
+            "reinvestment_sales_to_capital",
+            "sales_to_capital",
+            evidence_used=evidence_used,
+            supporting_evidence_refs=supporting_evidence_refs,
+        ),
+        _coherence_question(
+            "risk",
+            "risk_wacc",
+            "wacc",
+            evidence_used=evidence_used,
+            supporting_evidence_refs=supporting_evidence_refs,
+        ),
+        _coherence_question(
+            "extra",
+            "terminal_revenue",
+            "terminal_revenue",
+            evidence_used=evidence_used,
+            supporting_evidence_refs=supporting_evidence_refs,
+        ),
     )
+
+
+def _semantic_fork(driver):
+    return {
+        "schema_version": "framing_fork.v1",
+        "fork_id": f"{driver}_coherence",
+        "primary_driver": driver,
+        "causal_question": f"Which bounded story best fits {driver.replace('_', ' ')}?",
+        "confidence": "high",
+        "material": True,
+        "supporting_evidence_refs": [f"{driver}-support"],
+        "opposing_evidence_refs": [],
+        "evidence_gaps": [],
+        "options": [
+            {"label": "A", "story": "The conservative story best matches the evidence.", "falsifier": "Durable conditions improve."},
+            {"label": "B", "story": "The base story remains balanced.", "falsifier": "Conditions break from the base case."},
+            {"label": "C", "story": "The favorable story best matches the evidence.", "falsifier": "Supportive conditions fade."},
+        ],
+        "analysis_lean": "C",
+    }
+
+
+def _semantic_evidence_items(confidence="high"):
+    return [
+        {
+            "evidence_id": f"{driver}-support",
+            "driver": driver,
+            "source_title": "Semantic support packet",
+            "source_url": f"https://example.com/{driver}",
+            "source_date": "2026-07-01",
+            "evidence_summary": f"Company-specific evidence supports the favorable {driver} story.",
+            "confidence": confidence,
+        }
+        for driver in FOUR_LEVER_DRIVERS
+    ]
+
+
+def _semantic_four_lever_plan(registry, run_id, *, confidence="high"):
+    return registry.call(
+        "stockvaluation.plan_guided_questions",
+        {
+            "run_id": run_id,
+            "ticker": "MSFT",
+            "workflow_type": "ticker",
+            "evidence_items": _semantic_evidence_items(confidence),
+            "framing_forks": [_semantic_fork(driver) for driver in FOUR_LEVER_DRIVERS],
+            "max_visible_questions": 4,
+        },
+    )["structuredContent"]["guidedQuestionPlan"]
+
+
+def _favorable_semantic_answers(plan):
+    answers = {}
+    for question in plan["questions"]:
+        answers[question["id"]] = "A" if question["driver"] == "risk_wacc" else "C"
+    return answers
 
 
 def _start_ticker_run(registry):
@@ -263,6 +363,61 @@ def test_clean_coherence_clears_guided_gate(tmp_path):
     assert applied["workflow_state"]["gates"][GATE_GUIDED_REFINEMENT]["status"] == "cleared"
 
 
+def test_high_confidence_semantic_support_refs_clear_four_lever_coherence(tmp_path):
+    registry = _registry(tmp_path)
+    run_id = _start_ticker_run(registry)
+    plan = _semantic_four_lever_plan(registry, run_id, confidence="high")
+
+    assert [question["framingQuality"] for question in plan["questions"]] == ["semantic"] * 4
+    assert {
+        question["driver"]: question["supporting_evidence_refs"]
+        for question in plan["questions"]
+    } == {driver: [f"{driver}-support"] for driver in FOUR_LEVER_DRIVERS}
+    assert all(
+        evidence["confidence"] == "high"
+        for question in plan["questions"]
+        for evidence in question["evidence_used"]
+    )
+
+    applied = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {
+            "run_id": run_id,
+            "answers": _favorable_semantic_answers(plan),
+            "gate_records": [{"gate": GATE_EVIDENCE_REVIEW, "outcome": "approved"}],
+        },
+    )["structuredContent"]
+
+    assert applied["coherenceReview"]["status"] == "clean"
+    assert applied["coherenceReview"]["issues"] == []
+    assert applied["workflow_state"]["gates"][GATE_GUIDED_REFINEMENT]["status"] == "cleared"
+    assert all(
+        evidence["confidence"] == "high"
+        for answer in applied["userJudgment"]["answers"]
+        for evidence in answer["evidence_used"]
+    )
+
+
+def test_low_confidence_semantic_support_refs_do_not_clear_four_lever_coherence(tmp_path):
+    registry = _registry(tmp_path)
+    run_id = _start_ticker_run(registry)
+    plan = _semantic_four_lever_plan(registry, run_id, confidence="low")
+
+    applied = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {
+            "run_id": run_id,
+            "answers": _favorable_semantic_answers(plan),
+            "gate_records": [{"gate": GATE_EVIDENCE_REVIEW, "outcome": "approved"}],
+        },
+    )["structuredContent"]
+
+    issue = applied["coherenceReview"]["issues"][0]
+    assert applied["coherenceReview"]["status"] == "challenge_required"
+    assert issue["type"] == "optimistic_stack"
+    assert issue["weak_support_drivers"] == FOUR_LEVER_WEAK_SUPPORT_DRIVERS
+
+
 def test_optimistic_stack_challenge_leaves_guided_gate_uncleared(tmp_path):
     registry = _registry(tmp_path)
     run_id = _start_ticker_run(registry)
@@ -279,6 +434,7 @@ def test_optimistic_stack_challenge_leaves_guided_gate_uncleared(tmp_path):
 
     assert applied["coherenceReview"]["status"] == "challenge_required"
     assert applied["coherenceReview"]["issues"][0]["type"] == "optimistic_stack"
+    assert applied["coherenceReview"]["issues"][0]["weak_support_drivers"] == FOUR_LEVER_WEAK_SUPPORT_DRIVERS
     assert applied["challenge_count"] == 1
     assert GATE_GUIDED_REFINEMENT in applied["workflow_state"]["gates_pending"]
 
@@ -292,6 +448,26 @@ def test_optimistic_stack_challenge_leaves_guided_gate_uncleared(tmp_path):
     )["structuredContent"]
     assert refused["error"]["code"] == "GATE_NOT_CLEARED"
     assert refused["gate"] == GATE_GUIDED_REFINEMENT
+
+
+def test_unresolved_string_support_refs_do_not_clear_four_lever_coherence(tmp_path):
+    registry = _registry(tmp_path)
+    run_id = _start_ticker_run(registry)
+
+    applied = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {
+            "run_id": run_id,
+            "guided_question_plan": _stock_plan(supporting_evidence_refs=["unresolved-support"]),
+            "answers": {"growth": "C", "margin": "C", "reinvestment": "C", "risk": "A"},
+            "gate_records": [{"gate": GATE_EVIDENCE_REVIEW, "outcome": "approved"}],
+        },
+    )["structuredContent"]
+
+    issue = applied["coherenceReview"]["issues"][0]
+    assert applied["coherenceReview"]["status"] == "challenge_required"
+    assert issue["type"] == "optimistic_stack"
+    assert issue["weak_support_drivers"] == FOUR_LEVER_WEAK_SUPPORT_DRIVERS
 
 
 def test_optimistic_stack_recalculate_cannot_strip_guided_metadata_to_bypass_gate(tmp_path):

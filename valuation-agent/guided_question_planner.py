@@ -191,7 +191,8 @@ def build_guided_question_plan(raw: dict[str, Any]) -> dict[str, Any]:
     )
     framing_requested = "framing_forks" in context
 
-    framing_validation = validate_framing_forks(context.get("framing_forks"), _evidence_items(context))
+    evidence_items = _evidence_items(context)
+    framing_validation = validate_framing_forks(context.get("framing_forks"), evidence_items)
     semantic_forks = [fork for fork in framing_validation["accepted_forks"] if fork.get("material")]
     semantic_drivers = {fork["primary_driver"] for fork in semantic_forks}
     rejected_material_drivers = {
@@ -215,6 +216,7 @@ def build_guided_question_plan(raw: dict[str, Any]) -> dict[str, Any]:
             company,
             workflow_type,
             prospectus_recalc_supported,
+            _evidence_by_reference(evidence_items),
         )
     )
     evidence_input_quality = _evidence_input_quality(context)
@@ -297,6 +299,7 @@ def _questions_from_framing_forks(
     company: str,
     workflow_type: str,
     prospectus_recalc_supported: bool,
+    evidence_by_reference: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
     questions: list[dict[str, Any]] = []
     for fork in forks:
@@ -314,7 +317,7 @@ def _questions_from_framing_forks(
             materiality_score=92,
             rationale=_string(fork.get("causal_question")),
             evidence_summary="Company-specific framing fork validated against exact evidence references.",
-            evidence_used=[],
+            evidence_used=_resolved_supporting_evidence_references(fork, evidence_by_reference),
             baseline_assumption="The neutral base anchor remains the guided default.",
             default_story=next(
                 (_string(option.get("story")) for option in fork.get("options") or [] if option.get("label") == "B"),
@@ -336,6 +339,18 @@ def _questions_from_framing_forks(
         question["framing_quality"] = "semantic"
         questions.append(question)
     return questions
+
+
+def _resolved_supporting_evidence_references(
+    fork: dict[str, Any],
+    evidence_by_reference: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    resolved: list[dict[str, Any]] = []
+    for ref in fork.get("supporting_evidence_refs") or []:
+        item = evidence_by_reference.get(_string(ref))
+        if isinstance(item, dict):
+            resolved.append(_evidence_reference(item))
+    return resolved
 
 
 def _restore_semantic_framing(question: dict[str, Any]) -> None:
@@ -1923,6 +1938,18 @@ def _evidence_items(context: dict[str, Any]) -> list[dict[str, Any]]:
     direct_items = _list(context.get("evidence_items") or context.get("evidenceItems"))
     packet_items = _list(packet.get("evidence_items") or packet.get("evidenceItems"))
     return [item for item in [*direct_items, *packet_items] if isinstance(item, dict)]
+
+
+def _evidence_by_reference(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    by_reference: dict[str, dict[str, Any]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        for key in ("evidence_id", "id", "source_url", "sourceUrl"):
+            ref = _string(item.get(key))
+            if ref:
+                by_reference.setdefault(ref, item)
+    return by_reference
 
 
 def _evidence_reference(item: dict[str, Any]) -> dict[str, Any]:
