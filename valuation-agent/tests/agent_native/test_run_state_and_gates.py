@@ -294,6 +294,37 @@ def test_optimistic_stack_challenge_leaves_guided_gate_uncleared(tmp_path):
     assert refused["gate"] == GATE_GUIDED_REFINEMENT
 
 
+def test_optimistic_stack_recalculate_cannot_strip_guided_metadata_to_bypass_gate(tmp_path):
+    registry = _registry(tmp_path)
+    run_id = _start_ticker_run(registry)
+
+    applied = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {
+            "run_id": run_id,
+            "guided_question_plan": _stock_plan(),
+            "answers": {"growth": "C", "margin": "C", "reinvestment": "C", "risk": "A"},
+            "gate_records": [{"gate": GATE_EVIDENCE_REVIEW, "outcome": "approved"}],
+        },
+    )["structuredContent"]
+    assert applied["coherenceReview"]["status"] == "challenge_required"
+    assert applied["workflow_state"]["gates_pending"] == [GATE_GUIDED_REFINEMENT]
+
+    stripped_overrides = {
+        key: value
+        for key, value in applied["tickerOverridesCandidate"]["overrides"].items()
+        if key != "user_judgment"
+    }
+
+    refused = registry.call(
+        "stockvaluation.recalculate",
+        {"run_id": run_id, "ticker": "MSFT", "overrides": stripped_overrides},
+    )["structuredContent"]
+
+    assert refused["error"]["code"] == "GATE_NOT_CLEARED"
+    assert refused["gate"] == GATE_GUIDED_REFINEMENT
+
+
 def test_changed_answer_resolution_clears_after_one_challenge(tmp_path):
     registry = _registry(tmp_path)
     run_id = _start_ticker_run(registry)
@@ -319,6 +350,26 @@ def test_changed_answer_resolution_clears_after_one_challenge(tmp_path):
     assert resolved["coherenceReview"]["status"] == "resolved_by_changed_answers"
     assert resolved["challenge_count"] == 1
     assert resolved["workflow_state"]["gates_pending"] == [GATE_EVIDENCE_REVIEW]
+
+
+def test_caveat_acceptance_cannot_skip_first_coherence_challenge(tmp_path):
+    registry = _registry(tmp_path)
+    run_id = _start_ticker_run(registry)
+
+    applied = registry.call(
+        "stockvaluation.apply_guided_answers",
+        {
+            "run_id": run_id,
+            "guided_question_plan": _stock_plan(),
+            "answers": {"growth": "C", "margin": "C", "reinvestment": "C", "risk": "A"},
+            "accept_coherence_caveat": True,
+            "coherence_caveat_reason": "User accepts the optimistic-stack caveat.",
+        },
+    )["structuredContent"]
+
+    assert applied["coherenceReview"]["status"] == "challenge_required"
+    assert applied["challenge_count"] == 1
+    assert applied["workflow_state"]["gates"][GATE_GUIDED_REFINEMENT]["status"] == "pending"
 
 
 def test_explicit_caveat_acceptance_clears_after_one_challenge(tmp_path):

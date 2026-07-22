@@ -1239,7 +1239,7 @@ class MCPToolRegistry:
         previous_fingerprint = _string_or_none(run.get("coherence_answer_fingerprint"))
         requires_decision = bool(run.get("coherence_requires_caveat_decision"))
 
-        if accept_caveat:
+        if accept_caveat and previous_pending and challenge_count >= 1:
             accepted = dict(previous_review or review)
             accepted["status"] = "caveat_accepted"
             accepted["explicit_caveat"] = {
@@ -1375,7 +1375,10 @@ class MCPToolRegistry:
             scenario_bearing = any(key not in RECALCULATE_METADATA_FIELDS for key in requested)
             if scenario_bearing and not self.run_store.gate_cleared(run, GATE_EVIDENCE_REVIEW):
                 return self._gate_refusal(tool, GATE_EVIDENCE_REVIEW, run)
-            guided_flow = any(key in {"user_judgment", "guided_refinement"} for key in requested)
+            request_policy_mode, _request_policy_error = normalize_request_policy_mode(requested.get("request_policy"))
+            guided_flow = any(key in {"user_judgment", "guided_refinement"} for key in requested) or (
+                scenario_bearing and request_policy_mode == "user_refined_scenario"
+            )
             if guided_flow and not self.run_store.gate_cleared(run, GATE_GUIDED_REFINEMENT):
                 return self._gate_refusal(tool, GATE_GUIDED_REFINEMENT, run)
             refusal = self._validate_anchored_values(run, requested, args, tool)
