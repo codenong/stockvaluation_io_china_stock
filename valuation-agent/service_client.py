@@ -60,6 +60,31 @@ class ValuationServiceClient:
         payload = self._post_json(url, overrides or {})
         return self._data_object(payload, "valuation-service response missing JSON data object")
 
+    # add by codenong@gmail.com, 2026.08.24
+    def value_external(
+        self,
+        valuation_input: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Run valuation using an externally prepared valuation input.
+
+        The external input path is deliberately separate from ticker-based
+        valuation so that A-share data can come from ah-disclosure-kit
+        instead of the existing market-data provider.
+        """
+        if not isinstance(valuation_input, dict):
+            raise TypeError("valuation_input must be a JSON object")
+
+        payload = self._post_json(
+            self._api_v1_url("/external/valuation"),
+            valuation_input,
+        )
+
+        return self._data_object(
+            payload,
+            "valuation-service external valuation response missing JSON data object",
+        )
+
     def extract_prospectus(
         self,
         filing_url: str,
