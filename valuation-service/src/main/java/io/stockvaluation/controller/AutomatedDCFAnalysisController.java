@@ -42,4 +42,44 @@ public class AutomatedDCFAnalysisController {
             return ResponseGenerator.generateExceptionResponseDTO(e);
         }
     }
+
+    @PostMapping("/external/valuation")
+    public ResponseEntity<?> getExternalValuationOutput(
+            @RequestBody ExternalValuationRequestDTO request) {
+        String ticker = request != null ? request.getTicker() : null;
+        try {
+            if (request == null || request.getTicker() == null || request.getTicker().isBlank()) {
+                return ResponseGenerator.generateUnprocessableEntityResponse(
+                        "external valuation requires ticker");
+            }
+            if (request.getCompanyData() == null) {
+                return ResponseGenerator.generateUnprocessableEntityResponse(
+                        "external valuation requires companyData");
+            }
+
+            ValuationOutputDTO valuationOutputDTO =
+                    valuationWorkflowService.getExternalValuation(
+                            ticker,
+                            request.getCompanyData(),
+                            request.getOverrides());
+
+            return ResponseGenerator.generateSuccessResponse(valuationOutputDTO);
+        } catch (InsufficientFinancialDataException e) {
+            log.warn("Unprocessable external valuation input in POST /external/{}/valuation: {}",
+                    ticker, e.getMessage());
+            return ResponseGenerator.generateUnprocessableEntityResponse(e.getMessage());
+        } catch (ResponseStatusException e) {
+            log.warn("Unprocessable external valuation scenario in POST /external/{}/valuation: {}",
+                    ticker, e.getReason());
+            return ResponseGenerator.generateUnprocessableEntityResponse(e.getReason());
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid external valuation scenario in POST /external/{}/valuation: {}",
+                    ticker, e.getMessage());
+            return ResponseGenerator.generateUnprocessableEntityResponse(e.getMessage());
+        } catch (RuntimeException e) {
+            log.error("Error in POST /external/{}/valuation", ticker, e);
+            return ResponseGenerator.generateExceptionResponseDTO(e);
+        }
+    }
+
 }

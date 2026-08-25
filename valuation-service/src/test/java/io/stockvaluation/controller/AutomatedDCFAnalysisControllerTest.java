@@ -1,5 +1,7 @@
 package io.stockvaluation.controller;
 
+import io.stockvaluation.dto.CompanyDataDTO;
+import io.stockvaluation.dto.ExternalValuationRequestDTO;
 import io.stockvaluation.dto.ResponseDTO;
 import io.stockvaluation.dto.ValuationOutputDTO;
 import io.stockvaluation.dto.valuationoutput.AssumptionTransparencyDTO;
@@ -38,6 +40,44 @@ class AutomatedDCFAnalysisControllerTest {
     @BeforeEach
     void setUp() {
         controller = new AutomatedDCFAnalysisController(valuationWorkflowService);
+    }
+
+    @Test
+    void postExternalValuation_success_returnsOkResponse() {
+        ValuationOutputDTO output = new ValuationOutputDTO();
+        when(valuationWorkflowService.getExternalValuation(
+                eq("603986.SH"),
+                any(CompanyDataDTO.class),
+                any(FinancialDataInput.class)))
+                .thenReturn(output);
+
+        ExternalValuationRequestDTO request = new ExternalValuationRequestDTO(
+                "603986.SH",
+                new CompanyDataDTO(),
+                new FinancialDataInput());
+
+        ResponseEntity<?> response = controller.getExternalValuationOutput(request);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        ResponseDTO<?> body = (ResponseDTO<?>) response.getBody();
+        assertNotNull(body);
+        assertTrue(body.isSuccess());
+        assertSame(output, body.getData());
+    }
+
+    @Test
+    void postExternalValuation_missingCompanyData_returns422() {
+        ExternalValuationRequestDTO request = new ExternalValuationRequestDTO();
+        request.setTicker("603986.SH");
+
+        ResponseEntity<?> response = controller.getExternalValuationOutput(request);
+
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, response.getStatusCode());
+        ResponseDTO<?> body = (ResponseDTO<?>) response.getBody();
+        assertNotNull(body);
+        assertFalse(body.isSuccess());
+        assertEquals("external valuation requires companyData", body.getMessage());
+        verifyNoInteractions(valuationWorkflowService);
     }
 
     @Test

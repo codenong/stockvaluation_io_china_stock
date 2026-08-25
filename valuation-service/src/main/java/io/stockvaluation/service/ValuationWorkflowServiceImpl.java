@@ -72,6 +72,37 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 }
         }
 
+        @Override
+        public ValuationOutputDTO getExternalValuation(
+                        String ticker,
+                        CompanyDataDTO companyData,
+                        FinancialDataInput financialDataInputOverrides) {
+                try {
+                        if (companyData == null) {
+                                throw new IllegalArgumentException("External valuation requires companyData");
+                        }
+
+                        log.info("POST /external/{}/valuation using externally supplied company data", ticker);
+                        log.info("   Received {} override parameter(s)",
+                                        countNonNullFields(financialDataInputOverrides));
+
+                        boolean enableDCFAnalysis = false;
+
+                        return calculateValuation(
+                                        ticker,
+                                        companyData,
+                                        financialDataInputOverrides,
+                                        enableDCFAnalysis,
+                                        false);
+
+                } catch (RuntimeException e) {
+                        log.error("Error in external valuation output for ticker {}", ticker, e);
+                        throw e;
+                } finally {
+                        SegmentParameterContext.clear();
+                }
+        }
+
         /**
          * Core valuation calculation logic for the deterministic POST endpoint.
          * 
@@ -102,6 +133,32 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 CompanyDataDTO companyDataDTO = requiresResearchedSourcePolicy(overrides)
                                 ? commonService.getCompanyDataFromProvider(ticker, overrides)
                                 : commonService.getCompanyDataFromProvider(ticker);
+
+                return calculateValuation(
+                                ticker,
+                                companyDataDTO,
+                                overrides,
+                                enableDCFAnalysis,
+                                true);
+        }
+
+        /**
+         * Core valuation calculation against an already prepared CompanyDataDTO.
+         * This path allows external data providers (for example ah-disclosure-kit)
+         * to reuse the existing deterministic valuation workflow without forcing
+         * a ticker-based data-provider lookup.
+         */
+        private ValuationOutputDTO calculateValuation(
+                        String ticker,
+                        CompanyDataDTO companyDataDTO,
+                        FinancialDataInput overrides,
+                        boolean enableDCFAnalysis,
+                        boolean allowTickerSegmentDiscovery) {
+
+                if (companyDataDTO == null) {
+                        throw new IllegalArgumentException("companyData must not be null");
+                }
+
                 String growthAnchorRegion = MarketRegionResolver
                                 .resolveGrowthAnchorRegion(companyDataDTO.getBasicInfoDataDTO());
 
@@ -121,7 +178,9 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                 if (overrides != null) {
                         adjustedParameters = applyUserOverrides(financialDataInput, overrides);
                 }
-                applyResearchedSegmentDiscovery(ticker, financialDataInput, companyDataDTO, adjustedParameters);
+                if (allowTickerSegmentDiscovery) {
+                        applyResearchedSegmentDiscovery(ticker, financialDataInput, companyDataDTO, adjustedParameters);
+                }
 
                 // VAL-3: Strict Growth Policy Guard (Optional)
                 if (valuationAssumptionProperties.isStrictGrowthPolicy()) {
@@ -177,7 +236,10 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         if (overrides != null) {
                                 adjustedParameters = applyUserOverrides(financialDataInput, overrides);
                         }
-                        applyResearchedSegmentDiscovery(ticker, financialDataInput, companyDataDTO, adjustedParameters);
+                        if (allowTickerSegmentDiscovery) {
+                                applyResearchedSegmentDiscovery(
+                                                ticker, financialDataInput, companyDataDTO, adjustedParameters);
+                        }
                         adjustSalesToCapitalRatio(financialDataInput, adjustedParameters);
                         valuationOutputDTOCheck = valuationOutputService.getValuationOutput(
                                         ticker, financialDataInput, template);
@@ -205,7 +267,10 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                         if (overrides != null) {
                                 adjustedParameters = applyUserOverrides(financialDataInput, overrides);
                         }
-                        applyResearchedSegmentDiscovery(ticker, financialDataInput, companyDataDTO, adjustedParameters);
+                        if (allowTickerSegmentDiscovery) {
+                                applyResearchedSegmentDiscovery(
+                                                ticker, financialDataInput, companyDataDTO, adjustedParameters);
+                        }
                         adjustSalesToCapitalRatio(financialDataInput, adjustedParameters);
                         valuationOutputDTOCheck = valuationOutputService.getValuationOutput(
                                         ticker, financialDataInput, template);
