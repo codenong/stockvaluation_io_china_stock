@@ -1,6 +1,8 @@
 package io.stockvaluation.controller;
 
 import io.stockvaluation.dto.ValuationOutputDTO;
+import io.stockvaluation.dto.ExternalValuationRequestDTO;
+
 import io.stockvaluation.exception.InsufficientFinancialDataException;
 import io.stockvaluation.form.FinancialDataInput;
 import io.stockvaluation.service.ValuationWorkflowService;
