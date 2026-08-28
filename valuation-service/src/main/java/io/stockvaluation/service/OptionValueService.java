@@ -28,7 +28,23 @@ public class OptionValueService {
         // user inputs field
         double currentStockPrice = companyDataDTO.getFinancialDataDTO().getStockPrice();
         double riskFreeRate = companyDataDTO.getCompanyDriveDataDTO().getRiskFreeRate(); // in %
+        return calculateOptionValue(currentStockPrice, riskFreeRate, strikePrice, avgMaturity, optionStanding,
+                standardDeviation);
+    }
 
+    /**
+     * Same calculation, but takes the current stock price and risk-free rate
+     * directly instead of re-resolving them from a ticker-based data
+     * provider. Every caller already has these values on hand via a
+     * FinancialDataInput (populated from either the ticker-based provider or
+     * an externally supplied CompanyDataDTO, e.g. ah-disclosure-kit for
+     * China A-shares) -- there is no need to look the ticker up again, and
+     * doing so previously made this method fail for any ticker the
+     * ticker-based provider does not recognize (including all A-share
+     * tickers going through the external valuation path).
+     */
+    public OptionValueResultDTO calculateOptionValue(double currentStockPrice, double riskFreeRate,
+            Double strikePrice, Double avgMaturity, Double optionStanding, Double standardDeviation) {
         double d1Res = calculateD1(currentStockPrice, strikePrice, riskFreeRate, standardDeviation, avgMaturity);
         double nd1 = calculateNd1(d1Res);
         double d2 = calculateD2(d1Res, standardDeviation, avgMaturity);

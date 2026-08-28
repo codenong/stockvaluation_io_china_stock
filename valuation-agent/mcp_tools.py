@@ -10,6 +10,12 @@ import re
 from typing import Any, Callable
 
 from . import __version__
+from .ah_disclosure import (
+    ah_disclosure_extraction_success_payload,
+    ah_disclosure_review_status,
+    ah_disclosure_review_token,
+    company_data_from_ah_disclosure,
+)
 from .accounting_and_claims import (
     accounting_metadata,
     merge_accounting_metadata,
@@ -197,6 +203,8 @@ TOOL_NAMES = [
     "stockvaluation.propose_segment_mappings",
     "stockvaluation.extract_prospectus",
     "stockvaluation.value_prospectus",
+    "stockvaluation.extract_ah_disclosure",
+    "stockvaluation.value_external",
     "stockvaluation.plan_guided_questions",
     "stockvaluation.recalculate",
     "stockvaluation.get_assumptions",
@@ -218,6 +226,8 @@ KNOWN_FAILURE_CATEGORIES = {
     "unsupported_overrides",
     "invalid_prospectus_source",
     "prospectus_review_required",
+    "invalid_ah_disclosure_source",
+    "ah_disclosure_review_required",
     "unknown_failure",
 }
 
@@ -401,6 +411,78 @@ def tool_definitions() -> list[dict[str, Any]]:
             "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
         },
         {
+            "name": "stockvaluation.extract_ah_disclosure",
+            "title": "Extract ah-disclosure Report",
+            "description": "Convert an ah-disclosure-kit analysis JSON (China A-share financial-quality report) into a review-required CompanyDataDTO packet for the external valuation path.",
+            "inputSchema": _object_schema(
+                {
+                    "report": {
+                        "type": "object",
+                        "description": "The full ah-disclosure-kit analysis JSON, including analysis_result.facts and analysis_result.calculations.",
+                        "additionalProperties": True,
+                    },
+                    "market_data": {
+                        "type": "object",
+                        "description": "Optional market data to merge in (stock_price, previous_day_stock_price, highest_stock_price, lowest_stock_price, no_of_share_outstanding, basic_shares_outstanding, diluted_shares_outstanding, market_cap, beta). ah-disclosure-kit reports contain fundamentals only, not market price data.",
+                        "additionalProperties": True,
+                    },
+                    "marginal_tax_rate_pct": {
+                        "type": "number",
+                        "description": "China corporate tax rate applicable to this company as a plain percentage (e.g. 25.0, or 15.0 for the IC-enterprise preferential rate). The report's effective tax rate often reflects a temporary incentive and should not be used as-is for terminal-value NOPAT.",
+                    },
+                    "risk_free_rate": {
+                        "type": "number",
+                        "description": "China 10Y government bond yield as a fraction (e.g. 0.017 for 1.7%, not 1.7).",
+                    },
+                    "initial_cost_capital": {
+                        "type": "number",
+                        "description": "Initial cost of capital / WACC as a fraction (e.g. 0.09 for 9%, not 9.0).",
+                    },
+                },
+                ["report"],
+            ),
+            "outputSchema": _output_schema(),
+            "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+        },
+        {
+            "name": "stockvaluation.value_external",
+            "title": "Value External CompanyData",
+            "description": "Run a local educational valuation from a user-reviewed CompanyDataDTO packet (currently used for ah-disclosure-kit China A-share reports). Prefer review_reference from stockvaluation.extract_ah_disclosure after review to avoid copying a large packet by hand.",
+            "inputSchema": _object_schema(
+                {
+                    **_run_tracking_properties(),
+                    "ticker": {"type": "string", "description": "Required when not using review_reference."},
+                    "company_data": {
+                        "type": "object",
+                        "description": "A CompanyDataDTO packet returned by stockvaluation.extract_ah_disclosure after user review. Prefer review_reference when no correction is needed.",
+                        "additionalProperties": True,
+                    },
+                    "review_reference": {
+                        "type": "string",
+                        "description": "Preferred after approval: ahDisclosure.reviewReference returned by stockvaluation.extract_ah_disclosure. Also pass review_status=reviewed.",
+                    },
+                    "review_status": {
+                        "type": "string",
+                        "enum": ["reviewed"],
+                        "description": "Required when using review_reference. Set to reviewed only after the ah-disclosure companyData has been approved or corrected.",
+                    },
+                    "company_data_overrides": {
+                        "type": "object",
+                        "description": "Optional source-backed corrections to merge into the cached companyData when using review_reference.",
+                        "additionalProperties": True,
+                    },
+                    "overrides": {
+                        "type": "object",
+                        "description": "Optional forward-looking DCF assumptions (FinancialDataInput shape): revenue growth, margins, sales-to-capital, WACC inputs, etc.",
+                        "additionalProperties": True,
+                    },
+                },
+                [],
+            ),
+            "outputSchema": _output_schema(),
+            "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+        },
+        {
             "name": "stockvaluation.plan_guided_questions",
             "title": "Plan Guided Questions",
             "description": "Build a materiality-ranked story-to-driver guided-question plan from compact valuation context.",
@@ -538,6 +620,7 @@ class MCPToolRegistry:
         self._home = home
         self.run_store = run_store or WorkflowRunStore(home=home)
         self._prospectus_packet_cache: dict[str, dict[str, Any]] = {}
+        self._ah_disclosure_packet_cache: dict[str, dict[str, Any]] = {}
         self._handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
             "stockvaluation.health": self._health,
             "stockvaluation.value_ticker": self._value_ticker,
@@ -545,6 +628,8 @@ class MCPToolRegistry:
             "stockvaluation.propose_segment_mappings": self._propose_segment_mappings,
             "stockvaluation.extract_prospectus": self._extract_prospectus,
             "stockvaluation.value_prospectus": self._value_prospectus,
+            "stockvaluation.extract_ah_disclosure": self._extract_ah_disclosure,
+            "stockvaluation.value_external": self._value_external,
             "stockvaluation.plan_guided_questions": self._plan_guided_questions,
             "stockvaluation.apply_guided_answers": self._apply_guided_answers,
             "stockvaluation.recalculate": self._recalculate,
@@ -1063,6 +1148,183 @@ class MCPToolRegistry:
         if isinstance(packet, dict):
             return copy.deepcopy(packet), None
         return None, None
+
+    def _extract_ah_disclosure(self, args: dict[str, Any]) -> dict[str, Any]:
+        tool = "stockvaluation.extract_ah_disclosure"
+        report = args.get("report")
+        if not isinstance(report, dict) or "analysis_result" not in report:
+            return error_payload(
+                tool,
+                "INVALID_AH_DISCLOSURE_SOURCE",
+                "report must be a full ah-disclosure-kit analysis JSON with an analysis_result key.",
+                "invalid_ah_disclosure_source",
+            )
+        market_data = args.get("market_data")
+        if market_data is not None and not isinstance(market_data, dict):
+            return error_payload(
+                tool,
+                "INVALID_AH_DISCLOSURE_MARKET_DATA",
+                "market_data must be an object when supplied.",
+                "invalid_ah_disclosure_source",
+            )
+        # marginal_tax_rate_pct = _number_or_none(args.get("marginal_tax_rate_pct") or args.get("marginalTaxRatePct"))
+        # try:
+        #     result = company_data_from_ah_disclosure(
+        #         report,
+        #         market_data=market_data,
+        #         marginal_tax_rate_pct=marginal_tax_rate_pct,
+        #     )
+        marginal_tax_rate_pct = _number_or_none(args.get("marginal_tax_rate_pct") or args.get("marginalTaxRatePct"))
+        risk_free_rate = _number_or_none(args.get("risk_free_rate") or args.get("riskFreeRate"))
+        initial_cost_capital = _number_or_none(args.get("initial_cost_capital") or args.get("initialCostCapital"))
+        try:
+            result = company_data_from_ah_disclosure(
+                report,
+                market_data=market_data,
+                marginal_tax_rate_pct=marginal_tax_rate_pct,
+                risk_free_rate=risk_free_rate,
+                initial_cost_capital=initial_cost_capital,
+            )
+        except (KeyError, ValueError) as exc:
+            return error_payload(
+                tool,
+                "AH_DISCLOSURE_PARSE_FAILED",
+                f"Could not parse ah-disclosure report: {exc}",
+                "invalid_ah_disclosure_source",
+            )
+        ticker = result["ticker"]
+        company_data = result["companyData"]
+        gaps = result["gaps"]
+        review_reference = ah_disclosure_review_token(report)
+        if review_reference:
+            self._ah_disclosure_packet_cache[review_reference] = copy.deepcopy(company_data)
+        payload = ah_disclosure_extraction_success_payload(tool, ticker, company_data, gaps, review_reference)
+        self._start_tracked_run(
+            payload,
+            workflow_type="ah_disclosure",
+            subject=ticker,
+            tool=tool,
+        )
+        return payload
+
+    def _ah_disclosure_company_data_from_args(
+        self, args: dict[str, Any]
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        tool = "stockvaluation.value_external"
+        review_reference = _string_or_none(args.get("review_reference") or args.get("reviewReference"))
+        company_data_arg = args.get("company_data") or args.get("companyData")
+        if review_reference:
+            review_status = _string_or_none(args.get("review_status") or args.get("reviewStatus"))
+            if review_status != "reviewed":
+                return None, error_payload(
+                    tool,
+                    "AH_DISCLOSURE_REVIEW_REQUIRED",
+                    "review_status must be reviewed when using review_reference.",
+                    "ah_disclosure_review_required",
+                    extra={"ahDisclosure": {"reviewReference": review_reference, "reviewStatus": review_status or "missing"}},
+                )
+            cached = self._ah_disclosure_packet_cache.get(review_reference)
+            if cached is None:
+                return None, error_payload(
+                    tool,
+                    "UNKNOWN_AH_DISCLOSURE_REVIEW_TOKEN",
+                    "review_reference was not found in this MCP session. Call stockvaluation.extract_ah_disclosure again, then approve and retry.",
+                    "ah_disclosure_review_required",
+                    extra={"ahDisclosure": {"reviewReference": review_reference}},
+                )
+            company_data = copy.deepcopy(cached)
+            overrides = args.get("company_data_overrides") or args.get("companyDataOverrides")
+            if overrides is not None:
+                if not isinstance(overrides, dict):
+                    return None, error_payload(
+                        tool,
+                        "INVALID_AH_DISCLOSURE_OVERRIDES",
+                        "company_data_overrides must be an object when supplied.",
+                        "invalid_ah_disclosure_source",
+                    )
+                company_data = deep_merge_dict(company_data, overrides)
+            company_data["reviewStatus"] = "reviewed"
+            return company_data, None
+        if isinstance(company_data_arg, dict):
+            return copy.deepcopy(company_data_arg), None
+        return None, None
+
+    def _value_external(self, args: dict[str, Any]) -> dict[str, Any]:
+        tool = "stockvaluation.value_external"
+        run, run_error = self._resolve_run(args, tool)
+        if run_error is not None:
+            return run_error
+        if run is not None:
+            record_error = self._apply_gate_records(run, args, tool)
+            if record_error is not None:
+                return record_error
+        company_data, company_data_error = self._ah_disclosure_company_data_from_args(args)
+        if company_data_error is not None:
+            return self._finish_tracked(company_data_error, run, tool)
+        if not isinstance(company_data, dict):
+            return self._finish_tracked(
+                error_payload(
+                    tool,
+                    "INVALID_AH_DISCLOSURE_COMPANY_DATA",
+                    "company_data must be a CompanyDataDTO packet returned by stockvaluation.extract_ah_disclosure, or use review_reference with review_status=reviewed.",
+                    "ah_disclosure_review_required",
+                ),
+                run,
+                tool,
+            )
+        review_status = ah_disclosure_review_status(company_data)
+        if review_status != "reviewed":
+            return self._finish_tracked(
+                error_payload(
+                    tool,
+                    "AH_DISCLOSURE_REVIEW_REQUIRED",
+                    "companyData reviewStatus must be reviewed before valuation.",
+                    "ah_disclosure_review_required",
+                    extra={"ahDisclosure": {"reviewStatus": review_status or "missing"}},
+                ),
+                run,
+                tool,
+            )
+        ticker = _string_or_none(args.get("ticker")) or _string_or_none(
+            (company_data.get("basicInfoDataDTO") or {}).get("ticker")
+        )
+        if not ticker:
+            return self._finish_tracked(
+                error_payload(
+                    tool,
+                    "MISSING_TICKER",
+                    "ticker is required (or must be present on companyData.basicInfoDataDTO.ticker).",
+                    "invalid_ticker",
+                ),
+                run,
+                tool,
+            )
+        overrides = args.get("overrides")
+        if overrides is not None and not isinstance(overrides, dict):
+            return self._finish_tracked(
+                error_payload(
+                    tool,
+                    "INVALID_AH_DISCLOSURE_SCENARIO",
+                    "overrides must be an object when supplied.",
+                    "unsupported_overrides",
+                ),
+                run,
+                tool,
+            )
+        # reviewStatus/reviewSource are extraction-review bookkeeping, not part
+        # of the Java CompanyDataDTO -- strip before sending to the service.
+        clean_company_data = {
+            k: v for k, v in company_data.items() if k not in ("reviewStatus", "reviewSource")
+        }
+        try:
+            valuation_input: dict[str, Any] = {"ticker": ticker, "companyData": clean_company_data}
+            if overrides is not None:
+                valuation_input["overrides"] = overrides
+            result = self.service_client.value_external(valuation_input)
+            payload = {"ok": True, "tool": tool, "valuation": sanitize_for_agent(result)}
+            return self._finish_tracked(payload, run, tool)
+        except ValuationServiceError as exc:
+            return self._finish_tracked(service_exception_payload(tool, exc, ticker=ticker), run, tool)
 
     def _plan_guided_questions(self, args: dict[str, Any]) -> dict[str, Any]:
         tool = "stockvaluation.plan_guided_questions"
@@ -4297,6 +4559,8 @@ def recovery_for_category(category: str) -> dict[str, Any]:
         "unsupported_overrides": "Ask before retrying with only governed scenario override fields.",
         "invalid_prospectus_source": "Ask for a SEC EDGAR Archives HTML prospectus URL. Do not paste raw filing HTML into the MCP tool.",
         "prospectus_review_required": "Review the extracted ProspectusFinancialPacket with the user, correct any disputed fields, then retry only after setting reviewStatus to reviewed.",
+        "invalid_ah_disclosure_source": "Ask for a valid ah-disclosure-kit analysis JSON (must include analysis_result.facts and analysis_result.calculations).",
+        "ah_disclosure_review_required": "Review the extracted ah-disclosure companyData and gaps with the user (especially marginalTaxRate and operatingIncomeTTM, which need an explicit choice), then retry only after setting reviewStatus to reviewed.",
         "gate_not_cleared": "Complete the named workflow gate with the user (or record an explicit user-stated bypass via gate_records) before retrying this call.",
         "unanchored_scenario_value": "Use one of the driver's recorded anchor values, or ask the user for a specific number and declare it in value_sources as user_input. Do not invent scenario numbers.",
         "unknown_run_id": "Start a new tracked run from stockvaluation.extract_prospectus or a baseline tool and use its run_id.",

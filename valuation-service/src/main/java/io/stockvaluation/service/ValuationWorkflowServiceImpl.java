@@ -1289,7 +1289,8 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 baseInput.getFinancialDataDTO().getMarginalTaxRate(),
                                 baseInput.getFinancialDataDTO().getResearchAndDevelopmentMap());
                 OptionValueResultDTO optionValue = optionValueService.calculateOptionValue(
-                                ticker,
+                                baseInput.getFinancialDataDTO().getStockPrice(),
+                                baseInput.getCompanyDriveDataDTO().getRiskFreeRate(),
                                 baseInput.getAverageStrikePrice(),
                                 baseInput.getAverageMaturity(),
                                 baseInput.getNumberOfOptions(),
@@ -1408,7 +1409,8 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 baseInput.getFinancialDataDTO().getMarginalTaxRate(),
                                 baseInput.getFinancialDataDTO().getResearchAndDevelopmentMap());
                 OptionValueResultDTO optionValue = optionValueService.calculateOptionValue(
-                                ticker,
+                                baseInput.getFinancialDataDTO().getStockPrice(),
+                                baseInput.getCompanyDriveDataDTO().getRiskFreeRate(),
                                 baseInput.getAverageStrikePrice(),
                                 baseInput.getAverageMaturity(),
                                 baseInput.getNumberOfOptions(),
@@ -2223,7 +2225,9 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 financialDataInput.getFinancialDataDTO().getMarginalTaxRate(),
                                 financialDataInput.getFinancialDataDTO().getResearchAndDevelopmentMap());
                 OptionValueResultDTO optionValueResultDTO = optionValueService.calculateOptionValue(
-                                ticker, financialDataInput.getAverageStrikePrice(),
+                                financialDataInput.getFinancialDataDTO().getStockPrice(),
+                                financialDataInput.getCompanyDriveDataDTO().getRiskFreeRate(),
+                                financialDataInput.getAverageStrikePrice(),
                                 financialDataInput.getAverageMaturity(),
                                 financialDataInput.getNumberOfOptions(),
                                 financialDataInput.getStockPriceStdDev());
@@ -2326,7 +2330,9 @@ public class ValuationWorkflowServiceImpl implements ValuationWorkflowService {
                                 financialDataInput.getFinancialDataDTO().getMarginalTaxRate(),
                                 financialDataInput.getFinancialDataDTO().getResearchAndDevelopmentMap());
                 OptionValueResultDTO optionValueResultDTO = optionValueService.calculateOptionValue(
-                                ticker, financialDataInput.getAverageStrikePrice(),
+                                financialDataInput.getFinancialDataDTO().getStockPrice(),
+                                financialDataInput.getCompanyDriveDataDTO().getRiskFreeRate(),
+                                financialDataInput.getAverageStrikePrice(),
                                 financialDataInput.getAverageMaturity(),
                                 financialDataInput.getNumberOfOptions(),
                                 financialDataInput.getStockPriceStdDev());

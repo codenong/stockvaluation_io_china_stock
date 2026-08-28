@@ -75,8 +75,13 @@ class ValuationServiceClient:
         if not isinstance(valuation_input, dict):
             raise TypeError("valuation_input must be a JSON object")
 
+        # payload = self._post_json(
+        #     self._api_v1_url("/external/valuation"),
+        #     valuation_input,
+        # )
+
         payload = self._post_json(
-            self._api_v1_url("/external/valuation"),
+            f"{self.base_url}/external/valuation",
             valuation_input,
         )
 

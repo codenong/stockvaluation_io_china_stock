@@ -299,6 +299,11 @@ class FakeClient:
         self.calls.append((ticker, overrides or {}))
         return self.payload
 
+    # add by codenong@gmail.com, 2026.08.24
+    def value_external(self, valuation_input):
+        self.calls.append(("value_external", valuation_input))
+        return self.payload
+
     def extract_prospectus(self, filing_url, expected_company=None, expected_symbol=None):
         self.calls.append(("extract_prospectus", filing_url, expected_company, expected_symbol))
         return self.prospectus_extraction
